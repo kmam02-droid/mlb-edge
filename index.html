@@ -391,11 +391,12 @@ async function j(url) {
   // never relay the Odds API (your key is in the URL); everything else falls back through relays if blocked
   if (url.startsWith("https://api.the-odds-api.com/")) return jFetch(url);
   let lastErr = null;
-  for (let i = relayIdx; i < RELAYS.length; i++) {
-    try { const out = await jFetch(RELAYS[i](url)); relayIdx = i; return out; }
+  for (let i = 0; i < RELAYS.length; i++) { // always try direct first, then each relay
+    try { const out = await jFetch(RELAYS[i](url)); if (i > 0) relayIdx = Math.max(relayIdx, i); return out; }
     catch (e) {
       lastErr = e;
-      if (!/network\/CORS|timeout/.test(e.message)) throw e; // real HTTP errors: don't mask via relay
+      // an HTTP error from the source itself (direct) is real; an error from a RELAY just means try the next route
+      if (i === 0 && !/network\/CORS|timeout/.test(e.message)) throw e;
     }
   }
   throw lastErr;
@@ -1997,11 +1998,16 @@ async function wnbaLoad() {
   WS.loading = true; WS.errors = []; WS.games = []; WS.players = []; WS.results = []; WS.teams = {};
   WS.stage = "team list…";
   renderWnba();
+  // each stage is independent: one failing source can't blank the whole tab
   try {
     const tl = await j(`${W_SITE}/teams?limit=40`);
-    WS.stage = "season results (every team's schedule)…"; renderWnba();
     const teams = (tl?.sports?.[0]?.leagues?.[0]?.teams || []).map(t => t.team).filter(Boolean);
     for (const t of teams) WS.teams[+t.id] = { id: +t.id, abbr: t.abbreviation, name: t.displayName, logo: t.logos?.[0]?.href || "", res: [] };
+    if (!teams.length) WS.errors.push("team list: empty response");
+  } catch (e) { WS.errors.push("team list: " + e.message); }
+  try {
+    WS.stage = "season results (every team's schedule)…"; renderWnba();
+    let failed = 0;
     await Promise.all(Object.values(WS.teams).map(async tm => {
       try {
         const sc = await j(`${W_SITE}/teams/${tm.id}/schedule`);
@@ -2011,12 +2017,15 @@ async function wnbaLoad() {
           if (!home || !away || home.score?.value == null || away.score?.value == null) continue;
           tm.res.push({ id: ev.id, d: (ev.date || "").slice(0, 10), hId: +home.id, aId: +away.id, hs: +home.score.value, as: +away.score.value });
         }
-      } catch (e) {}
+      } catch (e) { failed++; }
     }));
     const seen = {};
     for (const tm of Object.values(WS.teams)) for (const r of tm.res) if (!seen[r.id]) { seen[r.id] = 1; WS.results.push(r); }
     WS.results.sort((a, b) => a.d < b.d ? -1 : 1);
-    wnbaFitModels();
+    if (failed) WS.errors.push(`results: ${failed} team schedule(s) failed`);
+  } catch (e) { WS.errors.push("results: " + e.message); }
+  try { wnbaFitModels(); } catch (e) { WS.errors.push("models: " + e.message); }
+  try {
     WS.stage = "today's games & odds…"; renderWnba();
     const sb = await j(`${W_SITE}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}`);
     const wSide = cp => cp ? ({ id: +cp.id, abbr: cp.team?.abbreviation || "?", name: cp.team?.displayName || "", score: cp.score != null ? +cp.score : null, winner: !!cp.winner }) : null;
@@ -2032,7 +2041,9 @@ async function wnbaLoad() {
         if (it) { g.mlHome = parseAm(it.homeTeamOdds?.current?.moneyLine?.american ?? it.homeTeamOdds?.moneyLine); g.mlAway = parseAm(it.awayTeamOdds?.current?.moneyLine?.american ?? it.awayTeamOdds?.moneyLine); g.book = it.provider?.name || "book"; }
       } catch (e) {}
     }));
-    for (const g of WS.games) wnbaPredict(g);
+    for (const g of WS.games) { try { wnbaPredict(g); } catch (e) {} }
+  } catch (e) { WS.errors.push("scoreboard/odds: " + e.message); }
+  {
     WS.stage = "player game logs for props…"; renderWnba();
     try {
       const ba = await j(`${W_WEB}/statistics/byathlete?region=us&lang=en&limit=${WCFG.propN}&sort=offensive.avgPoints:desc`);
@@ -2054,8 +2065,8 @@ async function wnbaLoad() {
         } catch (e) {}
       }));
     } catch (e) { WS.errors.push("players: " + e.message); }
-    WS.loaded = true;
-  } catch (e) { WS.errors.push("load: " + e.message); }
+  }
+  WS.loaded = true; // always show whatever we got — errors appear in red at the top
   WS.loading = false;
   renderWnba();
 }
@@ -2197,7 +2208,10 @@ function renderWnba() {
   root.innerHTML = "";
   root.appendChild(el("div", "h1", `WNBA <small>· 4 moneyline models + player props</small>`));
   if (WS.loading) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading WNBA — ${WS.stage || "starting…"}</div><div style="font-size:11px;color:var(--dim3);">first load takes ~20-30 seconds (a full season of results + player logs)</div>`)); return; }
-  if (!WS.loaded) { const b = el("button", null, "LOAD WNBA"); b.className = "btn"; b.addEventListener("click", wnbaEnsure); root.appendChild(b); return; }
+  if (!WS.loaded) {
+    if (WS.errors.length) root.appendChild(el("div", "nobets", `<span style="color:var(--red)">WNBA load failed — ${WS.errors.join(" · ")}</span><br><span style="font-size:12px;color:var(--dim)">Screenshot this message and the fix will be quick.</span>`));
+    const b = el("button", null, WS.errors.length ? "RETRY WNBA" : "LOAD WNBA"); b.className = "btn"; b.addEventListener("click", wnbaEnsure); root.appendChild(b); return;
+  }
   if (WS.errors.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some WNBA sources failed: ${WS.errors.join(" · ")}</span>`));
   // model records (walk-forward backtest)
   const bt = WS.bt;
@@ -2211,6 +2225,7 @@ function renderWnba() {
     if (bt.sharpHold) cards.unshift(`<div class="reccard hero"><div class="recname">W-SHARP — HOLDOUT (HONEST)</div><div class="recwl">${bt.sharpHold.w}-${bt.sharpHold.n - bt.sharpHold.w}</div><div class="recsub">win% <b style="color:var(--txt)">${(bt.sharpHold.w / bt.sharpHold.n * 100).toFixed(1)}%</b> · train ${(bt.sharpTrain.w / bt.sharpTrain.n * 100).toFixed(1)}%</div></div>`);
     root.appendChild(el("div", "recgrid", cards.join("")));
   }
+  if (WS.view === "rec" && (!bt || !bt.n)) root.appendChild(el("div", "nobets", "Model records need the season's results, which didn't load this time — the red note above names the source that failed. Hit RELOAD WNBA DATA below to try again."));
   // games
   if (WS.view === "board") {
   root.appendChild(el("div", "h1", `GAMES <small>· ${WS.games.length} on ${S.date}</small>`));
@@ -2220,7 +2235,7 @@ function renderWnba() {
     const th = WS.teams[g.home.id] || {}, ta = WS.teams[g.away.id] || {};
     const pickHome = g.cons != null && g.cons >= 0.5;
     const card = el("div", "card" + (g.completed || g.live ? " played" : ""));
-    const mrow = (n, p) => p == null ? "" : `<div class="mrow"><span class="mlabel">${n}</span><div class="mbar"><i style="width:${(p * 100).toFixed(0)}%;background:var(--blue);"></i></div><span class="mpct">${(p * 100).toFixed(1)}%</span><span class="medge" style="color:${g.impl != null ? edgeCls((p - g.impl) * 100) : "var(--dim3)"}">${g.impl != null ? ((p - g.impl) * 100 >= 0 ? "+" : "") + ((p - g.impl) * 100).toFixed(1) + "%" : ""}</span></div>`;
+    const mrow = (n, p, col) => p == null ? "" : `<div class="mrow"><span class="mlabel">${n}</span><div class="mbar"><i style="width:${(p * 100).toFixed(0)}%;background:${col || "var(--blue)"};"></i></div><span class="mpct">${(p * 100).toFixed(1)}%</span><span class="medge" style="color:${g.impl != null ? edgeCls((p - g.impl) * 100) : "var(--dim3)"}">${g.impl != null ? ((p - g.impl) * 100 >= 0 ? "+" : "") + ((p - g.impl) * 100).toFixed(1) + "%" : ""}</span></div>`;
     card.innerHTML = `
       <div class="chead"><span class="time">${timeLabel(g.date)}</span>
         ${g.completed ? '<span class="finchip">FINAL</span>' : g.live ? '<span class="livechip">● LIVE</span>' : ""}
@@ -2230,8 +2245,9 @@ function renderWnba() {
         ${!g.completed && !g.live && (g.edgeA ?? -99) >= S.weights.edgeThresh ? '<span class="valchip">★ VALUE ' + g.away.abbr + "</span>" : ""}</div>
       <div class="trow ${!g.completed && !pickHome && g.cons != null ? "pick" : ""} ${g.completed && g.away.winner ? "pick" : ""}">${wLogo(ta, 30)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${(ta.name || "").split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : `<div class="tml" style="color:${!pickHome && g.cons != null ? "var(--green)" : "var(--txt)"}">${fmtML(g.mlAway)}</div>`}</div>
       <div class="trow ${!g.completed && pickHome && g.cons != null ? "pick" : ""} ${g.completed && g.home.winner ? "pick" : ""}" style="margin-top:3px;">${wLogo(th, 30)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${(th.name || "").split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : `<div class="tml" style="color:${pickHome && g.cons != null ? "var(--green)" : "var(--txt)"}">${fmtML(g.mlHome)}</div>`}</div>
+      ${g.cons != null && !g.completed ? `<div class="pbarwrap"><div class="pbarlabels"><span style="color:${g.cons < 0.5 ? "var(--blue)" : "var(--dim2)"}">${g.away.abbr} ${((1 - g.cons) * 100).toFixed(0)}%</span><span style="color:var(--dim2);font-weight:600;letter-spacing:.5px;">MODEL WIN PROB</span><span style="color:${g.cons >= 0.5 ? "var(--green)" : "var(--dim2)"}">${(g.cons * 100).toFixed(0)}% ${g.home.abbr}</span></div><div class="pbar"><div style="width:${((1 - g.cons) * 100).toFixed(1)}%;background:var(--blue);"></div><div style="width:${(g.cons * 100).toFixed(1)}%;background:var(--green);"></div></div></div>` : ""}
       <div class="xstats" style="margin-top:10px;"><div><div class="xh">MODEL WIN PROBABILITY · P(${g.home.abbr})</div>
-        ${mrow("W-Elo", g.mElo)}${mrow("W-Pythag", g.mPyth)}${mrow("W-Form", g.mForm)}${mrow("W-Sharp", g.mSharp)}${mrow("Consensus", g.cons)}
+        ${mrow("W-Elo", g.mElo, "#9bb8e8")}${mrow("W-Pythag", g.mPyth, "#7aa7f0")}${mrow("W-Form", g.mForm, "var(--gold)")}${mrow("W-Sharp", g.mSharp, "#c084fc")}${mrow("Consensus", g.cons, "var(--green)")}
         ${g.impl != null ? `<div class="mrow"><span class="mlabel" style="color:var(--dim)">Market (de-vig)</span><div class="mbar"><i style="width:${(g.impl * 100).toFixed(0)}%;background:var(--dim);"></i></div><span class="mpct">${(g.impl * 100).toFixed(1)}%</span><span class="medge"></span></div>` : `<div class="fnote">no line posted yet</div>`}</div></div>`;
     grid.appendChild(card);
   }
@@ -2239,9 +2255,12 @@ function renderWnba() {
   }
   // props
   if (WS.view === "props") {
-  root.appendChild(el("div", "h1", `PLAYER PROPS <small>· projections from each player's game logs</small>`));
-  const selBtns = Object.keys(W_STATS).map(k => `<button data-wstat="${k}" class="${k === WS.stat ? "on" : ""}">${k}</button>`).join("");
-  root.appendChild(el("div", "subhead", `Projection = 60% last-5 / 40% season per-game rate × opponent defense factor. P(OVER) uses the player's own game-to-game spread. Type your book's line, or <button class="btn ghost" id="wPropBtn">Fetch ${WS.stat} lines (Odds API)</button><br><span class="seg" style="margin-top:8px;display:inline-flex;">${selBtns}</span>`));
+  const comboOpts = ["PRA", "P+R", "P+A", "R+A"];
+  const isCombo = comboOpts.includes(WS.stat);
+  const statName = { PTS: "POINTS", REB: "REBOUNDS", AST: "ASSISTS" }[WS.stat] || "COMBOS · " + WS.stat;
+  root.appendChild(el("div", "h1", `${statName} <small>· player prop model</small>`));
+  const selBtns = isCombo ? `<br><span class="seg" style="margin-top:8px;display:inline-flex;">` + comboOpts.map(k => `<button data-wstat="${k}" class="${k === WS.stat ? "on" : ""}">${k}</button>`).join("") + `</span>` : "";
+  root.appendChild(el("div", "subhead", `Projection = 60% last-5 / 40% season per-game rate × opponent defense factor. P(OVER) uses the player's own game-to-game spread. Type your book's line, or <button class="btn ghost" id="wPropBtn">Fetch ${WS.stat} lines (Odds API)</button>${selBtns}`));
   const manual = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
   const pgrid = el("div", "grid wide");
   const rows = WS.players.map(p => ({ p, pr: wnbaProj(p, WS.stat) })).filter(x => x.pr && x.pr.playing);
@@ -2299,7 +2318,7 @@ function switchTab(name) {
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
 const MLB_TABS = [["board", "BOARD"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
-const WNBA_TABS = [["wnba:board", "BOARD"], ["wnba:props", "PLAYER PROPS"], ["wnba:rec", "MODEL RECORDS"]];
+const WNBA_TABS = [["wnba:board", "BOARD"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:PRA", "COMBOS"], ["wnba:rec", "MODEL RECORDS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
   const tabs = APP_SPORT === "mlb" ? MLB_TABS : WNBA_TABS;
@@ -2310,7 +2329,9 @@ function renderTabs(active) {
 function selectTab(key) {
   renderTabs(key);
   if (key.startsWith("wnba")) {
-    WS.view = key.split(":")[1] || "board";
+    const parts = key.split(":");
+    WS.view = parts[1] || "board";
+    if (parts[2]) WS.stat = parts[2];
     switchTab("wnba");
     if (WS.loaded) renderWnba();
   } else switchTab(key);
