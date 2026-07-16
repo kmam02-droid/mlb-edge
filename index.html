@@ -12,10 +12,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0a0d13; --panel:#12161f; --panel2:#151a24; --panel3:#1a2130; --panel4:#161c27;
-    --line:#212a38; --line2:#26303f; --line3:#1e2735;
-    --txt:#eef1f7; --dim:#8792a6; --dim2:#697588; --dim3:#5a6474;
-    --blue:#5b9dff; --gold:#fbbf24; --green:#34d399; --red:#f87171; --amber:#f59e0b;
+    --bg:#0a0d14; --panel:#131a26; --panel2:#141b28; --panel3:#1a2233; --panel4:#151b28;
+    --line:#232d40; --line2:#2a3549; --line3:#1e2735;
+    --txt:#edf1f8; --dim:#8b96ab; --dim2:#697588; --dim3:#59637a;
+    --blue:#5b9dff; --gold:#f5b93e; --green:#34d399; --red:#f87171; --amber:#f59e0b;
     --cond:'Barlow Condensed',system-ui,sans-serif;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
@@ -123,6 +123,11 @@
   .chip{font-size:10px;color:#a9b2c2;background:var(--panel3);padding:2px 8px;border-radius:20px;font-weight:600;}
   .chip.green{color:var(--green);} .chip.red{color:var(--red);} .chip.gold{color:var(--gold);}
   .manline{width:60px;background:var(--panel3);border:1px solid var(--line2);color:var(--txt);border-radius:6px;padding:3px 6px;font-size:12px;font-family:'Barlow';}
+  .lineinput{margin-left:auto;background:var(--panel4);border:1px solid var(--line2);border-radius:10px;padding:5px 10px 6px;text-align:center;}
+  .lineinput .ll{font-size:8.5px;font-weight:800;letter-spacing:1px;color:var(--dim3);display:block;margin-bottom:1px;}
+  .lineinput input{width:64px;background:transparent;border:none;outline:none;color:var(--gold);font-family:var(--cond);font-weight:800;font-size:18px;text-align:center;padding:0;}
+  .lineinput input::placeholder{color:var(--dim3);font-weight:600;}
+  .tier{font-size:9px;font-weight:800;letter-spacing:.8px;padding:2px 7px;border-radius:5px;margin-top:4px;display:inline-block;}
   svg.spark{background:var(--panel3);border-radius:6px;}
   /* MY MODEL */
   .modelwrap{display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start;}
@@ -1510,9 +1515,9 @@ function kCard(r, manual) {
       <span class="chip">exp ${proj.expIP.toFixed(1)} IP</span>
       <span class="chip">${opp.abbr} K% ${(100 * (S.teams[opp.id]?.hit?.kPct ?? 0)).toFixed(1)}</span>
       ${edgeTxt}
-      <span class="chip" style="margin-left:auto;">line: <input class="manline" type="number" step="0.5" data-pid="${proj.pid}" value="${manual[proj.pid] ?? (pr.line ?? "")}"></span>
+      ${lean && lean.lean !== "PASS" && line != null ? (() => { const s = Math.max(lean.pOver, 1 - lean.pOver); const t = s >= 0.62 ? ["STRONG BET", "var(--green)", "rgba(52,211,153,0.14)"] : s >= 0.56 ? ["GOOD", "var(--gold)", "rgba(245,185,62,0.13)"] : ["ALRIGHT", "var(--blue)", "rgba(91,157,255,0.12)"]; return `<span class="tier" style="color:${t[1]};background:${t[2]};">${t[0]}</span>`; })() : ""}
     </div>`;
-  card.querySelector(".manline").addEventListener("change", ev => {
+  card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
     m[ev.target.dataset.pid] = ev.target.value;
     if (hasLS) localStorage.setItem("kb_lines_" + S.date, JSON.stringify(m));
@@ -1594,7 +1599,6 @@ function hitCard(p) {
       <span class="chip ${p.starterBAA > (S.league.avg || 0.245) * 1.04 ? "green" : ""}">opp starter allows ${p.starterBAA ? p.starterBAA.toFixed(3).replace(/^0/, "") : "—"} AVG</span>
       <span class="chip ${p.kAdj != null && p.kAdj < 0.95 ? "red" : ""}">K matchup ×${p.kAdj != null ? p.kAdj.toFixed(2) : "1.00"}</span>
       ${verdict}
-      <span class="chip" style="margin-left:auto;">book odds: <input class="manline" type="number" step="5" placeholder="-250" data-hid="${p.id}" value="${manual[p.id] ?? ""}"></span>
     </div>`;
   card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_hitml_" + S.date) || "{}") : {};
@@ -1691,6 +1695,28 @@ function renderRecords() {
       recCard("★ BEST BETS (ML)", rec.best, true)
     ].join("")));
     if (!anyGraded && anyPending) root.appendChild(el("div", "subhead", `First picks are saved and waiting on final scores — records appear after tonight's games finish and you reopen the app.`));
+    // day-by-day: newest graded picks so you can watch the record move
+    const rg = [];
+    for (const d of Object.keys(jr)) for (const pk of Object.keys(jr[d])) { const e = jr[d][pk]; if (e.res != null) rg.push(e); }
+    rg.sort((a, b) => (a.date < b.date ? 1 : -1));
+    if (rg.length) {
+      root.appendChild(el("div", "h1", `RECENT GRADED PICKS <small>· newest first — each day's picks grade the next time you open the app after finals${rec.cons.pending ? ` · ${rec.cons.pending} pending now` : ""}</small>`));
+      const box = el("div", "card");
+      box.innerHTML = rg.slice(0, 14).map(e => {
+        const winAbbr = e.res === "H" ? e.h.abbr : e.a.abbr;
+        const m = (name, p) => p == null ? "" : `<span class="chip ${((p >= 0.5) === (e.res === "H")) ? "green" : "red"}">${name} ${((p >= 0.5) === (e.res === "H")) ? "✓" : "✗"}</span>`;
+        return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--line3);font-size:12px;">
+          <span style="color:var(--dim3);width:76px;">${e.date}</span>
+          <b style="font-family:var(--cond);font-size:15px;">${e.a.abbr} @ ${e.h.abbr}</b>
+          <span class="chip gold">${winAbbr} won</span>
+          <div class="spacer"></div>
+          ${m("KEV", e.p?.kevin)}${m("PYT", e.p?.pyth)}${m("ELO", e.p?.elo)}${m("SHP", e.p?.sharp)}${m("CONS", e.p?.cons)}
+        </div>`;
+      }).join("");
+      root.appendChild(box);
+    } else if (anyPending) {
+      root.appendChild(el("div", "subhead", "No graded picks yet — note that no MLB games were played during the All-Star break, so there was nothing to grade those days. Regular grading resumes with the schedule."));
+    }
   } else {
     root.appendChild(el("div", "nobets", "No tracked picks yet. Records build automatically: open the app any day before first pitch and today's model picks get saved, then graded when the games finish. The season backtest below gives you instant history in the meantime."));
   }
@@ -2201,6 +2227,29 @@ async function fetchWnbaProps() {
   renderWnba();
 }
 
+/* ---- best props (for the WNBA board strip) ---- */
+function wnbaBestProps() {
+  const out = [];
+  const stats = ["PTS", "REB", "AST", "PRA"];
+  const manualAll = {};
+  for (const st of stats) manualAll[st] = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + st + "_" + S.date) || "{}") : {};
+  for (const p of WS.players) {
+    for (const st of stats) {
+      const pr = wnbaProj(p, st); if (!pr || !pr.playing) continue;
+      const vals = (p.logs || []).map(W_STATS[st]);
+      const cv = pr.avg > 0 ? sd(vals) / pr.avg : 9;
+      const grade = cv <= 0.28 ? "A" : cv <= 0.4 ? "B" : cv <= 0.55 ? "C" : "D";
+      const bo = WS.propBook[st]?.[p.id];
+      const line = manualAll[st][p.id] != null && manualAll[st][p.id] !== "" ? parseFloat(manualAll[st][p.id]) : (bo?.line ?? null);
+      const pOver = line != null ? 1 - phi((line - pr.proj) / pr.sigma) : null;
+      out.push({ p, st, pr, grade, line, pOver, prob: pOver != null ? Math.max(pOver, 1 - pOver) : null, snr: pr.sigma > 0 ? pr.proj / pr.sigma : 0 });
+    }
+  }
+  // lines first (most likely to hit their side), then most consistent projections
+  out.sort((a, b) => (b.prob ?? 0) - (a.prob ?? 0) || b.snr - a.snr);
+  return out.slice(0, 6);
+}
+
 /* ---- render ---- */
 function wLogo(t, size) { return t?.logo ? `<img src="${t.logo}" onerror="this.style.visibility='hidden'" style="width:${size}px;height:${size}px;object-fit:contain;flex:0 0 auto;" alt="">` : ""; }
 function renderWnba() {
@@ -2228,6 +2277,26 @@ function renderWnba() {
   if (WS.view === "rec" && (!bt || !bt.n)) root.appendChild(el("div", "nobets", "Model records need the season's results, which didn't load this time — the red note above names the source that failed. Hit RELOAD WNBA DATA below to try again."));
   // games
   if (WS.view === "board") {
+  const bp = wnbaBestProps();
+  if (bp.length) {
+    root.appendChild(el("div", null, `<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;"><div class="h1 gold" style="margin:0;">BEST PROPS</div><div style="font-size:12px;color:var(--dim);font-weight:600;">most likely to hit (with lines: strongest side · without: steadiest players) — tap one to open its tab</div></div>`));
+    const strip = el("div", "strip");
+    for (const b of bp) {
+      const stars = b.grade === "A" ? 3 : b.grade === "B" ? 2 : 1;
+      const diamonds = [1, 2, 3].map(i => `<div class="diamond" style="background:${i <= stars ? "var(--gold)" : "#2a3342"}"></div>`).join("");
+      const card = el("div", "bb", `
+        <div class="bbtop"><div class="stars">${diamonds}<span class="conf">GRADE ${b.grade}</span></div>
+          <div style="display:flex;gap:6px;align-items:center;"><span class="typechip">${b.st}</span>${b.pOver != null ? `<span class="edgechip">${b.pOver >= 0.5 ? "OVER" : "UNDER"} ${(Math.max(b.pOver, 1 - b.pOver) * 100).toFixed(0)}%</span>` : ""}</div></div>
+        <div class="bbmain"><div class="hs big"><img src="https://a.espncdn.com/i/headshots/wnba/players/full/${b.p.id}.png" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;"></div>
+          <div style="min-width:0;"><div class="bbabbr" style="font-size:20px;">${(b.p.name || "").split(" ").slice(-1)[0].toUpperCase()}</div><div class="bbsub">${b.p.team} vs ${b.pr.oppAbbr || "?"}</div></div></div>
+        <div class="bbfoot"><div><div class="lbl">PROJ ${b.st}</div><div class="bignum" style="color:var(--gold);">${b.pr.proj.toFixed(1)}</div></div>
+          <div style="text-align:right;"><div class="lbl">${b.line != null ? "LINE " + b.line : "LAST 5 AVG"}</div><div class="bignum">${b.line != null ? (Math.max(b.pOver, 1 - b.pOver) * 100).toFixed(0) + "%" : b.pr.last5.toFixed(1)}</div></div></div>`);
+      card.style.cursor = "pointer";
+      card.addEventListener("click", () => selectTab(["PRA", "P+R", "P+A", "R+A"].includes(b.st) ? "wnba:props:PRA" : "wnba:props:" + b.st));
+      strip.appendChild(card);
+    }
+    root.appendChild(strip);
+  }
   root.appendChild(el("div", "h1", `GAMES <small>· ${WS.games.length} on ${S.date}</small>`));
   if (!WS.games.length) root.appendChild(el("div", "nobets", "No WNBA games on this date — could be a league break. Try the date picker up top (then RELOAD below), and check PLAYER PROPS and MODEL RECORDS — they work any day."));
   const grid = el("div", "grid");
@@ -2260,38 +2329,51 @@ function renderWnba() {
   const statName = { PTS: "POINTS", REB: "REBOUNDS", AST: "ASSISTS" }[WS.stat] || "COMBOS · " + WS.stat;
   root.appendChild(el("div", "h1", `${statName} <small>· player prop model</small>`));
   const selBtns = isCombo ? `<br><span class="seg" style="margin-top:8px;display:inline-flex;">` + comboOpts.map(k => `<button data-wstat="${k}" class="${k === WS.stat ? "on" : ""}">${k}</button>`).join("") + `</span>` : "";
-  root.appendChild(el("div", "subhead", `Projection = 60% last-5 / 40% season per-game rate × opponent defense factor. P(OVER) uses the player's own game-to-game spread. Type your book's line, or <button class="btn ghost" id="wPropBtn">Fetch ${WS.stat} lines (Odds API)</button>${selBtns}`));
+  root.appendChild(el("div", "subhead", `Projection = 60% last-5 / 40% season per-game rate × opponent defense factor. P(OVER) uses the player's own game-to-game spread. Bet quality once a real line is in: <b style="color:var(--green)">STRONG BET</b> = model gives its side 62%+ · <b style="color:var(--gold)">GOOD</b> = 56%+ · <b style="color:var(--blue)">ALRIGHT</b> = 52%+ · below that, pass. Type your book's line, or <button class="btn ghost" id="wPropBtn">Fetch ${WS.stat} lines (Odds API)</button>${selBtns}`));
   const manual = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
   const pgrid = el("div", "grid wide");
   const rows = WS.players.map(p => ({ p, pr: wnbaProj(p, WS.stat) })).filter(x => x.pr && x.pr.playing);
   const rows2 = rows.length ? rows : WS.players.map(p => ({ p, pr: wnbaProj(p, WS.stat) })).filter(x => x.pr).slice(0, 12);
+  // best props first: strongest lean on a real line, then steadiest projections
+  for (const r of rows2) {
+    const bo0 = WS.propBook[WS.stat]?.[r.p.id];
+    const l0 = manual[r.p.id] != null && manual[r.p.id] !== "" ? parseFloat(manual[r.p.id]) : (bo0?.line ?? null);
+    r.strength = l0 != null ? Math.abs(0.5 - (1 - phi((l0 - r.pr.proj) / r.pr.sigma))) : -1;
+    r.snr = r.pr.sigma > 0 ? r.pr.proj / r.pr.sigma : 0;
+  }
+  rows2.sort((a, b) => b.strength - a.strength || b.snr - a.snr);
   for (const { p, pr } of rows2.slice(0, 15)) {
     const bo = WS.propBook[WS.stat]?.[p.id];
-    const line = manual[p.id] != null && manual[p.id] !== "" ? parseFloat(manual[p.id]) : (bo?.line ?? null);
+    const modelLine = Math.max(0.5, Math.round(pr.proj - 0.5) + 0.5); // nearest .5 to the projection ⇒ over/under lands near even (-100) odds
+    const hasRealLine = (manual[p.id] != null && manual[p.id] !== "") || bo?.line != null;
+    const line = manual[p.id] != null && manual[p.id] !== "" ? parseFloat(manual[p.id]) : (bo?.line ?? modelLine);
     const pOver = line != null ? 1 - phi((line - pr.proj) / pr.sigma) : null;
-    const lean = pOver == null ? null : pOver >= 0.56 ? "OVER" : pOver <= 0.44 ? "UNDER" : "PASS";
-    const lc = lean === "OVER" ? "var(--green)" : lean === "UNDER" ? "var(--red)" : "var(--dim)";
+    const lean = pOver == null ? null : !hasRealLine ? "MODEL" : pOver >= 0.56 ? "OVER" : pOver <= 0.44 ? "UNDER" : "PASS";
+    const lc = lean === "OVER" ? "var(--green)" : lean === "UNDER" ? "var(--red)" : lean === "MODEL" ? "var(--blue)" : "var(--dim)";
+    const chartVals = (p.logs || []).slice(0, 10).map(W_STATS[WS.stat]).reverse(); // oldest → newest
     const card = el("div", "card kcard");
     card.innerHTML = `
       <div class="ktop"><div class="hs big"><img src="https://a.espncdn.com/i/headshots/wnba/players/full/${p.id}.png" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;"></div>
         <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
         <div style="font-size:11px;color:var(--dim);">${p.team}${pr.oppAbbr ? " vs " + pr.oppAbbr : ""} · ${pr.n} games logged</div>
         ${pr.warn ? `<span class="warn">⚠ ${pr.warn}</span>` : ""}</div>
-        ${lean ? `<div class="leanchip" style="background:${lean === "OVER" ? "rgba(52,211,153,0.13)" : lean === "UNDER" ? "rgba(248,113,113,0.12)" : "var(--panel3)"};color:${lc};">${lean}${lean !== "PASS" ? " " + line : ""}</div>` : ""}</div>
+        ${lean ? `<div class="leanchip" style="background:${lean === "OVER" ? "rgba(52,211,153,0.13)" : lean === "UNDER" ? "rgba(248,113,113,0.12)" : lean === "MODEL" ? "rgba(91,157,255,0.12)" : "var(--panel3)"};color:${lc};">${lean}${lean !== "PASS" ? " " + line : ""}</div>` : ""}</div>
       <div class="kmid">
         <div class="kstat"><div class="v">${pr.proj.toFixed(1)}</div><div class="l">PROJ ${WS.stat}</div></div>
         <div class="vsep"></div>
-        <div class="kstat"><div class="v" style="color:var(--dim);">${line ?? "—"}</div><div class="l">${bo ? bo.source.toUpperCase() : "LINE"}</div></div>
+        <div class="kstat"><div class="v" style="color:${hasRealLine ? "var(--dim)" : "var(--blue)"};">${line ?? "—"}</div><div class="l">${bo ? bo.source.toUpperCase() : hasRealLine ? "YOUR LINE" : "MODEL LINE ≈ −100"}</div></div>
         <div class="vsep"></div>
         <div class="kstat"><div class="v" style="color:${lc};">${pOver != null ? (pOver * 100).toFixed(0) + "%" : "—"}</div><div class="l">P(OVER)</div></div>
+        <div class="spacer"></div>
+        <div>${sparkSVG(chartVals, line)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${WS.stat} — LAST ${chartVals.length} GAMES</div></div>
       </div>
       <div class="chips">
         <span class="chip">season ${pr.avg.toFixed(1)}</span><span class="chip">last 5: ${pr.last5.toFixed(1)}</span>
         <span class="chip ${pr.mult > 1.02 ? "green" : pr.mult < 0.98 ? "red" : ""}">opp factor ×${pr.mult.toFixed(2)}</span>
-        ${bo?.over != null ? `<span class="chip">over ${fmtML(bo.over)}</span>` : ""}
-        <span class="chip" style="margin-left:auto;">line: <input class="manline" type="number" step="0.5" data-wpid="${p.id}" value="${manual[p.id] ?? (bo?.line ?? "")}"></span>
+        ${bo?.over != null ? `<span class="chip">over ${fmtML(bo.over)}</span>` : (!hasRealLine && pOver != null ? `<span class="chip" style="color:var(--blue)">fair over ${fmtML(probToAmerican(pOver))}</span>` : "")}
+        ${(() => { if (!hasRealLine || pOver == null) return ""; const s = Math.max(pOver, 1 - pOver); const t = s >= 0.62 ? ["STRONG BET", "var(--green)", "rgba(52,211,153,0.14)"] : s >= 0.56 ? ["GOOD", "var(--gold)", "rgba(245,185,62,0.13)"] : s >= 0.52 ? ["ALRIGHT", "var(--blue)", "rgba(91,157,255,0.12)"] : ["PASS", "var(--dim)", "var(--panel3)"]; return `<span class="tier" style="color:${t[1]};background:${t[2]};">${t[0]}</span>`; })()}
       </div>`;
-    card.querySelector(".manline").addEventListener("change", ev => {
+    card.querySelector(".manline")?.addEventListener("change", ev => {
       const m = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
       m[ev.target.dataset.wpid] = ev.target.value;
       if (hasLS) localStorage.setItem("kb_wline_" + WS.stat + "_" + S.date, JSON.stringify(m));
@@ -2351,8 +2433,16 @@ function init() {
   S.date = today;
   S.journal = loadJournal();
   $("#datePick").value = today;
-  $("#datePick").addEventListener("change", ev => { S.date = ev.target.value; loadAll(); });
-  $("#refreshBtn").addEventListener("click", () => loadAll());
+  $("#datePick").addEventListener("change", ev => {
+    S.date = ev.target.value;
+    WS.loaded = false; // WNBA refetches for the new date next time it's viewed
+    loadAll();
+    if (APP_SPORT === "wnba") wnbaEnsure();
+  });
+  $("#refreshBtn").addEventListener("click", () => {
+    if (APP_SPORT === "wnba") { WS.loaded = false; wnbaEnsure(); }
+    else loadAll();
+  });
   loadAll();
 }
 if (typeof window !== "undefined" && typeof document !== "undefined" && document.getElementById("status")) init();
@@ -2363,7 +2453,7 @@ if (typeof module !== "undefined" && module.exports) {
     parseSchedule, parseHitting, parseSplit, parseResults, parsePitchers, parseRoster, pitcherWarnings,
     kevinModel, pythagModel, eloModel, sharpFit, sharpModel, computeAll, projectKs, propLean, hrProject, computeHR, hitProject, computeHits, hitBookPrice, bestBets, bbMax, oddsOK, activePreset, bounceLabel,
     snapshotPicks, gradeJournal, modelRecords, backtestModels, routed, RELAYS, PROXY_MAP, j, jFetch,
-    WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj };
+    WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj, wnbaBestProps };
 }
 </script>
 </body>
