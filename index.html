@@ -169,6 +169,13 @@
   .pillnav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
   .pill{padding:7px 14px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);cursor:pointer;font-weight:700;font-size:12px;letter-spacing:.3px;}
   .pill.active{background:var(--blue);color:#07101f;border-color:var(--blue);}
+  .seg{display:inline-flex;background:var(--panel3);border:1px solid var(--line2);border-radius:9px;overflow:hidden;}
+  .seg button{background:transparent;border:none;color:var(--dim);font-family:'Barlow';font-size:11.5px;font-weight:700;letter-spacing:.5px;padding:7px 13px;cursor:pointer;}
+  .seg button.on{background:var(--blue);color:#07101f;}
+  #sportSwitch{display:inline-flex;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:3px;gap:3px;}
+  #sportSwitch button{background:transparent;border:none;border-radius:10px;padding:8px 18px;font-family:var(--cond);font-weight:800;font-size:16px;letter-spacing:.8px;color:var(--dim);cursor:pointer;transition:all .15s;}
+  #sportSwitch button.on{background:linear-gradient(135deg,#5b9dff,#3f6fd6);color:#fff;box-shadow:0 3px 12px rgba(91,157,255,0.35);}
+  @media(max-width:640px){#sportSwitch button{padding:7px 12px;font-size:14px;}}
   .help{max-width:840px;font-size:14px;}
   .help h2{margin:16px 0 6px;font-family:var(--cond);font-weight:800;font-size:22px;letter-spacing:.4px;color:var(--blue);}
   .help h3{margin:14px 0 4px;font-size:14px;}
@@ -179,6 +186,9 @@
   table.spec td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top;}
   .callout{background:var(--panel2);border-left:3px solid var(--gold);border-radius:6px;padding:10px 12px;margin:10px 0;font-size:13px;}
   .pro{color:var(--green);font-weight:700;} .con{color:var(--red);font-weight:700;}
+  details.exp{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px 14px;margin-bottom:14px;}
+  details.exp summary{cursor:pointer;font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.5px;color:var(--blue);}
+  details.exp p{margin:8px 0 2px;font-size:13px;color:#c6ccdb;line-height:1.55;}
   .foot{text-align:center;font-size:11px;color:var(--dim3);margin-top:34px;line-height:1.6;}
   /* BET DETAIL MODAL */
   .modal-back{position:fixed;inset:0;background:rgba(5,8,12,0.72);backdrop-filter:blur(3px);z-index:100;display:flex;align-items:center;justify-content:center;padding:18px;}
@@ -235,7 +245,7 @@
         <div class="sub" id="subline">loading…</div>
       </div>
     </div>
-    <span class="seg" id="sportSwitch" style="margin-left:6px;"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button></span>
+    <span id="sportSwitch" style="margin-left:8px;"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button></span>
     <div class="spacer"></div>
     <input type="date" id="datePick">
     <button class="btn" id="refreshBtn">Refresh</button>
@@ -257,6 +267,8 @@
   <section id="tab-hr" style="display:none"></section>
   <section id="tab-hits" style="display:none"></section>
   <section id="tab-wnba" style="display:none"></section>
+  <section id="tab-locks" style="display:none"></section>
+  <section id="tab-value" style="display:none"></section>
   <section id="tab-rec" style="display:none"></section>
   <section id="tab-model" style="display:none"></section>
   <section id="tab-how" style="display:none"></section>
@@ -451,6 +463,7 @@ async function loadAll() {
   }
 
   parseSchedule(res.sched);
+  loadBook(); // restore the most recent book odds saved for this date
   if (res.hit) parseHitting(res.hit);
   if (res.rp) parseSplit(res.rp, "rp");
   if (res.sp) parseSplit(res.sp, "sp");
@@ -617,6 +630,34 @@ function parseRoster(data) {
   return out;
 }
 
+/* ---------- inline model explainers + book-odds persistence ---------- */
+function expBox(title, body) { return el("details", "exp", `<summary>❓ ${title}</summary><p>${body}</p>`); }
+function saveBook() {
+  if (!hasLS) return;
+  try { localStorage.setItem("kb_book_" + S.date, JSON.stringify({ hit: S.hitOdds, hr: S.hrOdds, w: WS.propBook })); } catch (e) {}
+}
+function loadBook() {
+  if (!hasLS) return;
+  try {
+    const b = JSON.parse(localStorage.getItem("kb_book_" + S.date) || "{}");
+    if (b.hit) S.hitOdds = { ...b.hit, ...S.hitOdds };
+    if (b.hr) S.hrOdds = { ...b.hr, ...S.hrOdds };
+    if (b.w) for (const k of Object.keys(b.w)) WS.propBook[k] = { ...b.w[k], ...(WS.propBook[k] || {}) };
+  } catch (e) {}
+}
+/* cached ESPN athlete-name lookups (persisted; ~free after the first day) */
+const athNames = hasLS ? (() => { try { return JSON.parse(localStorage.getItem("kb_athNames") || "{}"); } catch (e) { return {}; } })() : {};
+let athBudget = 40;
+async function athName(ref) {
+  const m = (ref || "").match(/athletes\/(\d+)/); if (!m) return null;
+  const id = m[1];
+  if (athNames[id]) return athNames[id];
+  if (athBudget <= 0) return null;
+  athBudget--;
+  try { const a = await j(ref.replace(/^http:/, "https:")); if (a?.fullName) { athNames[id] = a.fullName; if (hasLS) try { localStorage.setItem("kb_athNames", JSON.stringify(athNames)); } catch (e) {} return a.fullName; } } catch (e) {}
+  return null;
+}
+
 /* ---------- SHORT-LEASH STARTER WARNINGS ---------- */
 function pitcherWarnings(pid) {
   const p = S.pitchers[pid]; if (!p?.season) return [];
@@ -657,26 +698,45 @@ async function loadEspnOdds(scoreboard) {
         S.odds[game.pk] = { mlHome: parseAm(mlH), mlAway: parseAm(mlA), book: item.provider?.name || "book" };
       }
       try {
-        const pb = await j(`https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/events/${ev.id}/competitions/${ev.id}/odds/100/propBets?limit=200`);
-        const kItems = (pb?.items || []).filter(it => it.type?.id === "46" || /total strikeouts/i.test(it.type?.name || ""));
-        const byAth = {};
-        for (const it of kItems) {
-          const m = (it.athlete?.$ref || "").match(/athletes\/(\d+)/); if (!m) continue;
-          (byAth[m[1]] = byAth[m[1]] || []).push(it);
-        }
-        for (const athId of Object.keys(byAth)) {
-          const line = num(byAth[athId][0]?.current?.target?.value) || num(byAth[athId][0]?.odds?.total?.value);
-          if (!line) continue;
-          let name = null;
-          try { const a = await j(byAth[athId][0].athlete.$ref.replace(/^http:/, "https:")); name = a?.fullName; } catch (e) {}
+        // bulk name resolution: one roster call per team (cached), instead of one lookup per player
+        try {
+          await Promise.all([homeC, awayC].map(async tc => {
+            const tid = tc?.team?.id; if (!tid || athNames["r" + tid]) return;
+            const ro = await j(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${tid}/roster`);
+            for (const grp of ro?.athletes || []) for (const a of (grp?.items || (grp?.id ? [grp] : []))) if (a?.id && a?.fullName) athNames[a.id] = a.fullName;
+            athNames["r" + tid] = 1;
+          }));
+          if (hasLS) try { localStorage.setItem("kb_athNames", JSON.stringify(athNames)); } catch (e) {}
+        } catch (e) {}
+        const pb = await j(`https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/events/${ev.id}/competitions/${ev.id}/odds/100/propBets?limit=300`);
+        for (const it of (pb?.items || [])) {
+          const tn = it.type?.name || "";
+          const isK = it.type?.id === "46" || /total strikeouts/i.test(tn);
+          const isHit = /record a hit/i.test(tn);
+          const isHR = /home run/i.test(tn) && !/allow/i.test(tn);
+          if (!isK && !isHit && !isHR) continue;
+          const name = await athName(it.athlete?.$ref);
           if (!name) continue;
-          const pid = [game.home, game.away].find(s => s.pitcherId && norm(s.pitcherName) === norm(name))?.pitcherId;
-          if (pid && !S.props[pid]) S.props[pid] = { line, source: (item?.provider?.name || "DK") };
+          if (isK) {
+            const line = num(it.current?.target?.value) || num(it.odds?.total?.value);
+            if (!line) continue;
+            const pid = [game.home, game.away].find(s => s.pitcherId && norm(s.pitcherName) === norm(name))?.pitcherId;
+            if (pid && !S.props[pid]) S.props[pid] = { line, source: (item?.provider?.name || "DK") };
+          } else {
+            const price = parseAm(it.odds?.american?.value ?? it.odds?.american);
+            if (price == null) continue;
+            const all = [...(S.hitters[game.home.id] || []), ...(S.hitters[game.away.id] || [])];
+            const b = all.find(x => norm(x.name) === norm(name));
+            if (!b) continue;
+            const store = isHit ? S.hitOdds : S.hrOdds;
+            if (!store[b.id]) store[b.id] = { price, source: "DK (ESPN)" };
+          }
         }
       } catch (e) { /* props optional */ }
     } catch (e) { /* per-event ok */ }
   });
   await Promise.all(jobs);
+  saveBook();
 }
 function parseAm(v) { if (v == null) return null; const n = parseInt(String(v).replace("+", ""), 10); return isFinite(n) ? n : null; }
 
@@ -716,6 +776,7 @@ async function fetchMarketPrices(marketKey, applyFn, label) {
       }
     } catch (e) { /* per event */ }
   }
+  saveBook();
   computeAll(); renderAll();
   setStatus(`${label} prices updated from The Odds API.`);
 }
@@ -1136,7 +1197,7 @@ function edgeCls(e) { return e >= 0 ? "var(--green)" : "var(--red)"; }
 function renderAll() {
   const anyBook = Object.values(S.odds)[0]?.book || "DraftKings";
   $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`;
-  renderBoard(); renderKs(); renderHR(); renderHits(); renderRecords(); renderModelTab(); renderHow();
+  renderBoard(); renderKs(); renderHR(); renderHits(); renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
 }
 
 /* ---------- BEST BETS + SLATE ---------- */
@@ -1454,6 +1515,7 @@ function sparkSVG(vals, line) {
 function renderKs() {
   const root = $("#tab-ks"); root.innerHTML = "";
   root.appendChild(el("div", "h1", "STRIKEOUT LEANS"));
+  root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `It takes the pitcher's usual strikeouts per batter, how deep he usually pitches, and how whiff-prone tonight's lineup is → <b>projected Ks</b>. The bars are his actual last starts (green = over the line, red = under). The A–D grade says how repeatable he is — only trust leans on A/B pitchers with no ⚠ warnings. OVER when the projection clearly beats the book's line, UNDER when it falls clearly short.`));
   root.appendChild(el("div", "subhead", `Projected Ks vs the book line — consistency graded A (metronome) to D (boom/bust). Type a line manually if none loads. <button class="btn ghost" id="fetchKBtn" style="margin-left:8px;">Fetch book prices (Odds API)</button>`));
   const manual = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
   const rows = [];
@@ -1516,6 +1578,10 @@ function kCard(r, manual) {
       <span class="chip">${opp.abbr} K% ${(100 * (S.teams[opp.id]?.hit?.kPct ?? 0)).toFixed(1)}</span>
       ${edgeTxt}
       ${lean && lean.lean !== "PASS" && line != null ? (() => { const s = Math.max(lean.pOver, 1 - lean.pOver); const t = s >= 0.62 ? ["STRONG BET", "var(--green)", "rgba(52,211,153,0.14)"] : s >= 0.56 ? ["GOOD", "var(--gold)", "rgba(245,185,62,0.13)"] : ["ALRIGHT", "var(--blue)", "rgba(91,157,255,0.12)"]; return `<span class="tier" style="color:${t[1]};background:${t[2]};">${t[0]}</span>`; })() : ""}
+      <span style="margin-left:auto;text-align:right;align-self:flex-end;">
+        <span class="lbl" style="display:block;">BOOK</span>
+        ${pr.overPrice != null && pr.underPrice != null ? `<b style="font-family:var(--cond);font-weight:800;font-size:17px;color:var(--txt);">o${fmtML(pr.overPrice)} / u${fmtML(pr.underPrice)}</b>` : (pr.line != null ? `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim);">line ${pr.line}</b>` : `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim3);">—</b>`)}
+      </span>
     </div>`;
   card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
@@ -1530,6 +1596,7 @@ function kCard(r, manual) {
 function renderHR() {
   const root = $("#tab-hr"); root.innerHTML = "";
   root.appendChild(el("div", "h1", "HOME RUN MODEL"));
+  root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `Each hitter's homer rate (calmed down so hot streaks don't fool it) × how homer-prone tonight's pitching is × the ballpark → <b>chance he goes deep</b>, converted to <b>FAIR ODDS</b> (what the bet should pay). The rule is simple: only bet it when your book pays MORE than fair — fair +350 and the book offers +450 is value; +280 is not. Book odds pull in automatically from DraftKings when posted; the edge chip does the comparison for you.`));
   const opts = [`<option value="all">All games</option>`].concat(S.games.map(g => `<option value="${g.pk}" ${String(S.hrFilter) === String(g.pk) ? "selected" : ""}>${g.away.abbr} @ ${g.home.abbr}</option>`)).join("");
   root.appendChild(el("div", "subhead", `Anytime-HR probability per hitter: shrunk HR-rate × opposing pitching (starter share by his real innings + bullpen) × park, over ~4 plate appearances. Compare FAIR ODDS to your book's anytime-HR price — value = book pays more than fair. <select id="hrFilter" style="margin-left:8px;">${opts}</select> <button class="btn ghost" id="fetchHrBtn" style="margin-left:6px;">Fetch book prices (Odds API)</button>`));
   const picks = S.hrPicks.filter(p => S.hrFilter === "all" || String(p.gamePk) === String(S.hrFilter)).slice(0, S.hrFilter === "all" ? 24 : 20);
@@ -1545,6 +1612,7 @@ function renderHR() {
 function renderHits() {
   const root = $("#tab-hits"); root.innerHTML = "";
   root.appendChild(el("div", "h1", "HITS MODEL"));
+  root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `The hitter's batting average (steadied against small samples), adjusted for tonight's pitching and the strikeout matchup, over ~4 at-bats → <b>chance of at least one hit</b> and its <b>FAIR ODDS</b>. These land 7-8 times out of 10, so books charge heavy prices — the BET/PASS call fires only when the book's price is lighter than fair. Book odds arrive automatically from DraftKings when posted; anything heavier than −450 never qualifies.`));
   const opts = [`<option value="all">All games</option>`].concat(S.games.map(g => `<option value="${g.pk}" ${String(S.hitFilter) === String(g.pk) ? "selected" : ""}>${g.away.abbr} @ ${g.home.abbr}</option>`)).join("");
   root.appendChild(el("div", "subhead", `Chance of at least one hit tonight — shrunk AVG × opposing pitching (starter's innings share + bullpen) × strikeout matchup, over ~${CFG.hitExpAB} ABs. Regulars (${CFG.minHitPA}+ PA) only. <b style="color:var(--txt)">BET only when the book pays lighter than fair</b> — type your book's "to record a hit" price into a card, or fetch prices with an Odds API key. <select id="hitFilter" style="margin-left:8px;">${opts}</select> <button class="btn ghost" id="fetchHitBtn" style="margin-left:6px;">Fetch book prices (Odds API)</button>`));
   const picks = S.hitPicks.filter(p => S.hitFilter === "all" || String(p.gamePk) === String(S.hitFilter)).slice(0, S.hitFilter === "all" ? 18 : 12);
@@ -1599,6 +1667,10 @@ function hitCard(p) {
       <span class="chip ${p.starterBAA > (S.league.avg || 0.245) * 1.04 ? "green" : ""}">opp starter allows ${p.starterBAA ? p.starterBAA.toFixed(3).replace(/^0/, "") : "—"} AVG</span>
       <span class="chip ${p.kAdj != null && p.kAdj < 0.95 ? "red" : ""}">K matchup ×${p.kAdj != null ? p.kAdj.toFixed(2) : "1.00"}</span>
       ${verdict}
+      <span style="margin-left:auto;text-align:right;align-self:flex-end;">
+        <span class="lbl" style="display:block;">BOOK</span>
+        ${bo?.price != null && isFinite(bo.price) ? `<b style="font-family:var(--cond);font-weight:800;font-size:19px;color:${(p.pHit - americanToProb(bo.price)) >= 0 ? "var(--green)" : "var(--red)"};">${fmtML(bo.price)}</b>` : `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim3);">—</b>`}
+      </span>
     </div>`;
   card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_hitml_" + S.date) || "{}") : {};
@@ -1639,6 +1711,10 @@ function hrCard(p) {
       <span class="chip ${parkPct > 3 ? "gold" : parkPct < -3 ? "red" : ""}">park ${parkPct >= 0 ? "+" : ""}${parkPct}%</span>
       <span class="chip">pitch factor ×${p.pitchFactor.toFixed(2)}</span>
       ${edgeTxt}
+      <span style="margin-left:auto;text-align:right;align-self:flex-end;">
+        <span class="lbl" style="display:block;">BOOK</span>
+        ${bo?.price != null ? `<b style="font-family:var(--cond);font-weight:800;font-size:19px;color:${(p.pHR - americanToProb(bo.price)) >= 0 ? "var(--green)" : "var(--red)"};">${fmtML(bo.price)}</b>` : `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim3);">—</b>`}
+      </span>
     </div>`;
   return card;
 }
@@ -2025,12 +2101,19 @@ async function wnbaLoad() {
   WS.stage = "team list…";
   renderWnba();
   // each stage is independent: one failing source can't blank the whole tab
-  try {
-    const tl = await j(`${W_SITE}/teams?limit=40`);
+  let tl = null;
+  for (let attempt = 0; attempt < 3 && !tl; attempt++) { // the team list is the keystone — retry it
+    try { tl = await j(`${W_SITE}/teams?limit=40`); }
+    catch (e) {
+      if (attempt === 2) WS.errors.push("team list: " + e.message + " (3 tries) — hit RELOAD");
+      else await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+  if (tl) {
     const teams = (tl?.sports?.[0]?.leagues?.[0]?.teams || []).map(t => t.team).filter(Boolean);
     for (const t of teams) WS.teams[+t.id] = { id: +t.id, abbr: t.abbreviation, name: t.displayName, logo: t.logos?.[0]?.href || "", res: [] };
     if (!teams.length) WS.errors.push("team list: empty response");
-  } catch (e) { WS.errors.push("team list: " + e.message); }
+  }
   try {
     WS.stage = "season results (every team's schedule)…"; renderWnba();
     let failed = 0;
@@ -2092,9 +2175,32 @@ async function wnbaLoad() {
       }));
     } catch (e) { WS.errors.push("players: " + e.message); }
   }
+  // prop lines: DraftKings via ESPN, matched by athlete id — free, automatic
+  try {
+    WS.stage = "prop lines (DraftKings via ESPN)…"; renderWnba();
+    await Promise.all((WS.games || []).filter(g => !g.completed && !g.live).map(async g => {
+      try {
+        const pb = await j(`${W_CORE}/events/${g.id}/competitions/${g.id}/odds/100/propBets?limit=300`);
+        for (const it of pb?.items || []) {
+          const tn = it.type?.name || "";
+          const st = /points.*rebounds.*assists/i.test(tn) ? "PRA" : /^total points$/i.test(tn) ? "PTS" : /^total rebounds$/i.test(tn) ? "REB" : /^total assists$/i.test(tn) ? "AST" : null;
+          if (!st) continue;
+          const m = (it.athlete?.$ref || "").match(/athletes\/(\d+)/); if (!m) continue;
+          const id = +m[1];
+          if (!(WS.players || []).some(p => p.id === id)) continue;
+          const line = num(it.current?.target?.value) || num(it.odds?.total?.value);
+          if (!line) continue;
+          const book = (WS.propBook[st] = WS.propBook[st] || {});
+          if (!book[id]) book[id] = { line, source: "DK (ESPN)" };
+        }
+      } catch (e) {}
+    }));
+  } catch (e) {}
   WS.loaded = true; // always show whatever we got — errors appear in red at the top
   WS.loading = false;
   renderWnba();
+  if (typeof renderLocks === "function") renderLocks();
+  if (typeof renderValue === "function") renderValue();
 }
 
 /* ---- 4 moneyline models, all walk-forward backtested ---- */
@@ -2227,6 +2333,203 @@ async function fetchWnbaProps() {
   renderWnba();
 }
 
+/* ================================================================
+   🔒 LOCKS — one page, both sports, the bets most likely to hit
+   ================================================================ */
+function collectLocks() {
+  const out = [];
+  const th = 0.55; // gather from 55%; ≥60% are the real locks, 55-60% fill thin days as LEANs
+  // MLB moneylines (pre-game, inside your odds zone)
+  for (const g of S.games || []) {
+    if (g.state !== "Preview" || g.consensus == null) continue;
+    const homeSide = g.consensus >= 0.5;
+    const prob = homeSide ? g.consensus : 1 - g.consensus;
+    const ml = homeSide ? S.odds[g.pk]?.mlHome : S.odds[g.pk]?.mlAway;
+    if (prob < th || !oddsOK(ml, 2)) continue;
+    const side = homeSide ? g.home : g.away, opp = homeSide ? g.away : g.home;
+    out.push({ sport: "⚾ MLB", type: "MONEYLINE", prob, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (homeSide ? " vs " : " @ ") + opp.abbr, sub: "4-model consensus", time: g.time, go: () => { setSport("mlb"); } });
+  }
+  // MLB safe hits
+  for (const p of (S.hitPicks || []).slice(0, 24)) {
+    const g = (S.games || []).find(x => x.pk === p.gamePk); if (!g || g.state !== "Preview") continue;
+    const bo = hitBookPrice(p.id);
+    const price = bo?.price ?? p.fairHit;
+    if (p.pHit < 0.68 || !oddsOK(price, 2)) continue;
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", prob: p.pHit, big: fmtML(price), bigLbl: bo ? "BOOK ODDS" : "FAIR ODDS", label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: p.teamAbbr + " vs " + p.oppAbbr, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); } });
+  }
+  // MLB strikeout leans (real lines, clean grades)
+  const kman = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
+  for (const g of S.games || []) {
+    if (g.state !== "Preview") continue;
+    for (const sk of ["home", "away"]) {
+      const side = g[sk]; if (!side.pitcherId) continue;
+      const proj = S.pitchers[side.pitcherId]?.proj;
+      if (!proj || proj.warns.length || !["A", "B"].includes(proj.grade)) continue;
+      const line = kman[side.pitcherId] != null && kman[side.pitcherId] !== "" ? parseFloat(kman[side.pitcherId]) : S.props[side.pitcherId]?.line;
+      const lean = propLean(proj, line);
+      if (!lean || lean.lean === "PASS") continue;
+      const prob = lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver;
+      if (prob < th) continue;
+      out.push({ sport: "⚾ MLB", type: "K PROP", prob, big: lean.lean + " " + line, bigLbl: "K LINE", label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: side.abbr + " vs " + (sk === "home" ? g.away : g.home).abbr, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); } });
+    }
+  }
+  // WNBA moneylines
+  for (const g of WS.games || []) {
+    if (g.completed || g.live || g.cons == null) continue;
+    const homeSide = g.cons >= 0.5;
+    const prob = homeSide ? g.cons : 1 - g.cons;
+    const ml = homeSide ? g.mlHome : g.mlAway;
+    if (prob < th || (ml != null && !oddsOK(ml, 2))) continue;
+    out.push({ sport: "🏀 WNBA", type: "MONEYLINE", prob, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: "4-model consensus", time: g.date, go: () => { setSport("wnba"); } });
+  }
+  // WNBA props (real lines only)
+  for (const st of ["PTS", "REB", "AST", "PRA"]) {
+    const man = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + st + "_" + S.date) || "{}") : {};
+    for (const p of WS.players || []) {
+      const pr = wnbaProj(p, st); if (!pr || !pr.playing) continue;
+      const bo = WS.propBook[st]?.[p.id];
+      const line = man[p.id] != null && man[p.id] !== "" ? parseFloat(man[p.id]) : (bo?.line ?? null);
+      if (line == null) continue;
+      const pOver = 1 - phi((line - pr.proj) / pr.sigma);
+      const prob = Math.max(pOver, 1 - pOver);
+      if (prob < th) continue;
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", prob, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + line, bigLbl: bo?.source || "LINE", label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: p.team + " vs " + (pr.oppAbbr || "?"), time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); } });
+    }
+  }
+  out.sort((a, b) => b.prob - a.prob);
+  const strong = out.filter(l => l.prob >= 0.60);
+  const fill = out.filter(l => l.prob < 0.60);
+  const res = [...strong];
+  for (const f of fill) { if (res.length >= 8) break; res.push(f); } // thin day? surface the next-best LEANs
+  return res.slice(0, 16);
+}
+function renderLocks() {
+  const root = $("#tab-locks"); if (!root) return;
+  root.innerHTML = "";
+  root.appendChild(el("div", "h1", `🔒 LOCKS <small>· both sports · the bets most likely to hit today</small>`));
+  root.appendChild(el("div", "subhead", `Everything the models give <b style="color:var(--txt)">60%+ to cash</b>, inside your odds zone (${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}), pre-game only, sorted by probability. Straight talk: "likely" is not "guaranteed" — a 70% bet still loses 3 times in 10, and heavy favorites pay little. These are the steady singles, not lottery tickets.`));
+  if (!WS.loaded && !WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Loading WNBA in the background to include basketball…</span>`));
+  else if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"}) — its locks will appear when done.</span>`));
+  const locks = collectLocks();
+  if (!locks.length) { root.appendChild(el("div", "nobets", "Nothing clears 60% right now — lines may not be posted yet. Hit Refresh closer to game time.")); return; }
+  const grid = el("div", "grid wide");
+  for (const L of locks) {
+    const pc = (L.prob * 100).toFixed(1);
+    const col = L.prob >= 0.72 ? "var(--green)" : L.prob >= 0.65 ? "var(--gold)" : L.prob >= 0.60 ? "var(--blue)" : "var(--dim)";
+    const card = el("div", "bb", `
+      <div class="bbtop"><div class="stars"><span class="conf" style="margin-left:0;color:${col}">${L.prob >= 0.72 ? "STRONGEST" : L.prob >= 0.65 ? "STRONG" : L.prob >= 0.60 ? "LIKELY" : "LEAN"}</span></div>
+        <div style="display:flex;gap:6px;align-items:center;"><span class="chip">${L.sport}</span><span class="typechip">${L.type}</span></div></div>
+      <div class="bbmain"><div style="min-width:0;"><div class="bbabbr" style="font-size:22px;">${L.label}</div><div class="bbsub">${L.sub}${L.time ? " · " + timeLabel(L.time) : ""}</div></div></div>
+      <div class="bbfoot"><div><div class="lbl">${L.bigLbl}</div><div class="bignum" style="color:var(--gold);">${L.big}</div></div>
+        <div style="text-align:right;"><div class="lbl">CHANCE TO HIT</div><div class="bignum" style="color:${col};">${pc}%</div></div></div>`);
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => L.go());
+    grid.appendChild(card);
+  }
+  root.appendChild(grid);
+}
+
+/* ================================================================
+   💎 VALUE — both sports, ranked by edge over the market
+   ================================================================ */
+function collectValue() {
+  const out = [];
+  // MLB moneylines
+  for (const g of S.games || []) {
+    if (g.state !== "Preview" || g.consensus == null || g.implHome == null) continue;
+    for (const [sideKey, edge] of [["home", g.edgeHome], ["away", g.edgeAway]]) {
+      if (edge == null || edge < 1) continue;
+      const ml = sideKey === "home" ? S.odds[g.pk]?.mlHome : S.odds[g.pk]?.mlAway;
+      if (!oddsOK(ml, 2)) continue;
+      const side = g[sideKey], opp = sideKey === "home" ? g.away : g.home;
+      const mp = sideKey === "home" ? g.consensus : 1 - g.consensus;
+      const ip = sideKey === "home" ? g.implHome : 1 - g.implHome;
+      out.push({ sport: "⚾ MLB", type: "MONEYLINE", edge, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (sideKey === "home" ? " vs " : " @ ") + opp.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${(ip * 100).toFixed(1)}%`, time: g.time, go: () => { setSport("mlb"); } });
+    }
+  }
+  // MLB K props (need prices)
+  for (const g of S.games || []) {
+    if (g.state !== "Preview") continue;
+    for (const sk of ["home", "away"]) {
+      const side = g[sk]; if (!side.pitcherId) continue;
+      const proj = S.pitchers[side.pitcherId]?.proj, pr = S.props[side.pitcherId];
+      if (!proj || !pr || pr.overPrice == null || pr.underPrice == null || proj.warns.length || proj.grade === "D") continue;
+      const lean = propLean(proj, pr.line); if (!lean || lean.lean === "PASS") continue;
+      const [io, iu] = deVig(americanToProb(pr.overPrice), americanToProb(pr.underPrice));
+      const edge = (lean.lean === "UNDER" ? (1 - lean.pOver) - iu : lean.pOver - io) * 100;
+      if (edge < 1) continue;
+      out.push({ sport: "⚾ MLB", type: "K PROP", edge, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); } });
+    }
+  }
+  // MLB hits (with book price)
+  for (const p of (S.hitPicks || []).slice(0, 24)) {
+    const g = (S.games || []).find(x => x.pk === p.gamePk); if (!g || g.state !== "Preview") continue;
+    const bo = hitBookPrice(p.id); if (!bo || !isFinite(bo.price)) continue;
+    const edge = (p.pHit - americanToProb(bo.price)) * 100;
+    if (edge < 1 || !oddsOK(bo.price, 2)) continue;
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); } });
+  }
+  // MLB home runs (with book price)
+  for (const p of (S.hrPicks || []).slice(0, 30)) {
+    const g = (S.games || []).find(x => x.pk === p.gamePk); if (!g || g.state !== "Preview" || p.lowPA) continue;
+    const bo = S.hrOdds[p.id]; if (!bo || bo.price == null) continue;
+    const edge = (p.pHR - americanToProb(bo.price)) * 100;
+    if (edge < 2) continue;
+    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); } });
+  }
+  // WNBA moneylines
+  for (const g of WS.games || []) {
+    if (g.completed || g.live || g.cons == null || g.impl == null) continue;
+    for (const [homeSide, edge] of [[true, g.edgeH], [false, g.edgeA]]) {
+      if (edge == null || edge < 1) continue;
+      const ml = homeSide ? g.mlHome : g.mlAway;
+      if (!oddsOK(ml, 2)) continue;
+      const mp = homeSide ? g.cons : 1 - g.cons;
+      out.push({ sport: "🏀 WNBA", type: "MONEYLINE", edge, big: fmtML(ml), bigLbl: "MONEYLINE", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${((homeSide ? g.impl : 1 - g.impl) * 100).toFixed(1)}%`, time: g.date, go: () => { setSport("wnba"); } });
+    }
+  }
+  // WNBA props (need an over price from the Odds API fetch)
+  for (const st of ["PTS", "REB", "AST", "PRA"]) {
+    for (const p of WS.players || []) {
+      const bo = WS.propBook[st]?.[p.id]; if (!bo || bo.over == null) continue;
+      const pr = wnbaProj(p, st); if (!pr || !pr.playing) continue;
+      const pOver = 1 - phi((bo.line - pr.proj) / pr.sigma);
+      const edge = (pOver - americanToProb(bo.over)) * 100;
+      if (edge < 1 || !oddsOK(bo.over, 2)) continue;
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); } });
+    }
+  }
+  out.sort((a, b) => b.edge - a.edge);
+  const strong = out.filter(l => l.edge >= 3);
+  const res = [...strong];
+  for (const f of out.filter(l => l.edge < 3)) { if (res.length >= 8) break; res.push(f); }
+  return res.slice(0, 16);
+}
+function renderValue() {
+  const root = $("#tab-value"); if (!root) return;
+  root.innerHTML = "";
+  root.appendChild(el("div", "h1", `💎 VALUE <small>· both sports · where the models beat the market's price</small>`));
+  root.appendChild(el("div", "subhead", `LOCKS asks "what's most likely to win?" — VALUE asks "<b style="color:var(--txt)">where is the book paying too much?</b>" Edge = model probability minus the market's de-vigged probability. A +5% edge at plus money can be worth more long-run than a 75% favorite at a heavy price. Tiers: <b style="color:var(--green)">MAX ≥ 8%</b> · <b style="color:var(--gold)">STRONG ≥ 5%</b> · <b style="color:var(--blue)">VALUE ≥ 3%</b> · smaller edges show as THIN on quiet days. All pre-game, inside your odds zone.`));
+  if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"})…</span>`));
+  const vals = collectValue();
+  if (!vals.length) { root.appendChild(el("div", "nobets", "No edges vs the market right now — lines may not be posted yet (K-prop and WNBA prop edges also need book prices via the free ESPN feed or your Odds API key). Refresh closer to game time.")); return; }
+  const grid = el("div", "grid wide");
+  for (const L of vals) {
+    const col = L.edge >= 8 ? "var(--green)" : L.edge >= 5 ? "var(--gold)" : L.edge >= 3 ? "var(--blue)" : "var(--dim)";
+    const tag = L.edge >= 8 ? "MAX VALUE" : L.edge >= 5 ? "STRONG" : L.edge >= 3 ? "VALUE" : "THIN";
+    const card = el("div", "bb", `
+      <div class="bbtop"><div class="stars"><span class="conf" style="margin-left:0;color:${col}">${tag}</span></div>
+        <div style="display:flex;gap:6px;align-items:center;"><span class="chip">${L.sport}</span><span class="typechip">${L.type}</span></div></div>
+      <div class="bbmain"><div style="min-width:0;"><div class="bbabbr" style="font-size:22px;">${L.label}</div><div class="bbsub">${L.sub}${L.time ? " · " + timeLabel(L.time) : ""}</div></div></div>
+      <div class="bbfoot"><div><div class="lbl">${L.bigLbl}</div><div class="bignum" style="color:var(--gold);">${L.big}</div></div>
+        <div style="text-align:right;"><div class="lbl">EDGE VS MARKET</div><div class="bignum" style="color:${col};">+${L.edge.toFixed(1)}%</div></div></div>`);
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => L.go());
+    grid.appendChild(card);
+  }
+  root.appendChild(grid);
+}
+
 /* ---- best props (for the WNBA board strip) ---- */
 function wnbaBestProps() {
   const out = [];
@@ -2328,6 +2631,7 @@ function renderWnba() {
   const isCombo = comboOpts.includes(WS.stat);
   const statName = { PTS: "POINTS", REB: "REBOUNDS", AST: "ASSISTS" }[WS.stat] || "COMBOS · " + WS.stat;
   root.appendChild(el("div", "h1", `${statName} <small>· player prop model</small>`));
+  root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `Each player's projection = 60% her last 5 games + 40% season rate, nudged by how leaky the opponent's defense is. The bars are her actual last 10 games for this stat vs the line. <b>P(OVER)</b> comes from her own game-to-game swings — steady players get confident calls, boom-bust players don't. With a real book line in (auto from DraftKings or the Odds API), you get OVER/UNDER plus a quality badge: STRONG BET (62%+) · GOOD (56%+) · ALRIGHT (52%+). The blue MODEL LINE is just the projection at even odds — a reference point, not a bet.`));
   const selBtns = isCombo ? `<br><span class="seg" style="margin-top:8px;display:inline-flex;">` + comboOpts.map(k => `<button data-wstat="${k}" class="${k === WS.stat ? "on" : ""}">${k}</button>`).join("") + `</span>` : "";
   root.appendChild(el("div", "subhead", `Projection = 60% last-5 / 40% season per-game rate × opponent defense factor. P(OVER) uses the player's own game-to-game spread. Bet quality once a real line is in: <b style="color:var(--green)">STRONG BET</b> = model gives its side 62%+ · <b style="color:var(--gold)">GOOD</b> = 56%+ · <b style="color:var(--blue)">ALRIGHT</b> = 52%+ · below that, pass. Type your book's line, or <button class="btn ghost" id="wPropBtn">Fetch ${WS.stat} lines (Odds API)</button>${selBtns}`));
   const manual = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
@@ -2391,16 +2695,33 @@ function renderWnba() {
   $("#wPropBtn")?.addEventListener("click", fetchWnbaProps);
 }
 
+/* ---- auto-refresh: quietly re-check ESPN for newly posted lines/props ---- */
+async function oddsTick() {
+  try {
+    if (typeof document !== "undefined" && document.hidden) return; // don't burn data in the background
+    if (S.date !== localISO(new Date())) return;                    // only live-refresh today's board
+    if (!(S.games || []).some(g => g.state === "Preview")) return;  // nothing left to bet
+    const sb = await j(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${S.date.replace(/-/g, "")}`);
+    await loadEspnOdds(sb); // fills in any moneylines, K lines, hit & HR prices that the book has posted since
+    computeAll();
+    snapshotPicks();
+    renderBoard(); renderKs(); renderHR(); renderHits(); renderLocks(); renderValue();
+    setStatus(`Lines auto-refreshed ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — checking again in 20 min. BOOK corners fill in as DraftKings posts props.`);
+  } catch (e) {}
+}
+
 /* ---------------- INIT ---------------- */
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
-  for (const id of ["board", "ks", "hr", "hits", "wnba", "rec", "model", "how"]) $("#tab-" + id).style.display = id === name ? "" : "none";
+  for (const id of ["board", "ks", "hr", "hits", "wnba", "locks", "value", "rec", "model", "how"]) $("#tab-" + id).style.display = id === name ? "" : "none";
   if (name === "wnba") wnbaEnsure();
+  if (name === "locks") { renderLocks(); wnbaEnsure(); } // pull in both sports
+  if (name === "value") { renderValue(); wnbaEnsure(); }
 }
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
-const MLB_TABS = [["board", "BOARD"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
-const WNBA_TABS = [["wnba:board", "BOARD"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:PRA", "COMBOS"], ["wnba:rec", "MODEL RECORDS"]];
+const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
+const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:PRA", "COMBOS"], ["wnba:rec", "MODEL RECORDS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
   const tabs = APP_SPORT === "mlb" ? MLB_TABS : WNBA_TABS;
@@ -2444,6 +2765,7 @@ function init() {
     else loadAll();
   });
   loadAll();
+  setInterval(oddsTick, 20 * 60 * 1000); // auto-check for new book lines every 20 minutes while open
 }
 if (typeof window !== "undefined" && typeof document !== "undefined" && document.getElementById("status")) init();
 
@@ -2453,7 +2775,7 @@ if (typeof module !== "undefined" && module.exports) {
     parseSchedule, parseHitting, parseSplit, parseResults, parsePitchers, parseRoster, pitcherWarnings,
     kevinModel, pythagModel, eloModel, sharpFit, sharpModel, computeAll, projectKs, propLean, hrProject, computeHR, hitProject, computeHits, hitBookPrice, bestBets, bbMax, oddsOK, activePreset, bounceLabel,
     snapshotPicks, gradeJournal, modelRecords, backtestModels, routed, RELAYS, PROXY_MAP, j, jFetch,
-    WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj, wnbaBestProps };
+    WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj, wnbaBestProps, collectLocks, collectValue };
 }
 </script>
 </body>
