@@ -1388,8 +1388,13 @@ function gameCard(g) {
       ${right}</div>`;
   }
   function pitcherCell(side, warns) {
+    const kp = side.pitcherId ? S.props[side.pitcherId] : null;
+    const kTxt = kp?.line != null
+      ? `<div class="pline" style="color:var(--gold);font-weight:700;">K O/U ${kp.line}${kp.overPrice != null && kp.underPrice != null ? ` · o${fmtML(kp.overPrice)} / u${fmtML(kp.underPrice)}` : ""}</div>`
+      : "";
     return `<div class="pit">${side.pitcherId ? hsImg(side.pitcherId) : '<div class="hs"></div>'}
       <div style="min-width:0;"><div class="pname">${side.pitcherName}</div><div class="pline">${side.pitcherId ? pitcherLineTxt(side.pitcherId) : ""}</div>
+      ${kTxt}
       ${warns.map(w => `<span class="warn">⚠ ${w}</span>`).join(" ")}</div></div>`;
   }
 }
