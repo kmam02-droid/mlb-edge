@@ -90,7 +90,8 @@
   .hs img{width:100%;height:100%;object-fit:cover;object-position:top;}
   .pname{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .pline{font-size:10.5px;color:var(--dim);}
-  .warn{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.5px;color:var(--amber);background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);padding:1px 6px;border-radius:5px;margin-top:3px;}
+  .warn{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.5px;color:var(--amber);background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);padding:1px 6px;border-radius:5px;margin-top:3px;cursor:pointer;}
+  .warn:hover{background:rgba(245,158,11,0.22);}
   .togglebtn{width:100%;margin-top:11px;background:var(--panel4);border:1px solid #222b3a;border-radius:9px;padding:8px;font-size:12px;font-weight:700;color:#a9b2c2;letter-spacing:.4px;display:flex;align-items:center;justify-content:center;gap:6px;}
   .xstats{margin-top:10px;border-top:1px solid var(--line3);padding-top:12px;display:flex;flex-direction:column;gap:16px;}
   .xh{font-size:10px;font-weight:800;color:var(--blue);letter-spacing:1.2px;margin-bottom:8px;}
@@ -145,6 +146,9 @@
   .sliderrow{display:flex;align-items:center;gap:10px;}
   .sliderrow .endlbl{font-size:9.5px;color:var(--dim3);letter-spacing:.6px;font-weight:700;flex:0 0 auto;}
   input[type=range]{width:100%;accent-color:var(--blue);height:22px;}
+  .fchip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.6px;color:#a9b2c2;background:var(--panel3);border:1px solid var(--line2);padding:5px 12px;border-radius:20px;cursor:pointer;user-select:none;line-height:1.4;}
+  .fchip.on{color:#07101f;background:var(--gold);border-color:var(--gold);}
+  .fchip.reset{color:var(--red);border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08);}
   input[type=text],input[type=password],input[type=number]{background:var(--panel3);border:1px solid var(--line2);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:13px;font-family:'Barlow';}
   .preview{background:linear-gradient(160deg,#18202c,#12161f);border:1px solid var(--line2);border-radius:16px;padding:16px;position:sticky;top:120px;}
   .preview .ph{font-size:10px;font-weight:800;color:var(--blue);letter-spacing:1.2px;margin-bottom:10px;}
@@ -282,6 +286,8 @@
    ================================================================ */
 "use strict";
 
+const BUILD = "v3.30";
+
 /* ---------------- CONFIG ---------------- */
 const CFG = {
   seasonStartMonth: 3,
@@ -316,10 +322,10 @@ const PRESETS = {
   offense:  { name:"OFFENSE HEAVY", desc:"Bats win — OPS/AVG/HR/Runs carry the pick.", w:{ wK:0.20, wOff:0.50, wForm:0.22, wPen:0.18, wBounce:0.10 } }
 };
 const SLIDERS = [
-  ["wK", "STARTER K MATCHUP", "Tonight's starters' K/9, adjusted for how whiff-prone the lineup they face is.", 0, 1],
+  ["wK", "STARTING PITCHER", "The whole pitcher, not just strikeouts: how many runs his team allows in his starts this season (stuff, control, innings — it all ends up there), shrunk for small samples. Fully replayable — dragging this moves the live season record.", 0, 1],
   ["wOff", "OFFENSE", "OPS · AVG · HR/game · Runs/game, league-relative.", 0, 1],
-  ["wForm", "30-DAY FORM", "Win% over the last 30 days — the hot/cold signal.", 0, 1],
-  ["wPen", "BULLPEN", "Reliever-only ERA, WHIP, K/9 and inherited-runner rescues.", 0, 1],
+  ["wForm", "30-DAY FORM (SOS-ADJUSTED)", "Win% over the last 30 days, weighted by the strength of the teams they beat — 7-3 vs contenders rates far above 7-3 vs cellar-dwellers.", 0, 1],
+  ["wPen", "BULLPEN", "Reliever-only ERA, WHIP, K/9 and inherited-runner rescues. Also not in the season replay — judge it by your tracked record.", 0, 1],
   ["wBounce", "YESTERDAY'S LOSS", "Your bounce-back idea. Right of center = a team that lost yesterday is MORE likely to win today. Left of center = fade them. Middle = off.", -0.5, 0.5],
   ["hfa", "HOME FIELD", "Baseline bump for the home side. 0.16 ≈ 54% in an even matchup.", 0, 0.4],
   ["edgeThresh", "★ EDGE THRESHOLD (%)", "How much the models must beat the market before a bet makes BEST BETS. Lower = more picks, weaker signal.", 0, 10]
@@ -366,7 +372,7 @@ function loadWeights() {
   try { if (hasLS) { const w = JSON.parse(localStorage.getItem("kb_weights")); if (w && typeof w.wK === "number") return { ...CFG.defaultWeights, ...w }; } } catch (e) {}
   return { ...CFG.defaultWeights };
 }
-function saveWeights() { if (hasLS) localStorage.setItem("kb_weights", JSON.stringify(S.weights)); }
+function saveWeights() { S.weightsStamp = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }); if (hasLS) localStorage.setItem("kb_weights", JSON.stringify(S.weights)); }
 function getKey() { return hasLS ? (localStorage.getItem("kb_oddsapikey") || "") : ""; }
 
 /* ---- network: direct → localhost proxy → public relay fallback ---- */
@@ -448,7 +454,7 @@ async function loadAll() {
     hit: j(`https://statsapi.mlb.com/api/v1/teams/stats?season=${season}&group=hitting&stats=season&sportIds=1`),
     rp: j(`https://statsapi.mlb.com/api/v1/teams/stats?season=${season}&group=pitching&stats=statSplits&sitCodes=rp&sportIds=1`),
     sp: j(`https://statsapi.mlb.com/api/v1/teams/stats?season=${season}&group=pitching&stats=statSplits&sitCodes=sp&sportIds=1`),
-    results: j(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${seasonStart}&endDate=${S.date}&gameType=R&fields=dates,date,games,gamePk,officialDate,status,codedGameState,teams,away,home,team,id,score,isWinner`),
+    results: j(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${seasonStart}&endDate=${S.date}&gameType=R&hydrate=probablePitcher&fields=dates,date,games,gamePk,officialDate,status,codedGameState,teams,away,home,team,id,score,isWinner,probablePitcher`),
     espn: j(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${S.date.replace(/-/g, "")}`).catch(e => { S.errors.push("ESPN scoreboard: " + e.message); return null; })
   };
   const res = {};
@@ -568,13 +574,16 @@ function parseResults(data) {
   const rec = (id) => byTeam[id] = byTeam[id] || { games: [], rs: 0, ra: 0 };
   const getElo = id => eloR[id] ?? 1500;
   S.seasonGames = [];
+  S.spLog = {}; // starterId -> runs his team allowed in each of his starts (his total run prevention)
   for (const g of games) {
     const h = g.teams.home, a = g.teams.away;
     if (h.score == null || a.score == null) continue;
     S.finals[g.gamePk] = !!h.isWinner;
-    S.seasonGames.push({ d: g.officialDate, pk: g.gamePk, hId: h.team.id, aId: a.team.id, hs: h.score, as: a.score });
-    rec(h.team.id).games.push({ d: g.officialDate, w: !!h.isWinner, rf: h.score, ra: a.score });
-    rec(a.team.id).games.push({ d: g.officialDate, w: !!a.isWinner, rf: a.score, ra: h.score });
+    S.seasonGames.push({ d: g.officialDate, pk: g.gamePk, hId: h.team.id, aId: a.team.id, hs: h.score, as: a.score, hSp: h.probablePitcher?.id || null, aSp: a.probablePitcher?.id || null });
+    if (h.probablePitcher?.id) (S.spLog[h.probablePitcher.id] = S.spLog[h.probablePitcher.id] || []).push(a.score);
+    if (a.probablePitcher?.id) (S.spLog[a.probablePitcher.id] = S.spLog[a.probablePitcher.id] || []).push(h.score);
+    rec(h.team.id).games.push({ d: g.officialDate, w: !!h.isWinner, rf: h.score, ra: a.score, opp: a.team.id });
+    rec(a.team.id).games.push({ d: g.officialDate, w: !!a.isWinner, rf: a.score, ra: h.score, opp: h.team.id });
     rec(h.team.id).rs += h.score; rec(h.team.id).ra += a.score;
     rec(a.team.id).rs += a.score; rec(a.team.id).ra += h.score;
     const Rh = getElo(h.team.id), Ra = getElo(a.team.id);
@@ -584,13 +593,22 @@ function parseResults(data) {
     eloR[h.team.id] = Rh + delta; eloR[a.team.id] = Ra - delta;
   }
   const d30 = addDays(S.date, -30), yday = addDays(S.date, -1);
+  const wPct = {}; // season win% per team, for strength-of-schedule
+  for (const idStr of Object.keys(byTeam)) { const o = byTeam[idStr]; wPct[idStr] = o.games.length ? o.games.filter(g => g.w).length / o.games.length : 0.5; }
   for (const idStr of Object.keys(byTeam)) {
     const id = +idStr, o = byTeam[idStr];
     const last30 = o.games.filter(g => g.d >= d30 && g.d < S.date);
     const yGames = o.games.filter(g => g.d === yday);
+    // SOS-adjusted form: a hot streak vs good teams counts more than one vs cupcakes
+    let form30 = 0.5;
+    if (last30.length) {
+      const winPct = last30.filter(g => g.w).length / last30.length;
+      const avgOppW = mean(last30.map(g => wPct[g.opp] ?? 0.5));
+      form30 = clamp(winPct * (avgOppW / 0.5), 0, 1);
+    }
     S.teams[id] = S.teams[id] || {};
     S.teams[id].daily = {
-      form30: last30.length ? last30.filter(g => g.w).length / last30.length : 0.5,
+      form30,
       n30: last30.length,
       lostY: yGames.length ? !yGames[yGames.length - 1].w : false,
       playedY: yGames.length > 0,
@@ -814,12 +832,16 @@ function pitcherAdjK9(pid, oppTeamId) {
   const oppK = S.teams[oppTeamId]?.hit?.kPct, lgK = S.league.kPct || 0.22;
   return k9 * (oppK ? (oppK / lgK) : 1);
 }
+function spQuality(list) { // overall starter grade: run prevention in his starts this season, sample-shrunk
+  const n = list ? list.length : 0; if (!n) return 0;
+  return clamp((4.5 - mean(list)) / 1.5, -2, 2) * (n / (n + 4));
+}
 function kevinModel(g) {
   const W = S.weights, f = [];
   const th = S.teams[g.home.id] || {}, ta = S.teams[g.away.id] || {};
-  const kh = pitcherAdjK9(g.home.pitcherId, g.away.id), ka = pitcherAdjK9(g.away.pitcherId, g.home.id);
-  const fK = (kh != null && ka != null) ? clamp((kh - ka) / 2.5, -2, 2) : 0;
-  f.push({ name: "Starter K matchup", val: fK, w: W.wK });
+  const qh = spQuality(S.spLog?.[g.home.pitcherId]), qa = spQuality(S.spLog?.[g.away.pitcherId]);
+  const fK = (g.home.pitcherId && g.away.pitcherId) ? clamp(qh - qa, -2, 2) : 0;
+  f.push({ name: "Starting pitcher", val: fK, w: W.wK });
   const fOff = (th.offZ != null && ta.offZ != null) ? clamp((th.offZ - ta.offZ) / 1.5, -2, 2) : 0;
   f.push({ name: "Offense (OPS/AVG/HR/R)", val: fOff, w: W.wOff });
   const fh = th.daily?.form30 ?? 0.5, fa = ta.daily?.form30 ?? 0.5;
@@ -1049,6 +1071,70 @@ function computeHits() {
   S.hitPicks = picks;
 }
 
+/* ---------- AUTO-TUNE: search Kevin-core weights for the best season record ---------- */
+function kevinCoreRows() {
+  const games = S.seasonGames || [];
+  const cum = {}, hist = {}, last = {}, spl = {};
+  const C = id => cum[id] = cum[id] || { rs: 0, gp: 0, w: 0 };
+  const H = id => hist[id] = hist[id] || [];
+  const rows = [];
+  const f30 = (id, date) => { // SOS-adjusted: wins weighted by opponent quality at that point in the season
+    const h = H(id); const from = addDays(date, -30); let w = 0, n = 0, oppW = 0;
+    for (let i = h.length - 1; i >= 0 && h[i].d >= from; i--) { n++; if (h[i].w) w++; const oc = cum[h[i].opp]; oppW += oc?.gp ? oc.w / oc.gp : 0.5; }
+    return n ? clamp((w / n) * ((oppW / n) / 0.5), 0, 1) : 0.5; };
+  for (const g of games) {
+    const ch = C(g.hId), ca = C(g.aId);
+    const homeWon = g.hs > g.as;
+    if (ch.gp >= CFG.btMinGames && ca.gp >= CFG.btMinGames) {
+      const vals = []; for (const id in cum) if (cum[id].gp >= 5) vals.push(cum[id].rs / cum[id].gp);
+      let fOff = 0;
+      if (vals.length >= 8) { const m = mean(vals), s = sd(vals) || 1; const z = id => cum[id] && cum[id].gp >= 5 ? ((cum[id].rs / cum[id].gp) - m) / s : 0; fOff = clamp((z(g.hId) - z(g.aId)) / 1.5, -2, 2); }
+      const fForm = clamp((f30(g.hId, g.d) - f30(g.aId, g.d)) / 0.25, -2, 2);
+      const yd = addDays(g.d, -1);
+      const b = (last[g.hId] && last[g.hId].d === yd && !last[g.hId].w ? 1 : 0) - (last[g.aId] && last[g.aId].d === yd && !last[g.aId].w ? 1 : 0);
+      const fSp = (g.hSp && g.aSp) ? clamp(spQuality(spl[g.hSp]) - spQuality(spl[g.aSp]), -2, 2) : 0;
+      rows.push({ fSp, fOff, fForm, b, y: homeWon });
+    }
+    ch.rs += g.hs; ch.gp++; ch.w += homeWon ? 1 : 0; ca.rs += g.as; ca.gp++; ca.w += homeWon ? 0 : 1;
+    H(g.hId).push({ d: g.d, w: homeWon, opp: g.aId }); H(g.aId).push({ d: g.d, w: !homeWon, opp: g.hId });
+    last[g.hId] = { d: g.d, w: homeWon }; last[g.aId] = { d: g.d, w: !homeWon };
+    if (g.hSp) (spl[g.hSp] = spl[g.hSp] || []).push(g.as);
+    if (g.aSp) (spl[g.aSp] = spl[g.aSp] || []).push(g.hs);
+  }
+  return rows;
+}
+function evalCoreWeights(rows, W) { // fast full+holdout scorer for the live banner
+  const nT = Math.floor(rows.length * 0.65);
+  let w = 0, l = 0, hw = 0, hl = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const win = (((0.9 * ((W.wK || 0) * (r.fSp || 0) + (W.wOff || 0) * r.fOff + (W.wForm || 0) * r.fForm + (W.wBounce || 0) * r.b) + (W.hfa ?? 0.16)) >= 0) === r.y);
+    if (i < nT) { win ? w++ : l++; } else { win ? hw++ : hl++; }
+  }
+  return { w, l, hw, hl };
+}
+function autoTune() {
+  const rows = kevinCoreRows();
+  if (rows.length < 100) return null;
+  const nT = Math.floor(rows.length * 0.65);
+  // "steadiest, not prettiest": score each combo by its WORST period (train vs holdout) —
+  // weights that only shine on the fitted past get rejected automatically
+  let best = null;
+  for (const wK of [0, 0.2, 0.35, 0.5]) for (const wOff of [0, 0.15, 0.3, 0.5]) for (const wForm of [0, 0.15, 0.3, 0.5]) for (const wB of [-0.3, -0.15, 0, 0.15, 0.3]) for (const hfa of [0.08, 0.16, 0.24]) {
+    const r = evalCoreWeights(rows, { wK, wOff, wForm, wBounce: wB, hfa });
+    const tp = r.w / (r.w + r.l), hp = (r.hw + r.hl) ? r.hw / (r.hw + r.hl) : 0;
+    const score = Math.min(tp, hp);
+    if (!best || score > best.score || (score === best.score && tp > best.tp)) best = { wK, wOff, wForm, wBounce: wB, hfa, score, tp, tw: r.w, hw: r.hw };
+  }
+  let cw = 0;
+  const W = S.weights;
+  for (let i = nT; i < rows.length; i++) {
+    const r = rows[i];
+    if (((0.9 * ((W.wK || 0) * (r.fSp || 0) + (W.wOff || 0) * r.fOff + (W.wForm || 0) * r.fForm + (W.wBounce || 0) * r.b) + (W.hfa ?? 0.16)) >= 0) === r.y) cw++;
+  }
+  return { w: { wK: best.wK, wOff: best.wOff, wForm: best.wForm, wBounce: best.wBounce, hfa: best.hfa }, trainW: best.tw, trainN: nT, holdW: best.hw, holdN: rows.length - nT, curHoldW: cw, maximin: true };
+}
+
 /* ================================================================
    PICK JOURNAL & MODEL RECORDS
    ================================================================ */
@@ -1122,16 +1208,16 @@ function modelRecords(jr) {
 function backtestModels() {
   const games = S.seasonGames || [];
   const W = S.weights;
-  const elo = {}, cum = {}, hist = {}, last = {};
-  const bt = { kevin: { w: 0, l: 0 }, elo: { w: 0, l: 0 }, pyth: { w: 0, l: 0 }, home: { w: 0, l: 0 }, series: [], n: 0 };
+  const elo = {}, cum = {}, hist = {}, last = {}, spl = {};
+  const bt = { kevin: { w: 0, l: 0 }, elo: { w: 0, l: 0 }, pyth: { w: 0, l: 0 }, home: { w: 0, l: 0 }, series: [], n: 0, cal: [] };
   const E = id => elo[id] ?? 1500;
-  const C = id => cum[id] = cum[id] || { rs: 0, ra: 0, gp: 0 };
+  const C = id => cum[id] = cum[id] || { rs: 0, ra: 0, gp: 0, w: 0 };
   const Hst = id => hist[id] = hist[id] || [];
-  function form30(id, date) {
+  function form30(id, date) { // SOS-adjusted, walk-forward safe
     const h = Hst(id); const from = addDays(date, -30);
-    let w = 0, n = 0;
-    for (let i = h.length - 1; i >= 0 && h[i].d >= from; i--) { n++; if (h[i].w) w++; }
-    return n ? w / n : 0.5;
+    let w = 0, n = 0, oppW = 0;
+    for (let i = h.length - 1; i >= 0 && h[i].d >= from; i--) { n++; if (h[i].w) w++; const oc = cum[h[i].opp]; oppW += oc?.gp ? oc.w / oc.gp : 0.5; }
+    return n ? clamp((w / n) * ((oppW / n) / 0.5), 0, 1) : 0.5;
   }
   function rgZ(hId, aId) {
     const vals = [];
@@ -1154,15 +1240,21 @@ function backtestModels() {
       const p = (ph * (1 - pa)) / (ph * (1 - pa) + pa * (1 - ph)) + 0.04;
       bt.pyth[(p >= 0.5) === homeWon ? "w" : "l"]++;
       // kevin CORE: your current weights on the factors replayable from results
-      // (offense via runs/game z, 30-day form, bounce-back, home field; K-matchup & bullpen unavailable -> 0, same as live when data is missing)
+      // (starter quality via runs-allowed-in-his-starts, offense via runs/game z, 30-day form, bounce-back, home field; only bullpen unavailable -> 0)
       const [zH, zA] = rgZ(g.hId, g.aId);
       const fOff = clamp((zH - zA) / 1.5, -2, 2);
       const fForm = clamp((form30(g.hId, g.d) - form30(g.aId, g.d)) / 0.25, -2, 2);
       const yd = addDays(g.d, -1);
       const bH = last[g.hId] && last[g.hId].d === yd && !last[g.hId].w ? 1 : 0;
       const bA = last[g.aId] && last[g.aId].d === yd && !last[g.aId].w ? 1 : 0;
-      const score = 0.9 * (W.wOff * fOff + W.wForm * fForm + W.wBounce * (bH - bA)) + W.hfa;
+      const fSp = (g.hSp && g.aSp) ? clamp(spQuality(spl[g.hSp]) - spQuality(spl[g.aSp]), -2, 2) : 0;
+      const score = 0.9 * ((W.wK || 0) * fSp + W.wOff * fOff + W.wForm * fForm + W.wBounce * (bH - bA)) + W.hfa;
       bt.kevin[(score >= 0) === homeWon ? "w" : "l"]++;
+      // calibration rows: what probability did each model claim, and what happened
+      const pEloH = 1 / (1 + Math.pow(10, (E(g.aId) - E(g.hId) - CFG.eloHFA) / 400));
+      const pPyH = clamp(p, 0.02, 0.98);
+      const pKevH = logistic(score);
+      bt.cal.push({ e: pEloH, py: pPyH, k: pKevH, c: (pEloH + pPyH + pKevH) / 3, y: homeWon });
       // baseline
       bt.home[homeWon ? "w" : "l"]++;
       bt.n++;
@@ -1179,9 +1271,11 @@ function backtestModels() {
     const mov = Math.log(Math.abs(g.hs - g.as) + 1);
     const delta = CFG.eloK * mov * ((homeWon ? 1 : 0) - Eh);
     elo[g.hId] = Rh + delta; elo[g.aId] = Ra - delta;
-    ch.rs += g.hs; ch.ra += g.as; ch.gp++; ca.rs += g.as; ca.ra += g.hs; ca.gp++;
-    Hst(g.hId).push({ d: g.d, w: homeWon }); Hst(g.aId).push({ d: g.d, w: !homeWon });
+    ch.rs += g.hs; ch.ra += g.as; ch.gp++; ch.w += homeWon ? 1 : 0; ca.rs += g.as; ca.ra += g.hs; ca.gp++; ca.w += homeWon ? 0 : 1;
+    Hst(g.hId).push({ d: g.d, w: homeWon, opp: g.aId }); Hst(g.aId).push({ d: g.d, w: !homeWon, opp: g.hId });
     last[g.hId] = { d: g.d, w: homeWon }; last[g.aId] = { d: g.d, w: !homeWon };
+    if (g.hSp) (spl[g.hSp] = spl[g.hSp] || []).push(g.as);
+    if (g.aSp) (spl[g.aSp] = spl[g.aSp] || []).push(g.hs);
   }
   return bt;
 }
@@ -1291,6 +1385,7 @@ function renderBoard() {
   root.appendChild(el("div", null, `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
     <div class="h1 gold" style="margin:0;">TODAY'S BEST BETS</div>
     <div style="font-size:12px;color:var(--dim);font-weight:600;">every bet type · odds zone ${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor} (bigger plus odds only on STRONG+) · <b style="color:var(--txt)">tap a bet to see why</b></div>
+    ${S.weightsStamp ? `<span class="chip green" style="font-weight:800;">✓ using your weights · synced ${S.weightsStamp}</span>` : ""}
     <div class="spacer"></div>
     <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim);font-weight:800;letter-spacing:.8px;white-space:nowrap;">BETS SHOWN
       <input type="range" min="4" max="30" step="2" value="${bbMax()}" id="bbCount" style="width:110px;">
@@ -1318,22 +1413,30 @@ function renderBoard() {
   const bbSlider = root.querySelector("#bbCount");
   bbSlider.addEventListener("input", ev => { const v = root.querySelector("#bbCountVal"); if (v) v.textContent = ev.target.value; });
   bbSlider.addEventListener("change", ev => { if (hasLS) localStorage.setItem("kb_bbmax", ev.target.value); renderBoard(); });
-  root.appendChild(el("div", "h1", `FULL SLATE <small>· ${S.games.length} games — finished &amp; live games drop to the bottom</small>`));
+  root.appendChild(el("div", "h1", `FULL SLATE <small>· ${S.games.length} games — ranked best value first · finished &amp; live drop to the bottom</small>`));
   const grid = el("div", "grid");
   const rank = g => g.state === "Preview" ? 0 : g.state === "Live" ? 1 : 2;
   const bestEdge = g => Math.max(g.edgeHome ?? -99, g.edgeAway ?? -99);
   const sorted = [...S.games].sort((a, b) => rank(a) - rank(b) || bestEdge(b) - bestEdge(a));
-  for (const g of sorted) grid.appendChild(gameCard(g));
+  let vRank = 0;
+  for (const g of sorted) {
+    const r = (g.state === "Preview" && bestEdge(g) > -90) ? ++vRank : null;
+    grid.appendChild(gameCard(g, r));
+  }
   root.appendChild(grid);
 }
 function pitcherLineTxt(pid) {
   const s = S.pitchers[pid]?.season; if (!s) return "no season data";
   return `${s.era} ERA · ${s.strikeoutsPer9Inn} K/9 · ${s.inningsPitched} IP`;
 }
-function gameCard(g) {
+function gameCard(g, vRank) {
   const o = S.odds[g.pk] || {};
   const th = S.weights.edgeThresh;
   const played = g.state !== "Preview";
+  const bEdge = Math.max(g.edgeHome ?? -99, g.edgeAway ?? -99);
+  const rankChip = vRank != null && bEdge > -90
+    ? `<span class="chip" style="font-weight:800;letter-spacing:.5px;color:${vRank <= 3 ? "var(--gold)" : "var(--dim)"};${vRank <= 3 ? "border:1px solid var(--gold);background:transparent;" : ""}" title="model win% minus the market's de-vigged win% — how mispriced the ticket is">#${vRank} EDGE ${bEdge >= 0 ? "+" : ""}${bEdge.toFixed(1)}%</span>`
+    : "";
   const isValue = !played && ((g.edgeHome ?? -99) >= th || (g.edgeAway ?? -99) >= th);
   const pickHome = g.consensus != null && g.consensus >= 0.5;
   const card = el("div", "card" + (played ? " played" : ""));
@@ -1359,7 +1462,8 @@ function gameCard(g) {
       ${o.book && !played ? `<span class="bookchip">${o.book}</span>` : ""}
       <div class="spacer"></div>
       ${modelResult}
-      ${isValue ? `<span class="valchip">★ VALUE</span>` : ""}</div>
+      ${rankChip}
+      ${isValue ? `<span class="valchip">★ BET</span>` : ""}</div>
     ${teamRow(g.away, o.mlAway, !pickHome && g.consensus != null)}
     ${teamRow(g.home, o.mlHome, pickHome && g.consensus != null)}
     ${g.consensus != null ? `
@@ -1418,7 +1522,7 @@ function expandedStats(g) {
   const ta = S.teams[g.away.id] || {}, thm = S.teams[g.home.id] || {};
   const cmp = [
     ["Record", g.away.rec, g.home.rec, null],
-    ["30-day W%", pct(ta.daily?.form30), pct(thm.daily?.form30), (a, h) => h - a],
+    ["30-day form (SOS-adj)", pct(ta.daily?.form30), pct(thm.daily?.form30), (a, h) => h - a],
     ["Lost yesterday", ta.daily?.lostY ? "yes" : "no", thm.daily?.lostY ? "yes" : "no", null],
     ["OPS", f3(ta.hit?.ops), f3(thm.hit?.ops), (a, h) => h - a],
     ["AVG", f3(ta.hit?.avg), f3(thm.hit?.avg), (a, h) => h - a],
@@ -1508,6 +1612,33 @@ function openBetModal(b) {
   m.querySelector(".closex").addEventListener("click", closeBetModal);
   document.body.appendChild(back);
 }
+
+/* ---------- clickable ⚠ warning explanations ---------- */
+const WARN_INFO = [
+  [/SHORT LEASH/i, w => `<b>What it means:</b> this pitcher averages very few innings per start — his manager pulls him early, whether by design (opener/piggyback) or performance.<br><br><b>Why it matters for betting:</b> fewer innings = fewer batters faced = fewer strikeout chances, so his K over is fragile even when he's pitching well. It also means more bullpen innings behind him, which shifts the game toward each team's relievers. The app already excludes short-leash pitchers from Best Bets K props.`],
+  [/ONLY \d+ STARTS/i, w => `<b>What it means:</b> a tiny sample — ${(w.match(/\d+/) || ["few"])[0]} starts isn't enough to trust anyone's numbers. One great or awful outing swings his ERA and K/9 wildly.<br><br><b>Why it matters for betting:</b> the model's projection for him is built on quicksand. His true level could be far better or worse than the stats show. Treat any lean on him as low-confidence — the app keeps him out of Best Bets for exactly this reason.`],
+  [/EARLY HOOKS/i, () => `<b>What it means:</b> his season workload looks normal, but his <i>last three starts</i> averaged under ~4⅓ innings — something recent (struggles, minor injury, manager's plan) is cutting his outings short.<br><br><b>Why it matters for betting:</b> season-long stats say one thing, but the recent leash says another — and strikeout volume follows innings. Be skeptical of his K over until he completes a normal-length start again.`],
+  [/MINUTES DOWN/i, () => `<b>What it means:</b> her minutes in the last three games are well below her season norm — could be a rotation change, injury management, or blowouts.<br><br><b>Why it matters for betting:</b> every projection assumes her usual playing time. If the shorter minutes continue, points/rebounds/assists all shrink with them — overs are risky until her minutes stabilize.`],
+  [/MINUTES SWINGY/i, () => `<b>What it means:</b> her playing time varies a lot night to night — foul trouble, matchups, blowouts.<br><br><b>Why it matters for betting:</b> volatile minutes mean volatile stat lines. The projection is a decent midpoint but the range around it is wide, so P(OVER) is less trustworthy than for a steady-minutes player.`],
+  [/ONLY \d+ PA/i, w => `<b>What it means:</b> only ${(w.match(/\d+/) || ["few"])[0]} plate appearances this season — his hitting rates (especially home-run rate) aren't stable yet at that sample size.<br><br><b>Why it matters for betting:</b> a hot month in 100 PA can look like elite power and vanish next week. The model already shrinks his numbers toward league average, but extra caution is warranted.`]
+];
+function warnExplain(txt) {
+  for (const [re, fn] of WARN_INFO) if (re.test(txt)) return fn(txt);
+  return "This flag marks a reliability concern the model found in this player's recent data — treat projections for them with extra caution.";
+}
+if (typeof document !== "undefined") document.addEventListener("click", e => {
+  const w = e.target.closest?.(".warn");
+  if (!w) return;
+  closeBetModal();
+  const back = el("div", "modal-back"); back.id = "betModal";
+  const m = el("div", "modal");
+  m.innerHTML = `<div style="display:flex;align-items:center;gap:9px;margin-bottom:12px;"><span class="warn" style="font-size:11px;cursor:default;">${w.textContent.trim()}</span><div class="spacer"></div><button class="btn ghost closex">✕</button></div>
+    <div style="font-size:14px;color:#c6ccdb;line-height:1.65;">${warnExplain(w.textContent)}</div>`;
+  back.appendChild(m);
+  back.addEventListener("click", ev => { if (ev.target === back) closeBetModal(); });
+  m.querySelector(".closex").addEventListener("click", closeBetModal);
+  document.body.appendChild(back);
+});
 
 /* ---------- STRIKEOUTS TAB ---------- */
 function sparkSVG(vals, line) {
@@ -1755,6 +1886,20 @@ function btChart(bt) {
     <text x="${w - padR}" y="${h - 6}" fill="#697588" font-size="10" text-anchor="end" font-family="Barlow">season through ${lastD}</text>
   </svg>`;
 }
+/* ---------- calibration: does "60%" actually win 60%? ---------- */
+const CAL_BUCKETS = [[0.5, 0.55], [0.55, 0.6], [0.6, 0.65], [0.65, 0.7], [0.7, 0.75], [0.75, 0.8], [0.8, 1.001]];
+function calibrate(cal, key) {
+  const B = CAL_BUCKETS.map(([lo, hi]) => ({ lo, hi, n: 0, w: 0, ps: 0 }));
+  for (const r of cal) {
+    const pH = r[key]; if (pH == null) continue;
+    const pp = pH >= 0.5 ? pH : 1 - pH;           // confidence in the side it picked
+    const win = (pH >= 0.5) === r.y;               // did that side win?
+    const b = B.find(x => pp >= x.lo && pp < x.hi); if (!b) continue;
+    b.n++; if (win) b.w++; b.ps += pp;
+  }
+  return B;
+}
+
 function renderRecords() {
   const root = $("#tab-rec"); root.innerHTML = "";
   root.appendChild(el("div", "h1", "MODEL RECORDS"));
@@ -1805,7 +1950,7 @@ function renderRecords() {
   const bt = backtestModels();
   root.appendChild(el("div", "h1", `SEASON BACKTEST <small>· ${bt.n} games, walk-forward</small>`));
   root.appendChild(el("div", "subhead",
-    `Replays the whole season day by day: each model predicts every game using only results from <i>before</i> that game (teams need ${CFG.btMinGames}+ games played first), then gets graded against what actually happened. <b style="color:var(--txt)">KEVIN'S CORE</b> is your model at your <b style="color:var(--txt)">current slider weights</b>, using the factors that can be replayed from results — offense (runs/game), 30-day form, bounce-back and home field; starter-K and bullpen aren't available historically so they sit at zero, exactly like the live model when data is missing. <b>Move your sliders on MY MODEL and this backtest re-scores the whole season.</b> "Always pick home" is the baseline any model must beat.`));
+    `Replays the whole season day by day: each model predicts every game using only results from <i>before</i> that game (teams need ${CFG.btMinGames}+ games played first), then gets graded against what actually happened. <b style="color:var(--txt)">KEVIN'S CORE</b> is your model at your <b style="color:var(--txt)">current slider weights</b>, using the factors that can be replayed from results — starting pitcher (who actually started that night, graded on runs allowed in his prior starts), offense (runs/game), 30-day form, bounce-back and home field; only bullpen isn't available historically so it sits at zero. <b>Move your sliders on MY MODEL and this backtest re-scores the whole season.</b> "Always pick home" is the baseline any model must beat.`));
   if (bt.n > 0) {
     const btRec = k => ({ ...bt[k], units: 0, n: bt[k].w + bt[k].l, pending: 0 });
     const cards = [
@@ -1824,6 +1969,44 @@ function renderRecords() {
       root.appendChild(el("div", "chartbox", `<div class="xh">CUMULATIVE WIN% OVER THE SEASON</div>${chart}
         <div class="legend"><span><i style="background:var(--green)"></i>Kevin's Core (your weights)</span><span><i style="background:var(--blue)"></i>Elo</span><span><i style="background:var(--gold)"></i>Pythag + Log5</span><span><i style="background:#5a6474"></i>Always home (baseline)</span></div>`));
     }
+    // ---- TRUTH CHECK: claimed % vs delivered % ----
+    const calKey = (hasLS && localStorage.getItem("kb_calmodel")) || "c";
+    const calNames = { c: "CONSENSUS (3-MODEL AVG)", k: "KEVIN'S CORE (your sliders)", e: "ELO", py: "PYTHAG + LOG5" };
+    root.appendChild(el("div", "h1", `TRUTH CHECK <small>· when a model says 60%, does it actually win 60%?</small>`));
+    root.appendChild(el("div", "subhead", `Every backtest prediction is sorted by <b style="color:var(--txt)">how confident the model was</b>, then graded against what really happened. A win probability only means something if the "SAYS" and "ACTUALLY WON" numbers match: <b style="color:var(--green)">✓ honest</b> = within 3 points · <b style="color:var(--red)">⚠ overconfident</b> = wins less than it claims at that confidence, so shave those probabilities in your head · <b style="color:var(--gold)">beats its number</b> = better than advertised. LOCKS live in the 60%+ rows. KEVIN'S CORE re-scores with your current sliders.`));
+    const calBar = el("div");
+    calBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+    calBar.innerHTML = Object.entries(calNames).map(([k, n]) => `<span class="fchip${k === calKey ? " on" : ""}" data-c="${k}">${n}</span>`).join("");
+    calBar.querySelectorAll("[data-c]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_calmodel", c.dataset.c); renderRecords(); }));
+    root.appendChild(calBar);
+    const calRows = calibrate(bt.cal, calKey).filter(b => b.n > 0);
+    const calBox = el("div", "card");
+    let calHtml = "", gapN = 0, gapSum = 0;
+    for (const b of calRows) {
+      const act = b.w / b.n * 100, pred = b.ps / b.n * 100, diff = act - pred;
+      const lbl = b.lo >= 0.8 ? "80%+" : `${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%`;
+      const small = b.n < 15;
+      if (!small) { gapN += b.n; gapSum += Math.abs(diff) * b.n; }
+      const vcol = small ? "var(--dim3)" : Math.abs(diff) <= 3 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--gold)";
+      const verdict = small ? `only ${b.n} games — too few to judge` : Math.abs(diff) <= 3 ? "✓ honest" : diff < 0 ? `⚠ overconfident by ${Math.abs(diff).toFixed(1)}` : `beats its number by +${diff.toFixed(1)}`;
+      const fillW = clamp((act - 50) / 50 * 100, 0, 100), mark = clamp((pred - 50) / 50 * 100, 0, 100);
+      calHtml += `<div style="padding:10px 0;border-bottom:1px solid var(--line3);">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:12px;">
+          <b style="font-family:var(--cond);font-size:16px;flex:0 0 104px;">SAYS ${lbl}</b>
+          <span style="color:var(--dim);">${b.w}-${b.n - b.w}</span>
+          <b style="color:${vcol};">actually won ${act.toFixed(1)}%</b>
+          <div class="spacer"></div><span style="color:${vcol};font-weight:700;font-size:11.5px;">${verdict}</span>
+        </div>
+        <div style="position:relative;height:8px;background:var(--panel3);border-radius:5px;margin-top:7px;">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:${fillW}%;background:${vcol};border-radius:5px;opacity:.7;"></div>
+          <div style="position:absolute;left:${mark}%;top:-3px;bottom:-3px;width:2px;background:var(--txt);border-radius:1px;"></div>
+        </div>
+        <div style="font-size:9.5px;color:var(--dim3);margin-top:4px;">bar = what it delivered · white tick = the ${pred.toFixed(1)}% it claimed (scale 50→100)</div>
+      </div>`;
+    }
+    calBox.innerHTML = calHtml || '<div style="color:var(--dim);font-size:13px;">Not enough backtest games yet for a confidence breakdown.</div>';
+    root.appendChild(calBox);
+    if (gapN) root.appendChild(el("div", "subhead", `Average gap between claimed and delivered (rows with 15+ games): <b style="color:var(--txt)">${(gapSum / gapN).toFixed(1)} points</b>. Under ~3 means the percentages mean what they say — a 65% pick really is close to a 65% coin. Over that, mentally shave the model's number before betting it.`));
   } else {
     root.appendChild(el("div", "nobets", "Not enough completed games this season yet for a backtest."));
   }
@@ -1854,6 +2037,33 @@ function renderModelTab() {
     presets.appendChild(d);
   }
   left.appendChild(presets);
+  // live season record — the number that moves as you drag (with an anti-flattery holdout)
+  if ((S.seasonGames || []).length && (!S._kcr || S._kcrN !== S.seasonGames.length)) { try { S._kcr = kevinCoreRows(); S._kcrN = S.seasonGames.length; } catch (e) { S._kcr = null; } }
+  const recHTML = () => {
+    const rows = S._kcr;
+    if (!rows || rows.length < 50) return '<span style="font-size:15px;color:var(--dim);">loads with the season data — hit Refresh if empty</span>';
+    const r = evalCoreWeights(rows, S.weights);
+    const fw = r.w + r.hw, fl = r.l + r.hl;
+    const fp = fw / (fw + fl) * 100, hp = (r.hw + r.hl) ? r.hw / (r.hw + r.hl) * 100 : 0;
+    const flat = fp - hp > 2;
+    return `${fw}-${fl} <span style="font-size:17px;color:var(--dim);">· ${fp.toFixed(1)}% of ${fw + fl} games</span>
+      <div style="font-size:14px;font-weight:700;color:${flat ? "var(--gold)" : "var(--green)"};margin-top:3px;">holdout (last 35%, can't be flattered): ${r.hw}-${r.hl} · ${hp.toFixed(1)}% ${flat ? "⚠ big number is flattering — trust this one" : "✓ holding up"}</div>`;
+  };
+  left.appendChild(el("div", "facrow", `
+    <div class="ft"><span class="fn2">SEASON RECORD @ YOUR WEIGHTS</span><span class="wval">moves with: starter · offense · form · bounce-back · home field</span></div>
+    <div class="fd">The big number includes the games you're tuning on, so it can be flattered. The <b>holdout line</b> is the season's last 35% — if it sags while the big number climbs, you're fitting the past, not finding truth. The starting-pitcher slider IS in this replay now (each game re-scored with who actually started, walk-forward). Only bullpen stays out (no historical day-by-day data).</div>
+    <div id="liveRec" style="font-family:var(--cond);font-weight:800;font-size:36px;line-height:1.1;color:var(--green);margin-top:4px;">${recHTML()}</div>`));
+  // auto-tune
+  const tuneRow = el("div", "facrow", `
+    <div class="ft"><span class="fn2">🎯 AUTO-TUNE</span><span class="wval">searches for the best season record</span></div>
+    <div class="fd">Grid-searches starting pitcher · offense · 30-day form · bounce-back · home field against the whole season, walk-forward — trained on the first 65% of games, honesty-checked on the last 35% it never saw. Only bullpen can't be tuned from history; judge it by your tracked record. The holdout number is the one to believe.</div>
+    <div id="tuneOut">${S._tune ? (() => { const t = S._tune; const hp = t.holdW / t.holdN, cp = (t.curHoldW ?? 0) / t.holdN; const better = hp > cp + 0.005; return `<div class="callout" style="margin:8px 0;">Best found: starter <b>${(t.w.wK ?? 0).toFixed(2)}</b> · offense <b>${t.w.wOff.toFixed(2)}</b> · form <b>${t.w.wForm.toFixed(2)}</b> · bounce <b>${t.w.wBounce >= 0 ? "BOOST " : "FADE "}${Math.abs(t.w.wBounce).toFixed(2)}</b> · home field <b>${t.w.hfa.toFixed(2)}</b><br>
+      Train: <b>${(t.trainW / t.trainN * 100).toFixed(1)}%</b> (always flattering — it's fitted) · <b>Same-holdout showdown:</b> tuned <b style="color:${better ? "var(--green)" : "var(--dim)"}">${t.holdW}-${t.holdN - t.holdW} (${(hp * 100).toFixed(1)}%)</b> vs your current weights <b style="color:${better ? "var(--dim)" : "var(--green)"}">${t.curHoldW}-${t.holdN - t.curHoldW} (${(cp * 100).toFixed(1)}%)</b><br>
+      <b style="color:${better ? "var(--green)" : "var(--gold)"}">${better ? "Verdict: the tuned weights held up on unseen games — worth applying." : "Verdict: your current weights beat the tuned ones on unseen games — keep yours."}</b><br>
+      <span style="font-size:12px;color:var(--dim);">Selection rule: steadiest combo (best <i>worst-period</i> record) — flattering-only weights are auto-rejected. The starting-pitcher slider is now part of the search.</span><br>
+      ${better ? `<button class="btn" id="applyTune">APPLY THESE WEIGHTS</button>` : `<button class="btn ghost" id="applyTune">apply anyway</button>`}</div>`; })() : ""}</div>
+    <button class="btn ghost" id="tuneBtn">RUN AUTO-TUNE ON THIS SEASON</button>`);
+  left.appendChild(tuneRow);
   for (const [key, name, desc, mn, mx] of SLIDERS) {
     const isBounce = key === "wBounce";
     const valTxt = isBounce ? bounceLabel(S.weights[key]) : (key === "edgeThresh" ? S.weights[key].toFixed(1) + "%" : (key === "hfa" ? "+" : "") + S.weights[key].toFixed(2));
@@ -1888,27 +2098,60 @@ function renderModelTab() {
       if (wp) wp.textContent = k === "wBounce" ? bounceLabel(S.weights[k]) : (k === "edgeThresh" ? S.weights[k].toFixed(1) + "%" : (k === "hfa" ? "+" : "") + S.weights[k].toFixed(2));
       const apEl = root.querySelectorAll(".preset"); const cur = activePreset(); const keys = Object.keys(PRESETS);
       apEl.forEach((p, i) => p.classList.toggle("active", keys[i] === cur));
-      saveWeights(); computeAll(); updatePreview();
+      saveWeights();
+      try {
+        computeAll(); updatePreview();
+        const lr = root.querySelector("#liveRec");
+        if (lr) lr.innerHTML = recHTML();
+      } catch (e) { setStatus("preview error: " + e.message, true); }
     });
     sl.addEventListener("change", () => { renderBoard(); renderKs(); renderRecords(); });
   });
   root.querySelector("#oddskey")?.addEventListener("change", ev => { if (hasLS) localStorage.setItem("kb_oddsapikey", ev.target.value.trim()); setStatus("Odds API key saved."); });
   root.querySelector("#resetBtn")?.addEventListener("click", () => { S.weights = { ...CFG.defaultWeights }; saveWeights(); computeAll(); renderModelTab(); renderBoard(); });
+  root.querySelector("#tuneBtn")?.addEventListener("click", () => {
+    setStatus("Auto-tuning against the season…");
+    S._tune = autoTune();
+    setStatus(S._tune ? "Auto-tune done — review the holdout record, then APPLY if you like it." : "Not enough season data yet to tune.");
+    renderModelTab();
+  });
+  root.querySelector("#applyTune")?.addEventListener("click", () => {
+    if (!S._tune) return;
+    Object.assign(S.weights, S._tune.w);
+    saveWeights(); computeAll(); renderModelTab(); renderBoard(); renderRecords();
+    setStatus("Tuned weights applied — sliders, board and backtest all updated.");
+  });
 }
 function updatePreview() {
   const pv = $("#preview"); if (!pv) return;
-  const g = S.games.find(x => x.implHome != null) || S.games[0];
+  // show the game where the starting-pitcher slider has the most to push, so its effect is visible
+  const cand = (S.games || []).filter(x => x.state === "Preview" && x.kevin);
+  const g = cand.sort((a, b) => Math.abs(b.kevin?.factors?.[0]?.val ?? 0) - Math.abs(a.kevin?.factors?.[0]?.val ?? 0))[0] || S.games.find(x => x.implHome != null) || S.games[0];
   if (!g) { pv.innerHTML = `<div class="ph">LIVE PREVIEW</div><div style="color:var(--dim);font-size:13px;">Load a slate to preview.</div>`; return; }
   const starCount = bestBets().length;
   const kp = g.kevin.pHome, cs = g.consensus, mk = g.implHome;
-  pv.innerHTML = `<div class="ph">LIVE PREVIEW — ${g.away.abbr} @ ${g.home.abbr}</div>
+  const fK = g.kevin?.factors?.[0];
+  let kLine = "";
+  if (fK) {
+    if (Math.abs(fK.val) < 0.03) {
+      kLine = `<div class="pvrow"><span style="color:var(--dim);">Starting-pitcher effect here</span><b style="color:var(--dim3);">none — starters even or TBD</b></div>`;
+    } else {
+      const contrib = 0.9 * fK.w * fK.val;
+      const z = Math.log(clamp(kp, 0.02, 0.98) / (1 - clamp(kp, 0.02, 0.98)));
+      const pts = (kp - logistic(z - contrib)) * 100;
+      kLine = `<div class="pvrow"><span style="color:var(--dim);">Starting-pitcher effect here <span style="color:var(--dim3);font-size:11px;">(drag its slider — this moves)</span></span><b style="color:${pts >= 0 ? "var(--green)" : "var(--red)"};">${pts >= 0 ? "+" : ""}${pts.toFixed(1)} pts to ${pts >= 0 ? g.home.abbr : g.away.abbr}</b></div>`;
+    }
+  }
+  pv.innerHTML = `<div class="ph">LIVE PREVIEW — ${g.away.abbr} @ ${g.home.abbr} <span style="color:var(--dim3);font-weight:600;">· tonight's biggest starting-pitcher mismatch</span></div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">${logoImg(g.away.id, 30)}<span style="font-family:var(--cond);font-weight:800;font-size:19px;">${g.away.abbr} @ ${g.home.abbr}</span>${logoImg(g.home.id, 30)}</div>
     <div class="pvrow"><span style="color:var(--dim);">Kevin's Model · P(${g.home.abbr})</span><b>${kp != null ? (kp * 100).toFixed(1) + "%" : "—"}</b></div>
+    ${kLine}
     <div class="pvrow"><span style="color:var(--dim);">Consensus (4 models)</span><b>${cs != null ? (cs * 100).toFixed(1) + "%" : "—"}</b></div>
     <div class="pvrow"><span style="color:var(--dim);">Market (de-vig)</span><b>${mk != null ? (mk * 100).toFixed(1) + "%" : "no line"}</b></div>
     <div class="pvrow" style="border-top:1px solid var(--line3);margin-top:4px;padding-top:9px;"><span style="color:var(--dim);">Edge on ${g.home.abbr}</span><b style="color:${g.edgeHome != null ? edgeCls(g.edgeHome) : "var(--dim3)"}">${g.edgeHome != null ? (g.edgeHome >= 0 ? "+" : "") + g.edgeHome.toFixed(1) + "%" : "—"}</b></div>
     <div class="pvrow"><span style="color:var(--dim);">Best Bets flagged today</span><b style="color:var(--gold);">${starCount}</b></div>
-    <div style="font-size:11px;color:var(--dim3);margin-top:10px;">Updates as you drag — release a slider to refresh the full board.</div>`;
+    ${(() => { try { if (!(S.seasonGames || []).length) return ""; const bt = backtestModels(); if (!bt || !bt.n) return ""; const w = bt.kevin.w, l = bt.kevin.l; return `<div class="pvrow" style="border-top:1px solid var(--line3);margin-top:4px;padding-top:9px;"><span style="color:var(--dim);">Season record @ these weights</span><b style="color:var(--green);">${w}-${l} · ${(w / (w + l) * 100).toFixed(1)}%</b></div>`; } catch (e) { return `<div class="pvrow"><span style="color:var(--red);font-size:11px;">record error: ${e.message}</span></div>`; } })()}
+    <div style="font-size:11px;color:var(--dim3);margin-top:10px;">Everything above updates live as you drag — the record re-scores all ${(S.seasonGames || []).length} season games each time. Release a slider to refresh the full board too.</div>`;
 }
 
 /* ---------- HOW IT WORKS ---------- */
@@ -1952,13 +2195,13 @@ function pageKevin() {
   return `
     <h2>Kevin's Model — your matchup-based moneyline algorithm</h2>
     <p>Built from the five things you chose to care about. Each factor is a <b>home-minus-away gap</b>, standardized so different stats are comparable, weighted by your sliders, summed, and passed through a logistic curve to become a win probability.</p>
-    <span class="formula">score  = 0.9 × ( wK·K-matchup + wOff·offense + wForm·form30 + wPen·bullpen + wBounce·bounce ) + HFA
+    <span class="formula">score  = 0.9 × ( wK·starter + wOff·offense + wForm·form30 + wPen·bullpen + wBounce·bounce ) + HFA
 P(home wins) = 1 / (1 + e<sup>−score</sup>)</span>
     <p>Scale feel: score 0 → 50% · +0.4 → 60% · +0.8 → 69% · +1.4 → 80%. Every factor is clamped to ±2 so no single stat can run away with the pick.</p>
     <h3>The five factors</h3>
     <table class="spec">
       <tr><th>Factor (current weight)</th><th>How it's computed</th></tr>
-      <tr><td><b>Starter K matchup</b> (${W.wK.toFixed(2)})</td><td>Each starter's season K/9 scaled by the lineup he faces: <i>adjusted K/9 = K/9 × (opponent K% ÷ league K%)</i>. A 9.0 K/9 pitcher facing a lineup that whiffs 10% more than average plays like 9.9. Factor = (home − away) ÷ 2.5.</td></tr>
+      <tr><td><b>Starting pitcher</b> (${W.wK.toFixed(2)})</td><td>The whole pitcher, not one stat: average runs his team allows in his starts this season — stuff, control, and innings depth all end up in that number. Graded vs a 4.5-run league baseline, scaled by ÷1.5, shrunk toward zero for small samples (× starts ÷ (starts + 4)) so a rookie's two gems don't outrank a proven ace. Factor = home starter's grade − away starter's grade. Walk-forward replayable — this is why the slider moves the live season record.</td></tr>
       <tr><td><b>Offense composite</b> (${W.wOff.toFixed(2)})</td><td>League-relative z-scores of OPS, AVG, HR/game and Runs/game averaged per team. Factor = (home z − away z) ÷ 1.5.</td></tr>
       <tr><td><b>30-day form</b> (${W.wForm.toFixed(2)})</td><td>Win% over the last 30 calendar days. Factor = (home − away) ÷ 0.25 — a team 25 points hotter counts as one full unit.</td></tr>
       <tr><td><b>Bullpen quality</b> (${W.wPen.toFixed(2)})</td><td>Reliever-only splits: 50% ERA + 20% WHIP + 20% K/9 + 10% inherited-runners-scored rate, as league z-scores. Factor = (home − away) ÷ 1.5.</td></tr>
@@ -2061,7 +2304,7 @@ function pageRecords() {
     <p>Two honesty rules: changing your weights only affects <i>future</i> snapshots (history is never rewritten), and picks are only saved pre-game (no cheating with games already in progress). Data lives in your browser on this computer — clearing browser site data erases it.</p>
     <h3>Season backtest (instant history)</h3>
     <p>Elo and Pythag only need game results, so the app replays the entire season walk-forward: for each game, it predicts using only games played <i>before</i> that date, then grades the prediction. No peeking at the future — the same number you'd have gotten on that morning.</p>
-    <p><b>Kevin's Core in the backtest.</b> Your full model needs each day's starter K/9, bullpen form and lineup stats <i>as they stood that morning</i> — not available historically without paid archives, and replaying it with today's season-long stats would leak the future. So the backtest runs your model's <b>core</b>: the factors that CAN be replayed honestly from results — offense (runs per game, league-relative), 30-day form, your bounce-back rule, and home field — at your <b>current slider weights</b>, with starter-K and bullpen zeroed exactly like the live model does when data is missing. Drag your sliders and the season re-scores instantly: it's a weight-testing lab. The full five-factor model still builds its true record through tracked picks above.</p>
+    <p><b>Kevin's Core in the backtest.</b> The backtest replays every factor that can be reconstructed honestly, walk-forward: <b>starting pitcher</b> (the schedule records who actually started each game, so each starter is graded on runs allowed in his <i>prior</i> starts only — no future peeking), offense (runs per game, league-relative), 30-day form, your bounce-back rule, and home field — all at your <b>current slider weights</b>. Only bullpen is zeroed (no historical day-by-day relief data). Drag any slider, including STARTING PITCHER, and the season re-scores instantly.</p>
     <h3>SHARP — the model built for backtest success</h3>
     <p>SHARP exists because you asked for a moneyline model with a high-success backtest. It's a weighted blend of Elo, Pythagorean and 30-day form where the weights aren't hand-picked — the app <b>grid-searches</b> them on the season's first 65% of games, then grades the winner on the last 35% it never trained on. The train number will always look great (it's fitted); the <b>holdout number is the honest one</b>, and it's what to compare against Elo and Pythag. It refits every time you open the app, so it adapts as the season evolves. SHARP also joins the consensus and gets its own tracked-pick record above.</p>
     <h3>Reading the records</h3>
@@ -2341,6 +2584,73 @@ async function fetchWnbaProps() {
 /* ================================================================
    🔒 LOCKS — one page, both sports, the bets most likely to hit
    ================================================================ */
+function capTypes(list, caps) { // keep hits/HRs from flooding the board — MLs and K props lead
+  const cnt = {}; const res = [];
+  for (const x of list) {
+    const key = /HIT/.test(x.type) ? "hit" : /HOME RUN/.test(x.type) ? "hr" : x.type === "K PROP" ? "k" : /PROP/.test(x.type) ? "wprop" : "ml";
+    cnt[key] = (cnt[key] || 0) + 1;
+    if (cnt[key] <= (caps[key] ?? 99)) res.push(x);
+  }
+  return res;
+}
+/* ---- LOCKS/VALUE filters: sport + odds window (persisted) ---- */
+const LADDER = [-450, -400, -350, -300, -275, -250, -225, -200, -180, -160, -150, -140, -130, -120, -110, 100, 110, 120, 130, 140, 150, 175, 200, 250, 300];
+const decOdds = ml => ml < 0 ? 1 + 100 / (-ml) : 1 + ml / 100;
+const LV = (() => {
+  const d = { locks: { sport: "ALL", lo: 0, hi: LADDER.length - 1 }, value: { sport: "ALL", lo: 0, hi: LADDER.length - 1 } };
+  try {
+    const s = hasLS ? JSON.parse(localStorage.getItem("kb_lvfilter") || "null") : null;
+    if (s) for (const k of ["locks", "value"]) if (s[k]) d[k] = { sport: ["ALL", "MLB", "WNBA"].includes(s[k].sport) ? s[k].sport : "ALL", lo: clamp(s[k].lo | 0, 0, LADDER.length - 1), hi: clamp(s[k].hi | 0, 0, LADDER.length - 1) };
+  } catch (e) {}
+  for (const k of ["locks", "value"]) if (d[k].lo > d[k].hi) { d[k].lo = 0; d[k].hi = LADDER.length - 1; }
+  return d;
+})();
+function saveLV() { if (hasLS) try { localStorage.setItem("kb_lvfilter", JSON.stringify(LV)); } catch (e) {} }
+const lvActive = k => LV[k].sport !== "ALL" || LV[k].lo !== 0 || LV[k].hi !== LADDER.length - 1;
+function lvPass(f, x) {
+  if (f.sport === "MLB" && x.sport.indexOf("MLB") < 0) return false;
+  if (f.sport === "WNBA" && x.sport.indexOf("WNBA") < 0) return false;
+  if (f.lo === 0 && f.hi === LADDER.length - 1) return true;
+  // filter on the bet's real price; if no book price yet, judge by the model's fair odds instead
+  const o = x.odds != null && isFinite(x.odds) ? x.odds : (x.prob != null ? probToAmerican(clamp(x.prob, 0.02, 0.98)) : null);
+  if (o == null) return false;
+  const d = decOdds(o);
+  return d >= decOdds(LADDER[f.lo]) - 1e-9 && d <= decOdds(LADDER[f.hi]) + 1e-9;
+}
+function lvFilterBar(kind, rerender) {
+  const f = LV[kind];
+  const max = LADDER.length - 1;
+  const bar = el("div");
+  bar.style.cssText = "display:block;height:auto;max-height:none;overflow:visible;background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:14px 16px 13px;margin:0 0 16px;";
+  const lblCss = "flex:0 0 92px;font-size:9.5px;color:var(--dim);letter-spacing:.6px;font-weight:700;";
+  const rngCss = "flex:1 1 auto;min-width:0;width:auto;height:22px;accent-color:var(--gold);margin:0;";
+  const valCss = "flex:0 0 52px;text-align:right;font-family:var(--cond);font-weight:800;font-size:17px;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1;";
+  bar.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${[["ALL", "ALL SPORTS"], ["MLB", "⚾ MLB ONLY"], ["WNBA", "🏀 WNBA ONLY"]].map(([k, l]) => `<span class="fchip${f.sport === k ? " on" : ""}" data-s="${k}">${l}</span>`).join("")}${lvActive(kind) ? `<span class="fchip reset" data-r="1" style="margin-left:auto;">✕ RESET</span>` : ""}</div>
+    <div style="max-width:540px;display:block;margin-top:12px;">
+      <div style="font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">ODDS WINDOW</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:7px;"><span style="${lblCss}">HEAVIEST FAV</span><input type="range" min="0" max="${max}" step="1" value="${f.lo}" data-k="lo" style="${rngCss}"><b data-v="lo" style="${valCss}">${fmtML(LADDER[f.lo])}</b></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:6px;"><span style="${lblCss}">LONGEST SHOT</span><input type="range" min="0" max="${max}" step="1" value="${f.hi}" data-k="hi" style="${rngCss}"><b data-v="hi" style="${valCss}">${fmtML(LADDER[f.hi])}</b></div>
+      <div style="font-size:10px;color:var(--dim);letter-spacing:.4px;font-weight:600;margin-top:8px;">${f.lo === 0 && f.hi === max ? "Showing every price — drag HEAVIEST FAV right to hide big favorites like −400 hits." : `Only bets priced ${fmtML(LADDER[f.lo])} to ${fmtML(LADDER[f.hi])} are shown (no-line bets judged by fair odds).`}</div>
+    </div>`;
+  bar.querySelectorAll(".fchip").forEach(c => c.addEventListener("click", () => {
+    if (c.dataset.r) { f.sport = "ALL"; f.lo = 0; f.hi = max; } else f.sport = c.dataset.s;
+    saveLV(); rerender();
+  }));
+  const lo = bar.querySelector('input[data-k="lo"]'), hi = bar.querySelector('input[data-k="hi"]');
+  const vLo = bar.querySelector('[data-v="lo"]'), vHi = bar.querySelector('[data-v="hi"]');
+  const sync = src => {
+    let a = parseInt(lo.value), b = parseInt(hi.value);
+    if (a > b) { if (src === "lo") { b = a; hi.value = b; } else { a = b; lo.value = a; } }
+    vLo.textContent = fmtML(LADDER[a]); vHi.textContent = fmtML(LADDER[b]);
+  };
+  for (const [inp, k] of [[lo, "lo"], [hi, "hi"]]) {
+    inp.addEventListener("input", () => sync(k));
+    inp.addEventListener("change", () => { sync(k); f.lo = parseInt(lo.value); f.hi = parseInt(hi.value); saveLV(); rerender(); });
+  }
+  return bar;
+}
+
 function collectLocks() {
   const out = [];
   const th = 0.55; // gather from 55%; ≥60% are the real locks, 55-60% fill thin days as LEANs
@@ -2352,7 +2662,7 @@ function collectLocks() {
     const ml = homeSide ? S.odds[g.pk]?.mlHome : S.odds[g.pk]?.mlAway;
     if (prob < th || !oddsOK(ml, 2)) continue;
     const side = homeSide ? g.home : g.away, opp = homeSide ? g.away : g.home;
-    out.push({ sport: "⚾ MLB", type: "MONEYLINE", prob, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (homeSide ? " vs " : " @ ") + opp.abbr, sub: "4-model consensus", time: g.time, go: () => { setSport("mlb"); } });
+    out.push({ sport: "⚾ MLB", type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (homeSide ? " vs " : " @ ") + opp.abbr, sub: "4-model consensus", time: g.time, go: () => { setSport("mlb"); } });
   }
   // MLB safe hits
   for (const p of (S.hitPicks || []).slice(0, 24)) {
@@ -2360,7 +2670,7 @@ function collectLocks() {
     const bo = hitBookPrice(p.id);
     const price = bo?.price ?? p.fairHit;
     if (p.pHit < 0.68 || !oddsOK(price, 2)) continue;
-    out.push({ sport: "⚾ MLB", type: "SAFE HIT", prob: p.pHit, big: fmtML(price), bigLbl: bo ? "BOOK ODDS" : "FAIR ODDS", label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: p.teamAbbr + " vs " + p.oppAbbr, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); } });
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", prob: p.pHit, odds: isFinite(price) ? price : null, big: fmtML(price), bigLbl: bo ? "BOOK ODDS" : "FAIR ODDS", label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: p.teamAbbr + " vs " + p.oppAbbr, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); } });
   }
   // MLB strikeout leans (real lines, clean grades)
   const kman = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
@@ -2375,7 +2685,9 @@ function collectLocks() {
       if (!lean || lean.lean === "PASS") continue;
       const prob = lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver;
       if (prob < th) continue;
-      out.push({ sport: "⚾ MLB", type: "K PROP", prob, big: lean.lean + " " + line, bigLbl: "K LINE", label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: side.abbr + " vs " + (sk === "home" ? g.away : g.home).abbr, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); } });
+      const kpr = S.props[side.pitcherId];
+      const kPrice = kpr && kpr.line === line ? (lean.lean === "OVER" ? kpr.overPrice : kpr.underPrice) : null;
+      out.push({ sport: "⚾ MLB", type: "K PROP", prob, odds: kPrice ?? null, big: lean.lean + " " + line, bigLbl: "K LINE", label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: side.abbr + " vs " + (sk === "home" ? g.away : g.home).abbr, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); } });
     }
   }
   // WNBA moneylines
@@ -2385,7 +2697,7 @@ function collectLocks() {
     const prob = homeSide ? g.cons : 1 - g.cons;
     const ml = homeSide ? g.mlHome : g.mlAway;
     if (prob < th || (ml != null && !oddsOK(ml, 2))) continue;
-    out.push({ sport: "🏀 WNBA", type: "MONEYLINE", prob, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: "4-model consensus", time: g.date, go: () => { setSport("wnba"); } });
+    out.push({ sport: "🏀 WNBA", type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: "4-model consensus", time: g.date, go: () => { setSport("wnba"); } });
   }
   // WNBA props (real lines only)
   for (const st of ["PTS", "REB", "AST", "PRA"]) {
@@ -2398,12 +2710,14 @@ function collectLocks() {
       const pOver = 1 - phi((line - pr.proj) / pr.sigma);
       const prob = Math.max(pOver, 1 - pOver);
       if (prob < th) continue;
-      out.push({ sport: "🏀 WNBA", type: st + " PROP", prob, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + line, bigLbl: bo?.source || "LINE", label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: p.team + " vs " + (pr.oppAbbr || "?"), time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); } });
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", prob, odds: pOver >= 0.5 ? (bo?.over ?? null) : null, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + line, bigLbl: bo?.source || "LINE", label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: p.team + " vs " + (pr.oppAbbr || "?"), time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); } });
     }
   }
   out.sort((a, b) => b.prob - a.prob);
-  const strong = out.filter(l => l.prob >= 0.60);
-  const fill = out.filter(l => l.prob < 0.60);
+  const flt = out.filter(x => lvPass(LV.locks, x));
+  const capped = capTypes(flt, { hit: 3, hr: 1, wprop: LV.locks.sport === "WNBA" ? 8 : 4 });
+  const strong = capped.filter(l => l.prob >= 0.60);
+  const fill = capped.filter(l => l.prob < 0.60);
   const res = [...strong];
   for (const f of fill) { if (res.length >= 8) break; res.push(f); } // thin day? surface the next-best LEANs
   return res.slice(0, 16);
@@ -2415,8 +2729,14 @@ function renderLocks() {
   root.appendChild(el("div", "subhead", `Everything the models give <b style="color:var(--txt)">60%+ to cash</b>, inside your odds zone (${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}), pre-game only, sorted by probability. Straight talk: "likely" is not "guaranteed" — a 70% bet still loses 3 times in 10, and heavy favorites pay little. These are the steady singles, not lottery tickets.`));
   if (!WS.loaded && !WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Loading WNBA in the background to include basketball…</span>`));
   else if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"}) — its locks will appear when done.</span>`));
+  root.appendChild(lvFilterBar("locks", renderLocks));
   const locks = collectLocks();
-  if (!locks.length) { root.appendChild(el("div", "nobets", "Nothing clears 60% right now — lines may not be posted yet. Hit Refresh closer to game time.")); return; }
+  if (!locks.length) {
+    root.appendChild(el("div", "nobets", lvActive("locks")
+      ? "Nothing fits your filter — widen the odds window, switch sports, or hit ✕ RESET."
+      : "Nothing clears 60% right now — lines may not be posted yet. Hit Refresh closer to game time."));
+    return;
+  }
   const grid = el("div", "grid wide");
   for (const L of locks) {
     const pc = (L.prob * 100).toFixed(1);
@@ -2449,7 +2769,7 @@ function collectValue() {
       const side = g[sideKey], opp = sideKey === "home" ? g.away : g.home;
       const mp = sideKey === "home" ? g.consensus : 1 - g.consensus;
       const ip = sideKey === "home" ? g.implHome : 1 - g.implHome;
-      out.push({ sport: "⚾ MLB", type: "MONEYLINE", edge, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (sideKey === "home" ? " vs " : " @ ") + opp.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${(ip * 100).toFixed(1)}%`, time: g.time, go: () => { setSport("mlb"); } });
+      out.push({ sport: "⚾ MLB", type: "MONEYLINE", edge, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (sideKey === "home" ? " vs " : " @ ") + opp.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${(ip * 100).toFixed(1)}%`, time: g.time, go: () => { setSport("mlb"); } });
     }
   }
   // MLB K props (need prices)
@@ -2463,7 +2783,7 @@ function collectValue() {
       const [io, iu] = deVig(americanToProb(pr.overPrice), americanToProb(pr.underPrice));
       const edge = (lean.lean === "UNDER" ? (1 - lean.pOver) - iu : lean.pOver - io) * 100;
       if (edge < 1) continue;
-      out.push({ sport: "⚾ MLB", type: "K PROP", edge, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); } });
+      out.push({ sport: "⚾ MLB", type: "K PROP", edge, odds: lean.lean === "OVER" ? pr.overPrice : pr.underPrice, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); } });
     }
   }
   // MLB hits (with book price)
@@ -2472,7 +2792,7 @@ function collectValue() {
     const bo = hitBookPrice(p.id); if (!bo || !isFinite(bo.price)) continue;
     const edge = (p.pHit - americanToProb(bo.price)) * 100;
     if (edge < 1 || !oddsOK(bo.price, 2)) continue;
-    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); } });
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); } });
   }
   // MLB home runs (with book price)
   for (const p of (S.hrPicks || []).slice(0, 30)) {
@@ -2480,7 +2800,7 @@ function collectValue() {
     const bo = S.hrOdds[p.id]; if (!bo || bo.price == null) continue;
     const edge = (p.pHR - americanToProb(bo.price)) * 100;
     if (edge < 2) continue;
-    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); } });
+    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); } });
   }
   // WNBA moneylines
   for (const g of WS.games || []) {
@@ -2490,7 +2810,7 @@ function collectValue() {
       const ml = homeSide ? g.mlHome : g.mlAway;
       if (!oddsOK(ml, 2)) continue;
       const mp = homeSide ? g.cons : 1 - g.cons;
-      out.push({ sport: "🏀 WNBA", type: "MONEYLINE", edge, big: fmtML(ml), bigLbl: "MONEYLINE", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${((homeSide ? g.impl : 1 - g.impl) * 100).toFixed(1)}%`, time: g.date, go: () => { setSport("wnba"); } });
+      out.push({ sport: "🏀 WNBA", type: "MONEYLINE", edge, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${((homeSide ? g.impl : 1 - g.impl) * 100).toFixed(1)}%`, time: g.date, go: () => { setSport("wnba"); } });
     }
   }
   // WNBA props (need an over price from the Odds API fetch)
@@ -2501,13 +2821,15 @@ function collectValue() {
       const pOver = 1 - phi((bo.line - pr.proj) / pr.sigma);
       const edge = (pOver - americanToProb(bo.over)) * 100;
       if (edge < 1 || !oddsOK(bo.over, 2)) continue;
-      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); } });
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, odds: bo.over, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); } });
     }
   }
   out.sort((a, b) => b.edge - a.edge);
-  const strong = out.filter(l => l.edge >= 3);
+  const flt = out.filter(x => lvPass(LV.value, x));
+  const capped = capTypes(flt, { hit: 3, hr: 2, wprop: LV.value.sport === "WNBA" ? 8 : 4 });
+  const strong = capped.filter(l => l.edge >= 3);
   const res = [...strong];
-  for (const f of out.filter(l => l.edge < 3)) { if (res.length >= 8) break; res.push(f); }
+  for (const f of capped.filter(l => l.edge < 3)) { if (res.length >= 8) break; res.push(f); }
   return res.slice(0, 16);
 }
 function renderValue() {
@@ -2516,8 +2838,14 @@ function renderValue() {
   root.appendChild(el("div", "h1", `💎 VALUE <small>· both sports · where the models beat the market's price</small>`));
   root.appendChild(el("div", "subhead", `LOCKS asks "what's most likely to win?" — VALUE asks "<b style="color:var(--txt)">where is the book paying too much?</b>" Edge = model probability minus the market's de-vigged probability. A +5% edge at plus money can be worth more long-run than a 75% favorite at a heavy price. Tiers: <b style="color:var(--green)">MAX ≥ 8%</b> · <b style="color:var(--gold)">STRONG ≥ 5%</b> · <b style="color:var(--blue)">VALUE ≥ 3%</b> · smaller edges show as THIN on quiet days. All pre-game, inside your odds zone.`));
   if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"})…</span>`));
+  root.appendChild(lvFilterBar("value", renderValue));
   const vals = collectValue();
-  if (!vals.length) { root.appendChild(el("div", "nobets", "No edges vs the market right now — lines may not be posted yet (K-prop and WNBA prop edges also need book prices via the free ESPN feed or your Odds API key). Refresh closer to game time.")); return; }
+  if (!vals.length) {
+    root.appendChild(el("div", "nobets", lvActive("value")
+      ? "No edges fit your filter — widen the odds window, switch sports, or hit ✕ RESET."
+      : "No edges vs the market right now — lines may not be posted yet (K-prop and WNBA prop edges also need book prices via the free ESPN feed or your Odds API key). Refresh closer to game time."));
+    return;
+  }
   const grid = el("div", "grid wide");
   for (const L of vals) {
     const col = L.edge >= 8 ? "var(--green)" : L.edge >= 5 ? "var(--gold)" : L.edge >= 3 ? "var(--blue)" : "var(--dim)";
@@ -2755,6 +3083,8 @@ if (typeof document !== "undefined") {
   document.querySelectorAll("#sportSwitch button").forEach(b => b.addEventListener("click", () => setSport(b.dataset.sport)));
 }
 function init() {
+  const f = document.querySelector(".foot");
+  if (f) f.innerHTML = `<b style="color:var(--blue)">BUILD ${BUILD}</b> — if you don't see this build number after updating, your phone is showing an old cached copy (pull to refresh, or open the link with ?new once)<br>` + f.innerHTML;
   const today = localISO(new Date());
   S.date = today;
   S.journal = loadJournal();
@@ -2779,7 +3109,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = { americanToProb, probToAmerican, mlProfit, deVig, logistic, phi, ipToOuts, mean, sd, clamp, teamMatchKey, parseAm, addDays, S, CFG, PARK_HR, PRESETS,
     parseSchedule, parseHitting, parseSplit, parseResults, parsePitchers, parseRoster, pitcherWarnings,
     kevinModel, pythagModel, eloModel, sharpFit, sharpModel, computeAll, projectKs, propLean, hrProject, computeHR, hitProject, computeHits, hitBookPrice, bestBets, bbMax, oddsOK, activePreset, bounceLabel,
-    snapshotPicks, gradeJournal, modelRecords, backtestModels, routed, RELAYS, PROXY_MAP, j, jFetch,
+    snapshotPicks, gradeJournal, modelRecords, backtestModels, routed, RELAYS, PROXY_MAP, j, jFetch, LADDER, LV, lvPass, decOdds, capTypes, calibrate, CAL_BUCKETS, spQuality, kevinCoreRows, evalCoreWeights, autoTune,
     WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj, wnbaBestProps, collectLocks, collectValue };
 }
 </script>
