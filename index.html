@@ -286,7 +286,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.30";
+const BUILD = "v3.34";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -322,7 +322,7 @@ const PRESETS = {
   offense:  { name:"OFFENSE HEAVY", desc:"Bats win — OPS/AVG/HR/Runs carry the pick.", w:{ wK:0.20, wOff:0.50, wForm:0.22, wPen:0.18, wBounce:0.10 } }
 };
 const SLIDERS = [
-  ["wK", "STARTING PITCHER", "The whole pitcher, not just strikeouts: how many runs his team allows in his starts this season (stuff, control, innings — it all ends up there), shrunk for small samples. Fully replayable — dragging this moves the live season record.", 0, 1],
+  ["wK", "STARTING PITCHER", "The whole pitcher, not just strikeouts: 65% his season grade (runs his team allows in his starts, sample-shrunk) + 35% his last-30-days shape, where each recent start is weighted by how good the offense he faced was. Fully replayable — dragging this moves the live season record.", 0, 1],
   ["wOff", "OFFENSE", "OPS · AVG · HR/game · Runs/game, league-relative.", 0, 1],
   ["wForm", "30-DAY FORM (SOS-ADJUSTED)", "Win% over the last 30 days, weighted by the strength of the teams they beat — 7-3 vs contenders rates far above 7-3 vs cellar-dwellers.", 0, 1],
   ["wPen", "BULLPEN", "Reliever-only ERA, WHIP, K/9 and inherited-runner rescues. Also not in the season replay — judge it by your tracked record.", 0, 1],
@@ -580,8 +580,8 @@ function parseResults(data) {
     if (h.score == null || a.score == null) continue;
     S.finals[g.gamePk] = !!h.isWinner;
     S.seasonGames.push({ d: g.officialDate, pk: g.gamePk, hId: h.team.id, aId: a.team.id, hs: h.score, as: a.score, hSp: h.probablePitcher?.id || null, aSp: a.probablePitcher?.id || null });
-    if (h.probablePitcher?.id) (S.spLog[h.probablePitcher.id] = S.spLog[h.probablePitcher.id] || []).push(a.score);
-    if (a.probablePitcher?.id) (S.spLog[a.probablePitcher.id] = S.spLog[a.probablePitcher.id] || []).push(h.score);
+    if (h.probablePitcher?.id) (S.spLog[h.probablePitcher.id] = S.spLog[h.probablePitcher.id] || []).push({ d: g.officialDate, ra: a.score, opp: a.team.id });
+    if (a.probablePitcher?.id) (S.spLog[a.probablePitcher.id] = S.spLog[a.probablePitcher.id] || []).push({ d: g.officialDate, ra: h.score, opp: h.team.id });
     rec(h.team.id).games.push({ d: g.officialDate, w: !!h.isWinner, rf: h.score, ra: a.score, opp: a.team.id });
     rec(a.team.id).games.push({ d: g.officialDate, w: !!a.isWinner, rf: a.score, ra: h.score, opp: h.team.id });
     rec(h.team.id).rs += h.score; rec(h.team.id).ra += a.score;
@@ -832,14 +832,29 @@ function pitcherAdjK9(pid, oppTeamId) {
   const oppK = S.teams[oppTeamId]?.hit?.kPct, lgK = S.league.kPct || 0.22;
   return k9 * (oppK ? (oppK / lgK) : 1);
 }
-function spQuality(list) { // overall starter grade: run prevention in his starts this season, sample-shrunk
+function spQuality(list) { // season grade: run prevention in his starts, sample-shrunk
   const n = list ? list.length : 0; if (!n) return 0;
-  return clamp((4.5 - mean(list)) / 1.5, -2, 2) * (n / (n + 4));
+  return clamp((4.5 - mean(list.map(e => e.ra ?? e))) / 1.5, -2, 2) * (n / (n + 4));
+}
+function spForm30(list, date, rpg) { // last-30-days shape, each start weighted by the offense he faced
+  if (!list || !date) return null;
+  const from = addDays(date, -30);
+  const rec = list.filter(e => e.d != null && e.d >= from && e.d < date);
+  if (!rec.length) return null;
+  const adj = rec.map(e => (e.ra ?? 0) * (4.5 / clamp(rpg ? rpg(e.opp) : 4.5, 3, 6.5))); // 3 runs to a juggernaut ≈ 2 to a punchless lineup
+  return clamp((4.5 - mean(adj)) / 1.5, -2, 2) * (rec.length / (rec.length + 2));
+}
+function spGrade(list, date, rpg) { // the STARTING PITCHER factor: 65% season grade + 35% recent shape
+  if (!list || !list.length) return 0;
+  const base = spQuality(list);
+  const f30 = spForm30(list, date, rpg);
+  return f30 == null ? base : 0.65 * base + 0.35 * f30;
 }
 function kevinModel(g) {
   const W = S.weights, f = [];
   const th = S.teams[g.home.id] || {}, ta = S.teams[g.away.id] || {};
-  const qh = spQuality(S.spLog?.[g.home.pitcherId]), qa = spQuality(S.spLog?.[g.away.pitcherId]);
+  const rpgLive = id => { const t = S.teams[id]?.daily; return t && t.gp >= 5 ? t.rs / t.gp : 4.5; };
+  const qh = spGrade(S.spLog?.[g.home.pitcherId], S.date, rpgLive), qa = spGrade(S.spLog?.[g.away.pitcherId], S.date, rpgLive);
   const fK = (g.home.pitcherId && g.away.pitcherId) ? clamp(qh - qa, -2, 2) : 0;
   f.push({ name: "Starting pitcher", val: fK, w: W.wK });
   const fOff = (th.offZ != null && ta.offZ != null) ? clamp((th.offZ - ta.offZ) / 1.5, -2, 2) : 0;
@@ -1092,14 +1107,15 @@ function kevinCoreRows() {
       const fForm = clamp((f30(g.hId, g.d) - f30(g.aId, g.d)) / 0.25, -2, 2);
       const yd = addDays(g.d, -1);
       const b = (last[g.hId] && last[g.hId].d === yd && !last[g.hId].w ? 1 : 0) - (last[g.aId] && last[g.aId].d === yd && !last[g.aId].w ? 1 : 0);
-      const fSp = (g.hSp && g.aSp) ? clamp(spQuality(spl[g.hSp]) - spQuality(spl[g.aSp]), -2, 2) : 0;
+      const rpgBt = id => { const c = cum[id]; return c && c.gp >= 5 ? c.rs / c.gp : 4.5; };
+      const fSp = (g.hSp && g.aSp) ? clamp(spGrade(spl[g.hSp], g.d, rpgBt) - spGrade(spl[g.aSp], g.d, rpgBt), -2, 2) : 0;
       rows.push({ fSp, fOff, fForm, b, y: homeWon });
     }
     ch.rs += g.hs; ch.gp++; ch.w += homeWon ? 1 : 0; ca.rs += g.as; ca.gp++; ca.w += homeWon ? 0 : 1;
     H(g.hId).push({ d: g.d, w: homeWon, opp: g.aId }); H(g.aId).push({ d: g.d, w: !homeWon, opp: g.hId });
     last[g.hId] = { d: g.d, w: homeWon }; last[g.aId] = { d: g.d, w: !homeWon };
-    if (g.hSp) (spl[g.hSp] = spl[g.hSp] || []).push(g.as);
-    if (g.aSp) (spl[g.aSp] = spl[g.aSp] || []).push(g.hs);
+    if (g.hSp) (spl[g.hSp] = spl[g.hSp] || []).push({ d: g.d, ra: g.as, opp: g.aId });
+    if (g.aSp) (spl[g.aSp] = spl[g.aSp] || []).push({ d: g.d, ra: g.hs, opp: g.hId });
   }
   return rows;
 }
@@ -1247,7 +1263,8 @@ function backtestModels() {
       const yd = addDays(g.d, -1);
       const bH = last[g.hId] && last[g.hId].d === yd && !last[g.hId].w ? 1 : 0;
       const bA = last[g.aId] && last[g.aId].d === yd && !last[g.aId].w ? 1 : 0;
-      const fSp = (g.hSp && g.aSp) ? clamp(spQuality(spl[g.hSp]) - spQuality(spl[g.aSp]), -2, 2) : 0;
+      const rpgBt = id => { const c = cum[id]; return c && c.gp >= 5 ? c.rs / c.gp : 4.5; };
+      const fSp = (g.hSp && g.aSp) ? clamp(spGrade(spl[g.hSp], g.d, rpgBt) - spGrade(spl[g.aSp], g.d, rpgBt), -2, 2) : 0;
       const score = 0.9 * ((W.wK || 0) * fSp + W.wOff * fOff + W.wForm * fForm + W.wBounce * (bH - bA)) + W.hfa;
       bt.kevin[(score >= 0) === homeWon ? "w" : "l"]++;
       // calibration rows: what probability did each model claim, and what happened
@@ -1274,8 +1291,8 @@ function backtestModels() {
     ch.rs += g.hs; ch.ra += g.as; ch.gp++; ch.w += homeWon ? 1 : 0; ca.rs += g.as; ca.ra += g.hs; ca.gp++; ca.w += homeWon ? 0 : 1;
     Hst(g.hId).push({ d: g.d, w: homeWon, opp: g.aId }); Hst(g.aId).push({ d: g.d, w: !homeWon, opp: g.hId });
     last[g.hId] = { d: g.d, w: homeWon }; last[g.aId] = { d: g.d, w: !homeWon };
-    if (g.hSp) (spl[g.hSp] = spl[g.hSp] || []).push(g.as);
-    if (g.aSp) (spl[g.aSp] = spl[g.aSp] || []).push(g.hs);
+    if (g.hSp) (spl[g.hSp] = spl[g.hSp] || []).push({ d: g.d, ra: g.as, opp: g.aId });
+    if (g.aSp) (spl[g.aSp] = spl[g.aSp] || []).push({ d: g.d, ra: g.hs, opp: g.hId });
   }
   return bt;
 }
@@ -1473,6 +1490,7 @@ function gameCard(g, vRank) {
         <span style="color:${pickHome ? "var(--green)" : "var(--dim2)"}">${(pH * 100).toFixed(0)}% ${g.home.abbr}</span></div>
       <div class="pbar"><div style="width:${(pA * 100).toFixed(1)}%;background:var(--blue);"></div><div style="width:${(pH * 100).toFixed(1)}%;background:var(--green);"></div></div>
     </div>` : ""}
+    ${!played && g.consensus != null ? pickBanner() : ""}
     <div class="prow">
       ${pitcherCell(g.away, warnA)}
       ${pitcherCell(g.home, warnH)}
@@ -1482,6 +1500,20 @@ function gameCard(g, vRank) {
   card.querySelector(".togglebtn").addEventListener("click", () => { S.open[g.pk] = !S.open[g.pk]; renderBoard(); });
   return card;
 
+  function pickBanner() {
+    const t = pickHome ? g.home : g.away;
+    const p = pickHome ? pH : pA;
+    const mkt = g.implHome != null ? (pickHome ? g.implHome : 1 - g.implHome) : null;
+    const disagree = mkt != null && mkt < 0.5;
+    return `<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:9px;background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:7px 11px;">
+      <span style="font-size:9px;font-weight:800;letter-spacing:1.1px;color:var(--dim);">MODELS' PICK</span>
+      ${logoImg(t.id, 24)}
+      <b style="font-family:var(--cond);font-size:17px;letter-spacing:.4px;color:var(--green);min-width:0;">${t.abbr} ${(t.nick || "").toUpperCase()}</b>
+      <div class="spacer"></div>
+      <b style="font-family:var(--cond);font-size:17px;color:var(--green);">${(p * 100).toFixed(0)}%</b>
+      ${disagree ? `<span class="chip gold" style="font-weight:700;">market leans ${pickHome ? g.away.abbr : g.home.abbr}</span>` : ""}
+    </div>`;
+  }
   function teamRow(t, ml, isPick) {
     const right = played
       ? `<div class="tscore" style="color:${t.won ? "var(--green)" : "var(--dim)"}">${t.score ?? "—"}</div>`
@@ -1513,10 +1545,15 @@ function expandedStats(g) {
   ];
   const modelRows = rows.map(([label, p, color]) => {
     if (p == null) return `<div class="mrow"><span class="mlabel">${label}</span><span style="color:var(--dim3);font-size:11px;">n/a</span></div>`;
-    const edge = (label === "Market (de-vig)" || g.implHome == null) ? null : (p - g.implHome) * 100;
+    const homePick = p >= 0.5;
+    const abbr = homePick ? g.home.abbr : g.away.abbr;
+    const showP = homePick ? p : 1 - p;
+    const isMkt = label === "Market (de-vig)";
+    const sideCol = isMkt ? "var(--dim)" : homePick ? "var(--green)" : "var(--blue)";
+    const edge = (isMkt || g.implHome == null) ? null : ((homePick ? p - g.implHome : g.implHome - p)) * 100;
     return `<div class="mrow"><span class="mlabel" style="color:${label === "Consensus" ? "var(--green)" : "var(--dim)"}">${label}</span>
-      <div class="mbar"><i style="width:${(p * 100).toFixed(0)}%;background:${color};"></i></div>
-      <span class="mpct">${(p * 100).toFixed(1)}%</span>
+      <div class="mbar"><i style="width:${(showP * 100).toFixed(0)}%;background:${sideCol};"></i></div>
+      <span class="mpct" style="min-width:78px;"><b style="color:${sideCol};">${abbr}</b> ${(showP * 100).toFixed(1)}%</span>
       <span class="medge" style="color:${edge == null ? "var(--dim3)" : edgeCls(edge)}">${edge == null ? "" : (edge >= 0 ? "+" : "") + edge.toFixed(1) + "%"}</span></div>`;
   }).join("");
   const ta = S.teams[g.away.id] || {}, thm = S.teams[g.home.id] || {};
@@ -1561,7 +1598,7 @@ function expandedStats(g) {
       <span class="fval" style="color:${color}">${v >= 0 ? "+" : ""}${v.toFixed(2)}</span></div>`;
   }).join("") + `<div class="frow"><span class="fname">Home field</span><div class="fbar"><div class="mid"></div><i style="left:50%;width:${clamp(S.weights.hfa / 0.7 * 50, 0, 50)}%;background:var(--green);"></i></div><span class="fval" style="color:var(--green)">+${S.weights.hfa.toFixed(2)}</span></div>`;
   return `<div class="xstats">
-    <div><div class="xh">MODEL WIN PROBABILITY · P(${g.home.abbr})</div>${modelRows}</div>
+    <div><div class="xh">WHO EACH MODEL PICKS <span style="color:var(--dim3);letter-spacing:0;font-weight:600;">· <b style="color:var(--green)">green = ${g.home.abbr}</b> · <b style="color:var(--blue)">blue = ${g.away.abbr}</b> · bar = confidence · % = edge vs market</span></div>${modelRows}</div>
     <div><div class="xh">TEAM COMPARISON</div><div class="cmp">
       <span class="ha" style="font-family:var(--cond);font-weight:800;font-size:15px;">${g.away.abbr}</span><span class="hl" style="font-size:9px;color:var(--dim3);letter-spacing:.5px;">STAT</span><span class="hh" style="font-family:var(--cond);font-weight:800;font-size:15px;">${g.home.abbr}</span>
       ${cmpRows}</div></div>
@@ -2201,7 +2238,7 @@ P(home wins) = 1 / (1 + e<sup>−score</sup>)</span>
     <h3>The five factors</h3>
     <table class="spec">
       <tr><th>Factor (current weight)</th><th>How it's computed</th></tr>
-      <tr><td><b>Starting pitcher</b> (${W.wK.toFixed(2)})</td><td>The whole pitcher, not one stat: average runs his team allows in his starts this season — stuff, control, and innings depth all end up in that number. Graded vs a 4.5-run league baseline, scaled by ÷1.5, shrunk toward zero for small samples (× starts ÷ (starts + 4)) so a rookie's two gems don't outrank a proven ace. Factor = home starter's grade − away starter's grade. Walk-forward replayable — this is why the slider moves the live season record.</td></tr>
+      <tr><td><b>Starting pitcher</b> (${W.wK.toFixed(2)})</td><td>The whole pitcher, not one stat. <b>Season grade (65%):</b> average runs his team allows in his starts — stuff, control, and innings depth all end up in that number — vs a 4.5-run baseline, shrunk toward zero for small samples (× starts ÷ (starts + 4)) so a rookie's two gems don't outrank a proven ace. <b>30-day shape (35%):</b> the same grade over just his last month, with each start scaled by the offense he faced — 3 runs to a top lineup counts like ~2 to a weak one, so a pitcher rounding into form against real bats gets credit before his season line catches up. Factor = home grade − away grade. Walk-forward replayable — this is why the slider moves the live season record.</td></tr>
       <tr><td><b>Offense composite</b> (${W.wOff.toFixed(2)})</td><td>League-relative z-scores of OPS, AVG, HR/game and Runs/game averaged per team. Factor = (home z − away z) ÷ 1.5.</td></tr>
       <tr><td><b>30-day form</b> (${W.wForm.toFixed(2)})</td><td>Win% over the last 30 calendar days. Factor = (home − away) ÷ 0.25 — a team 25 points hotter counts as one full unit.</td></tr>
       <tr><td><b>Bullpen quality</b> (${W.wPen.toFixed(2)})</td><td>Reliever-only splits: 50% ERA + 20% WHIP + 20% K/9 + 10% inherited-runners-scored rate, as league z-scores. Factor = (home − away) ÷ 1.5.</td></tr>
@@ -2353,7 +2390,7 @@ async function wnbaLoad() {
   for (let attempt = 0; attempt < 3 && !tl; attempt++) { // the team list is the keystone — retry it
     try { tl = await j(`${W_SITE}/teams?limit=40`); }
     catch (e) {
-      if (attempt === 2) WS.errors.push("team list: " + e.message + " (3 tries) — hit RELOAD");
+      if (attempt === 2) WS.errors.push("team list: " + e.message + " (3 tries)");
       else await new Promise(r => setTimeout(r, 1500));
     }
   }
@@ -2361,6 +2398,16 @@ async function wnbaLoad() {
     const teams = (tl?.sports?.[0]?.leagues?.[0]?.teams || []).map(t => t.team).filter(Boolean);
     for (const t of teams) WS.teams[+t.id] = { id: +t.id, abbr: t.abbreviation, name: t.displayName, logo: t.logos?.[0]?.href || "", res: [] };
     if (!teams.length) WS.errors.push("team list: empty response");
+    else if (hasLS) try { localStorage.setItem("kb_wteams", JSON.stringify(teams.map(t => ({ id: +t.id, abbr: t.abbreviation, name: t.displayName, logo: t.logos?.[0]?.href || "" })))); } catch (e) {}
+  } else if (hasLS) {
+    // live fetch failed — fall back to the saved team list so the tab still works
+    try {
+      const saved = JSON.parse(localStorage.getItem("kb_wteams") || "null");
+      if (saved && saved.length) {
+        for (const t of saved) WS.teams[t.id] = { ...t, res: [] };
+        WS.errors[WS.errors.length - 1] = "team list: live fetch failed — using saved copy (fine: teams don't change)";
+      }
+    } catch (e) {}
   }
   try {
     WS.stage = "season results (every team's schedule)…"; renderWnba();
@@ -2381,7 +2428,20 @@ async function wnbaLoad() {
     WS.results.sort((a, b) => a.d < b.d ? -1 : 1);
     if (failed) WS.errors.push(`results: ${failed} team schedule(s) failed`);
   } catch (e) { WS.errors.push("results: " + e.message); }
+  // results cache: save good loads, fall back to the last good copy when fetches fail
+  if (WS.results.length >= 40) {
+    if (hasLS) try { localStorage.setItem("kb_wresults", JSON.stringify({ d: S.date, res: WS.results })); } catch (e) {}
+  } else if (hasLS) {
+    try {
+      const saved = JSON.parse(localStorage.getItem("kb_wresults") || "null");
+      if (saved && saved.res && saved.res.length > WS.results.length) {
+        WS.results = saved.res;
+        WS.errors.push(`results: live fetch came up short — using the saved season from ${saved.d} (models still work; hit RELOAD for fresh)`);
+      }
+    } catch (e) {}
+  }
   try { wnbaFitModels(); } catch (e) { WS.errors.push("models: " + e.message); }
+  try { WS._wkr = wnbaKevRows(); } catch (e) { WS.errors.push("your W-model: " + e.message); }
   try {
     WS.stage = "today's games & odds…"; renderWnba();
     const sb = await j(`${W_SITE}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}`);
@@ -2519,13 +2579,83 @@ function wnbaPredict(g) {
     const sp = WS.sharp;
     pS = logistic(sp.a * lgt(pE) + sp.b * lgt(clamp(pP - WCFG.homeBump, 0.05, 0.95)) + sp.c * fD + sp.d);
   }
-  g.mElo = pE; g.mPyth = pP; g.mForm = pF; g.mSharp = pS;
-  const ps = [pE, pP, pF, pS].filter(p => p != null);
+  let pK = null;
+  if (WS.kevState) {
+    const ks = WS.kevState;
+    const today = (g.date || "").slice(0, 10) || S.date;
+    const fNet = clamp(((ks.net[g.home.id] ?? 0) - (ks.net[g.away.id] ?? 0)) / 6, -2, 2);
+    const fForm = clamp(((ks.wf10[g.home.id] ?? 0) - (ks.wf10[g.away.id] ?? 0)) / 6, -2, 2);
+    const fRest = (ks.lastP[g.away.id] === addDays(today, -1) ? 1 : 0) - (ks.lastP[g.home.id] === addDays(today, -1) ? 1 : 0);
+    pK = logistic(wnbaKevScore({ fNet, fForm, fRest }, WS.ww));
+  }
+  g.mElo = pE; g.mPyth = pP; g.mForm = pF; g.mSharp = pS; g.mKev = pK;
+  const ps = [pE, pP, pF, pS, pK].filter(p => p != null);
   g.cons = ps.length ? mean(ps) : null;
   if (g.mlHome != null && g.mlAway != null && g.cons != null) {
     const [ih] = deVig(americanToProb(g.mlHome), americanToProb(g.mlAway));
     g.impl = ih; g.edgeH = (g.cons - ih) * 100; g.edgeA = -g.edgeH;
   } else { g.impl = g.edgeH = g.edgeA = null; }
+}
+
+/* ---- KEVIN'S W-MODEL: your own WNBA model, every factor replayable ---- */
+const WW_DEF = { wNet: 0.35, wForm: 0.30, wRest: 0.20, hfa: 0.30 };
+function loadWW() {
+  try { if (hasLS) { const w = JSON.parse(localStorage.getItem("kb_wweights")); if (w && typeof w.wNet === "number") return { ...WW_DEF, ...w }; } } catch (e) {}
+  return { ...WW_DEF };
+}
+function saveWW() { if (hasLS) try { localStorage.setItem("kb_wweights", JSON.stringify(WS.ww)); } catch (e) {} }
+WS.ww = loadWW();
+function wnbaKevScore(f, W) { return 0.9 * ((W.wNet || 0) * (f.fNet || 0) + (W.wForm || 0) * (f.fForm || 0) + (W.wRest || 0) * (f.fRest || 0)) + (W.hfa ?? 0.3); }
+function wnbaKevRows() { // walk-forward factor rows for the record + tonight's inputs (WS.kevState)
+  const res = WS.results || [];
+  const cum = {}, hist = {}, lastP = {}, wrec = {};
+  const C = id => cum[id] = cum[id] || { pf: 0, pa: 0, gp: 0 };
+  const Hh = id => hist[id] = hist[id] || [];
+  const R = id => wrec[id] = wrec[id] || { w: 0, n: 0 };
+  const wpct = id => { const r = wrec[id]; return r && r.n ? r.w / r.n : 0.5; };
+  const wf10 = id => { const h = Hh(id).slice(-10); if (!h.length) return 0; return h.reduce((s, x) => s + x.m * clamp(wpct(x.opp) / 0.5, 0.6, 1.5), 0) / h.length; };
+  const net = id => { const c = cum[id]; return c && c.gp ? (c.pf - c.pa) / c.gp : 0; };
+  const rows = [];
+  for (const g of res) {
+    const ch = C(g.hId), ca = C(g.aId);
+    if (ch.gp >= WCFG.btMin && ca.gp >= WCFG.btMin) {
+      const fNet = clamp((net(g.hId) - net(g.aId)) / 6, -2, 2);
+      const fForm = clamp((wf10(g.hId) - wf10(g.aId)) / 6, -2, 2);
+      const fRest = (lastP[g.aId] === addDays(g.d, -1) ? 1 : 0) - (lastP[g.hId] === addDays(g.d, -1) ? 1 : 0);
+      rows.push({ fNet, fForm, fRest, y: g.hs > g.as });
+    }
+    ch.pf += g.hs; ch.pa += g.as; ch.gp++; ca.pf += g.as; ca.pa += g.hs; ca.gp++;
+    Hh(g.hId).push({ m: g.hs - g.as, opp: g.aId }); Hh(g.aId).push({ m: g.as - g.hs, opp: g.hId });
+    R(g.hId).n++; R(g.aId).n++; if (g.hs > g.as) R(g.hId).w++; else R(g.aId).w++;
+    lastP[g.hId] = g.d; lastP[g.aId] = g.d;
+  }
+  WS.kevState = { net: {}, wf10: {}, lastP };
+  for (const idS of Object.keys(cum)) { const id = +idS; WS.kevState.net[id] = net(id); WS.kevState.wf10[id] = wf10(id); }
+  return rows;
+}
+function evalWCore(rows, W) { // full-season + holdout (last 35%) record at weights W
+  const nT = Math.floor(rows.length * 0.65);
+  let w = 0, l = 0, hw = 0, hl = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const win = ((wnbaKevScore(rows[i], W) >= 0) === rows[i].y);
+    if (i < nT) win ? w++ : l++; else win ? hw++ : hl++;
+  }
+  return { w, l, hw, hl };
+}
+function wnbaAutoTune() { // maximin: steadiest combo across train AND holdout — flattering-only weights rejected
+  const rows = WS._wkr && WS._wkr.length ? WS._wkr : wnbaKevRows();
+  if (rows.length < 60) return null;
+  const nT = Math.floor(rows.length * 0.65);
+  let best = null;
+  for (const wNet of [0, 0.2, 0.35, 0.5]) for (const wForm of [0, 0.15, 0.3, 0.5]) for (const wRest of [0, 0.15, 0.3]) for (const hfa of [0.15, 0.3, 0.45]) {
+    const r = evalWCore(rows, { wNet, wForm, wRest, hfa });
+    const tp = r.w / (r.w + r.l), hp = (r.hw + r.hl) ? r.hw / (r.hw + r.hl) : 0;
+    const score = Math.min(tp, hp);
+    if (!best || score > best.score || (score === best.score && tp > best.tp)) best = { wNet, wForm, wRest, hfa, score, tp, tw: r.w, hw: r.hw };
+  }
+  let cw = 0;
+  for (let i = nT; i < rows.length; i++) if ((wnbaKevScore(rows[i], WS.ww) >= 0) === rows[i].y) cw++;
+  return { w: { wNet: best.wNet, wForm: best.wForm, wRest: best.wRest, hfa: best.hfa }, trainW: best.tw, trainN: nT, holdW: best.hw, holdN: rows.length - nT, curHoldW: cw };
 }
 
 /* ---- prop projections ---- */
@@ -2697,7 +2827,7 @@ function collectLocks() {
     const prob = homeSide ? g.cons : 1 - g.cons;
     const ml = homeSide ? g.mlHome : g.mlAway;
     if (prob < th || (ml != null && !oddsOK(ml, 2))) continue;
-    out.push({ sport: "🏀 WNBA", type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: "4-model consensus", time: g.date, go: () => { setSport("wnba"); } });
+    out.push({ sport: "🏀 WNBA", type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: "5-model consensus", time: g.date, go: () => { setSport("wnba"); } });
   }
   // WNBA props (real lines only)
   for (const st of ["PTS", "REB", "AST", "PRA"]) {
@@ -2888,26 +3018,132 @@ function wnbaBestProps() {
 
 /* ---- render ---- */
 function wLogo(t, size) { return t?.logo ? `<img src="${t.logo}" onerror="this.style.visibility='hidden'" style="width:${size}px;height:${size}px;object-fit:contain;flex:0 0 auto;" alt="">` : ""; }
+function renderWnbaModel(root) {
+  root.appendChild(el("div", "h1", `MY W-MODEL <small>· your own WNBA model — the sliders move the record live</small>`));
+  root.appendChild(el("div", "subhead", `Same deal as your MLB model: decide what matters, watch the whole season re-score instantly. Your model joins the board as <b style="color:#4ade80">KEVIN'S W</b>, votes in the 5-model consensus, and gets its own card on MODEL RECORDS. All four factors are replayable walk-forward, so the record below is real — with the anti-flattery holdout line to keep it honest.`));
+  const rows = WS._wkr;
+  if (!rows || rows.length < 40) {
+    root.appendChild(el("div", "nobets", "The season's results didn't come through this load — one tap fixes it:"));
+    const rb = el("button", null, "⟳ RELOAD WNBA DATA"); rb.className = "btn";
+    rb.addEventListener("click", () => { WS.loaded = false; wnbaEnsure(); });
+    root.appendChild(rb);
+    return;
+  }
+  const recHTML = () => {
+    const r = evalWCore(rows, WS.ww);
+    const fw = r.w + r.hw, fl = r.l + r.hl;
+    const fp = fw / (fw + fl) * 100, hp = (r.hw + r.hl) ? r.hw / (r.hw + r.hl) * 100 : 0;
+    const flat = fp - hp > 2;
+    return `${fw}-${fl} <span style="font-size:17px;color:var(--dim);">· ${fp.toFixed(1)}% of ${fw + fl} games</span>
+      <div style="font-size:14px;font-weight:700;color:${flat ? "var(--gold)" : "var(--green)"};margin-top:3px;">holdout (last 35%, can't be flattered): ${r.hw}-${r.hl} · ${hp.toFixed(1)}% ${flat ? "⚠ big number is flattering — trust this one" : "✓ holding up"}</div>`;
+  };
+  root.appendChild(el("div", "facrow", `
+    <div class="ft"><span class="fn2">SEASON RECORD @ YOUR WEIGHTS</span><span class="wval">walk-forward · every factor replayed</span></div>
+    <div id="wLiveRec" style="font-family:var(--cond);font-weight:800;font-size:36px;line-height:1.1;color:var(--green);margin-top:4px;">${recHTML()}</div>`));
+  // auto-tune
+  root.appendChild(el("div", "facrow", `
+    <div class="ft"><span class="fn2">🎯 AUTO-TUNE</span><span class="wval">steadiest combo, not prettiest</span></div>
+    <div class="fd">Grid-searches all four sliders against the season, walk-forward — picked by best <i>worst-period</i> record (train vs holdout), then shown next to your current weights on the same unseen games so you can judge.</div>
+    <div id="wTuneOut">${WS._wtune ? (() => { const t = WS._wtune; const hp = t.holdW / t.holdN, cp = (t.curHoldW ?? 0) / t.holdN; const better = hp > cp + 0.005; return `<div class="callout" style="margin:8px 0;">Best found: strength <b>${t.w.wNet.toFixed(2)}</b> · form <b>${t.w.wForm.toFixed(2)}</b> · fatigue <b>${t.w.wRest.toFixed(2)}</b> · home court <b>${t.w.hfa.toFixed(2)}</b><br>
+      Train: <b>${(t.trainW / t.trainN * 100).toFixed(1)}%</b> (fitted — always flattering) · <b>Same-holdout showdown:</b> tuned <b style="color:${better ? "var(--green)" : "var(--dim)"}">${t.holdW}-${t.holdN - t.holdW} (${(hp * 100).toFixed(1)}%)</b> vs yours <b style="color:${better ? "var(--dim)" : "var(--green)"}">${t.curHoldW}-${t.holdN - t.curHoldW} (${(cp * 100).toFixed(1)}%)</b><br>
+      <b style="color:${better ? "var(--green)" : "var(--gold)"}">${better ? "Verdict: tuned weights held up on unseen games — worth applying." : "Verdict: your current weights beat the tuned ones on unseen games — keep yours."}</b><br>
+      <button class="btn ${better ? "" : "ghost"}" id="wApplyTune">${better ? "APPLY THESE WEIGHTS" : "apply anyway"}</button></div>`; })() : ""}</div>
+    <button class="btn ghost" id="wTuneBtn">RUN AUTO-TUNE ON THIS SEASON</button>`));
+  const WSLIDERS = [
+    ["wNet", "SEASON STRENGTH", "Net points per game across the whole season — the steadiest measure of how good a team really is. Factor = (home net − away net) ÷ 6.", 0, 1],
+    ["wForm", "LAST-10 FORM · SOS-ADJUSTED", "Average scoring margin over the last 10 games, with each game weighted by the opponent's win% — beating good teams counts more than beating up on the bottom of the league.", 0, 1],
+    ["wRest", "BACK-TO-BACK FATIGUE", "Fades a team playing its second game in two nights (travel + tired legs). Only fires when one side is on a back-to-back and the other isn't.", 0, 0.8],
+    ["hfa", "HOME COURT", "Flat home edge. WNBA home teams win ~60% — noticeably stronger than MLB's ~53% — so don't be shy with it.", 0, 0.8]
+  ];
+  for (const [key, name, desc, mn, mx] of WSLIDERS) {
+    root.appendChild(el("div", "facrow", `
+      <div class="ft"><span class="fn2">${name}</span><span class="wpill" id="wwp_${key}">${key === "hfa" ? "+" : ""}${(WS.ww[key] ?? 0).toFixed(2)}</span></div>
+      <div class="fd">${desc}</div>
+      <div class="sliderrow"><span class="endlbl">OFF</span><input type="range" min="${mn}" max="${mx}" step="0.01" value="${WS.ww[key] ?? 0}" data-ww="${key}"><span class="endlbl">MAX</span></div>`));
+  }
+  const resetRow = el("div", "facrow", `<button class="btn ghost" id="wResetBtn">Reset W-model to defaults</button>`);
+  root.appendChild(resetRow);
+  root.querySelectorAll("[data-ww]").forEach(sl => {
+    sl.addEventListener("input", ev => {
+      const k = ev.target.dataset.ww; WS.ww[k] = parseFloat(ev.target.value);
+      const wp = root.querySelector("#wwp_" + k); if (wp) wp.textContent = (k === "hfa" ? "+" : "") + WS.ww[k].toFixed(2);
+      saveWW();
+      const lr = root.querySelector("#wLiveRec"); if (lr) lr.innerHTML = recHTML();
+      for (const g of WS.games || []) { try { wnbaPredict(g); } catch (e) {} }
+    });
+  });
+  root.querySelector("#wResetBtn")?.addEventListener("click", () => { WS.ww = { ...WW_DEF }; saveWW(); for (const g of WS.games || []) { try { wnbaPredict(g); } catch (e) {} } renderWnba(); });
+  root.querySelector("#wTuneBtn")?.addEventListener("click", () => {
+    setStatus("Auto-tuning your W-model against the season…");
+    WS._wtune = wnbaAutoTune();
+    setStatus(WS._wtune ? "W-model auto-tune done — check the holdout showdown." : "Not enough WNBA season data yet to tune.");
+    renderWnba();
+  });
+  root.querySelector("#wApplyTune")?.addEventListener("click", () => {
+    if (!WS._wtune) return;
+    Object.assign(WS.ww, WS._wtune.w);
+    saveWW();
+    for (const g of WS.games || []) { try { wnbaPredict(g); } catch (e) {} }
+    renderWnba();
+    setStatus("Tuned W-model weights applied — board, consensus and records all updated.");
+  });
+}
+function renderWnbaHow(root) {
+  const sec = (title, body) => {
+    const c = el("div", "card");
+    c.style.marginBottom = "14px";
+    c.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:19px;letter-spacing:.5px;color:var(--gold);margin-bottom:8px;">${title}</div><div style="font-size:13.5px;color:#c6ccdb;line-height:1.65;">${body}</div>`;
+    root.appendChild(c);
+  };
+  root.appendChild(el("div", "subhead", `Plain-language guide to every number on the WNBA pages — same honesty rules as the MLB side: walk-forward backtests, holdout checks, and no model gets to grade its own homework.`));
+  sec("KEVIN'S W-MODEL — THE ONE YOU CONTROL", `
+    Built on the MY W-MODEL tab with four sliders, all fully replayable: <b style="color:var(--txt)">SEASON STRENGTH</b> (net points per game), <b style="color:var(--txt)">LAST-10 FORM</b> (recent scoring margin, each game weighted by opponent quality — beating good teams counts more), <b style="color:var(--txt)">BACK-TO-BACK FATIGUE</b> (fades tired legs on the second night), and <b style="color:var(--txt)">HOME COURT</b>. Drag a slider and the season record re-scores instantly, with a holdout line that can't be flattered. It appears on every game card as KEVIN'S W and votes in the consensus.`);
+  sec("THE 4 BUILT-IN MONEYLINE MODELS", `
+    <b style="color:var(--txt)">W-ELO</b> — every team has a rating that rises when they win and falls when they lose, moving more for blowouts than squeakers (margin-weighted, K=12). Home team gets +70 rating points. The gap between two ratings converts straight to a win probability.<br><br>
+    <b style="color:var(--txt)">W-PYTHAG</b> — ignores wins and looks at points scored vs points allowed (exponent ${WCFG.pythExp}): outscore the league consistently and it rates you well even if you lost close ones. The two teams' expected win rates get combined into one matchup number (Log5) plus a home bump (+4.5pp).<br><br>
+    <b style="color:var(--txt)">W-FORM</b> — the hot-hand model: average point margin over each team's last 10 games, plus 2.5 home points. Reacts fastest to trades, injuries, and streaks; also the noisiest.<br><br>
+    <b style="color:var(--txt)">W-SHARP</b> — doesn't watch games at all; it blends the other three. The blend weights are grid-searched on the season's first 65% of games and then graded on the last 35% it never saw. The train number always flatters (it's fitted) — <b>the HOLDOUT number on MODEL RECORDS is the honest one.</b><br><br>
+    <b style="color:var(--txt)">CONSENSUS</b> = the average of all five (the four above + your KEVIN'S W) — the bars on each game card. <b>EDGE</b> = consensus minus the market's de-vigged probability; ★ VALUE flags edges above your MY MODEL threshold.`);
+  sec("PLAYER PROPS (POINTS · REBOUNDS · ASSISTS · COMBOS)", `
+    Each player's projection = <b style="color:var(--txt)">60% her last 5 games + 40% her season rate</b>, nudged by the opponent's defense (how many points they give up vs league average). The bar chart is her actual last 10 games against the line.<br><br>
+    <b style="color:var(--txt)">P(OVER)</b> comes from her own game-to-game swings: a steady 18-19-17 scorer gets a confident call, a 8-then-28 rollercoaster doesn't — even at the same average. That spread also sets her <b>GRADE</b> (A = steadiest).<br><br>
+    <b style="color:var(--txt)">MODEL LINE</b> — when no book line is posted, the app shows the projection rounded to the nearest .5, which is the line where over/under would be a coin flip (≈ −100 each way). It's a reference point, not a bet. Once a real DraftKings/Odds API line loads, you get OVER/UNDER with quality badges: STRONG BET (62%+) · GOOD (56%+) · ALRIGHT (52%+) · below that, pass.<br><br>
+    ⚠ <b style="color:var(--amber)">MINUTES DOWN / MINUTES SWINGY</b> chips flag playing-time problems — tap any of them for the full explanation. Projections assume normal minutes, so treat flagged overs with caution.`);
+  sec("BEST PROPS STRIP (ON THE BOARD)", `
+    With real lines in: the strongest OVER/UNDER calls, sorted by probability. Without lines: the steadiest players (best projection-to-noise ratio). Tap a card to jump to its stat tab.`);
+  sec("MODEL RECORDS — WHY YOU CAN TRUST THE W-L", `
+    The backtest replays the whole season one day at a time: each model predicts every game using only results from <i>before</i> that date, then gets graded on what happened. No future peeking, no rewriting history.<br><br>
+    The bar to beat is <b style="color:var(--txt)">"always pick home"</b> — WNBA home teams win ~60%, so a model only earns respect above that. And W-SHARP's train number is always shiny because it's fitted; judge it by the HOLDOUT card.`);
+  sec("WHERE WNBA BETS SHOW UP", `
+    WNBA moneylines and props feed the cross-sport 🔒 LOCKS (most likely to cash) and 💎 VALUE (biggest edge vs the book) pages. Use the filter bar there — sport chips (🏀 WNBA ONLY) and the odds window sliders — to see just basketball or to clear out heavy MLB favorites.`);
+}
 function renderWnba() {
   const root = $("#tab-wnba"); if (!root) return;
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `WNBA <small>· 4 moneyline models + player props</small>`));
+  root.appendChild(el("div", "h1", `WNBA <small>· 5 moneyline models (incl. yours) + player props</small>`));
+  if (WS.view === "how") { renderWnbaHow(root); return; }
   if (WS.loading) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading WNBA — ${WS.stage || "starting…"}</div><div style="font-size:11px;color:var(--dim3);">first load takes ~20-30 seconds (a full season of results + player logs)</div>`)); return; }
   if (!WS.loaded) {
     if (WS.errors.length) root.appendChild(el("div", "nobets", `<span style="color:var(--red)">WNBA load failed — ${WS.errors.join(" · ")}</span><br><span style="font-size:12px;color:var(--dim)">Screenshot this message and the fix will be quick.</span>`));
     const b = el("button", null, WS.errors.length ? "RETRY WNBA" : "LOAD WNBA"); b.className = "btn"; b.addEventListener("click", wnbaEnsure); root.appendChild(b); return;
   }
   if (WS.errors.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some WNBA sources failed: ${WS.errors.join(" · ")}</span>`));
+  if (WS.view === "model") { renderWnbaModel(root); return; }
   // model records (walk-forward backtest)
   const bt = WS.bt;
   if (WS.view === "rec" && bt && bt.n > 0) {
     root.appendChild(el("div", "h1", `MODEL RECORDS <small>· season backtest, ${bt.n} games walk-forward</small>`));
-    root.appendChild(el("div", "subhead", `Every model predicted every game using only results from before that game, then got graded. W-ELO (margin-weighted ratings, +70 home pts), W-PYTHAG (points scored/allowed, exponent ${WCFG.pythExp}, log5 + home bump), W-FORM (net points last 10 games + 2.5 home pts), and W-SHARP (auto-fitted blend — trained on the first 65%, judged on the untouched last 35%). "Always home" is the bar to beat (WNBA home teams win ~60%).`));
+    root.appendChild(el("div", "subhead", `Every model predicted every game using only results from before that game, then got graded. KEVIN'S W (your sliders — tune it on MY W-MODEL), W-ELO (margin-weighted ratings, +70 home pts), W-PYTHAG (points scored/allowed, exponent ${WCFG.pythExp}, log5 + home bump), W-FORM (net points last 10 games + 2.5 home pts), and W-SHARP (auto-fitted blend — trained on the first 65%, judged on the untouched last 35%). "Always home" is the bar to beat (WNBA home teams win ~60%).`));
     const pcts = k => bt[k].w + bt[k].l ? (bt[k].w / (bt[k].w + bt[k].l) * 100).toFixed(1) + "%" : "—";
     const cards = [
       ["W-ELO", bt.elo], ["W-PYTHAG", bt.pyth], ["W-FORM (LAST 10)", bt.form], ["ALWAYS PICK HOME", bt.home]
     ].map(([n, r]) => `<div class="reccard"><div class="recname">${n}</div><div class="recwl">${r.w}-${r.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(r.w / (r.w + r.l) * 100).toFixed(1)}%</b></div></div>`);
     if (bt.sharpHold) cards.unshift(`<div class="reccard hero"><div class="recname">W-SHARP — HOLDOUT (HONEST)</div><div class="recwl">${bt.sharpHold.w}-${bt.sharpHold.n - bt.sharpHold.w}</div><div class="recsub">win% <b style="color:var(--txt)">${(bt.sharpHold.w / bt.sharpHold.n * 100).toFixed(1)}%</b> · train ${(bt.sharpTrain.w / bt.sharpTrain.n * 100).toFixed(1)}%</div></div>`);
+    if (WS._wkr && WS._wkr.length) {
+      const r = evalWCore(WS._wkr, WS.ww);
+      const n = r.w + r.l + r.hw + r.hl, wW = r.w + r.hw;
+      cards.unshift(`<div class="reccard hero"><div class="recname">KEVIN'S W — YOUR WEIGHTS</div><div class="recwl">${wW}-${n - wW}</div><div class="recsub">win% <b style="color:var(--txt)">${(wW / n * 100).toFixed(1)}%</b> · holdout ${(r.hw + r.hl) ? (r.hw / (r.hw + r.hl) * 100).toFixed(1) + "%" : "—"} · tune it on MY W-MODEL</div></div>`);
+    }
     root.appendChild(el("div", "recgrid", cards.join("")));
   }
   if (WS.view === "rec" && (!bt || !bt.n)) root.appendChild(el("div", "nobets", "Model records need the season's results, which didn't load this time — the red note above names the source that failed. Hit RELOAD WNBA DATA below to try again."));
@@ -2940,7 +3176,13 @@ function renderWnba() {
     const th = WS.teams[g.home.id] || {}, ta = WS.teams[g.away.id] || {};
     const pickHome = g.cons != null && g.cons >= 0.5;
     const card = el("div", "card" + (g.completed || g.live ? " played" : ""));
-    const mrow = (n, p, col) => p == null ? "" : `<div class="mrow"><span class="mlabel">${n}</span><div class="mbar"><i style="width:${(p * 100).toFixed(0)}%;background:${col || "var(--blue)"};"></i></div><span class="mpct">${(p * 100).toFixed(1)}%</span><span class="medge" style="color:${g.impl != null ? edgeCls((p - g.impl) * 100) : "var(--dim3)"}">${g.impl != null ? ((p - g.impl) * 100 >= 0 ? "+" : "") + ((p - g.impl) * 100).toFixed(1) + "%" : ""}</span></div>`;
+    const mrow = (n, p, col) => {
+      if (p == null) return "";
+      const hp = p >= 0.5, abbr = hp ? g.home.abbr : g.away.abbr, showP = hp ? p : 1 - p;
+      const sideCol = hp ? "var(--green)" : "var(--blue)";
+      const edge = g.impl != null ? (hp ? p - g.impl : g.impl - p) * 100 : null;
+      return `<div class="mrow"><span class="mlabel">${n}</span><div class="mbar"><i style="width:${(showP * 100).toFixed(0)}%;background:${sideCol};"></i></div><span class="mpct" style="min-width:76px;"><b style="color:${sideCol};">${abbr}</b> ${(showP * 100).toFixed(1)}%</span><span class="medge" style="color:${edge != null ? edgeCls(edge) : "var(--dim3)"}">${edge != null ? (edge >= 0 ? "+" : "") + edge.toFixed(1) + "%" : ""}</span></div>`;
+    };
     card.innerHTML = `
       <div class="chead"><span class="time">${timeLabel(g.date)}</span>
         ${g.completed ? '<span class="finchip">FINAL</span>' : g.live ? '<span class="livechip">● LIVE</span>' : ""}
@@ -2951,8 +3193,21 @@ function renderWnba() {
       <div class="trow ${!g.completed && !pickHome && g.cons != null ? "pick" : ""} ${g.completed && g.away.winner ? "pick" : ""}">${wLogo(ta, 30)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${(ta.name || "").split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : `<div class="tml" style="color:${!pickHome && g.cons != null ? "var(--green)" : "var(--txt)"}">${fmtML(g.mlAway)}</div>`}</div>
       <div class="trow ${!g.completed && pickHome && g.cons != null ? "pick" : ""} ${g.completed && g.home.winner ? "pick" : ""}" style="margin-top:3px;">${wLogo(th, 30)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${(th.name || "").split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : `<div class="tml" style="color:${pickHome && g.cons != null ? "var(--green)" : "var(--txt)"}">${fmtML(g.mlHome)}</div>`}</div>
       ${g.cons != null && !g.completed ? `<div class="pbarwrap"><div class="pbarlabels"><span style="color:${g.cons < 0.5 ? "var(--blue)" : "var(--dim2)"}">${g.away.abbr} ${((1 - g.cons) * 100).toFixed(0)}%</span><span style="color:var(--dim2);font-weight:600;letter-spacing:.5px;">MODEL WIN PROB</span><span style="color:${g.cons >= 0.5 ? "var(--green)" : "var(--dim2)"}">${(g.cons * 100).toFixed(0)}% ${g.home.abbr}</span></div><div class="pbar"><div style="width:${((1 - g.cons) * 100).toFixed(1)}%;background:var(--blue);"></div><div style="width:${(g.cons * 100).toFixed(1)}%;background:var(--green);"></div></div></div>` : ""}
-      <div class="xstats" style="margin-top:10px;"><div><div class="xh">MODEL WIN PROBABILITY · P(${g.home.abbr})</div>
-        ${mrow("W-Elo", g.mElo, "#9bb8e8")}${mrow("W-Pythag", g.mPyth, "#7aa7f0")}${mrow("W-Form", g.mForm, "var(--gold)")}${mrow("W-Sharp", g.mSharp, "#c084fc")}${mrow("Consensus", g.cons, "var(--green)")}
+      ${g.cons != null && !g.completed && !g.live ? (() => {
+        const t = pickHome ? th : ta, abbr = pickHome ? g.home.abbr : g.away.abbr;
+        const p = pickHome ? g.cons : 1 - g.cons;
+        const mkt = g.impl != null ? (pickHome ? g.impl : 1 - g.impl) : null;
+        return `<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:9px;background:rgba(52,211,153,0.07);border:1px solid rgba(52,211,153,0.3);border-radius:10px;padding:7px 11px;">
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.1px;color:var(--dim);">MODELS' PICK</span>
+          ${wLogo(t, 22)}
+          <b style="font-family:var(--cond);font-size:17px;letter-spacing:.4px;color:var(--green);">${abbr} ${((t.name || "").split(" ").slice(-1)[0] || "").toUpperCase()}</b>
+          <div class="spacer"></div>
+          <b style="font-family:var(--cond);font-size:17px;color:var(--green);">${(p * 100).toFixed(0)}%</b>
+          ${mkt != null && mkt < 0.5 ? `<span class="chip gold" style="font-weight:700;">market leans ${pickHome ? g.away.abbr : g.home.abbr}</span>` : ""}
+        </div>`;
+      })() : ""}
+      <div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS <span style="color:var(--dim3);letter-spacing:0;font-weight:600;">· <b style="color:var(--green)">green = ${g.home.abbr}</b> · <b style="color:var(--blue)">blue = ${g.away.abbr}</b></span></div>
+        ${mrow("W-Elo", g.mElo, "#9bb8e8")}${mrow("W-Pythag", g.mPyth, "#7aa7f0")}${mrow("W-Form", g.mForm, "var(--gold)")}${mrow("W-Sharp", g.mSharp, "#c084fc")}${mrow("Kevin's W", g.mKev, "#4ade80")}${mrow("Consensus", g.cons, "var(--green)")}
         ${g.impl != null ? `<div class="mrow"><span class="mlabel" style="color:var(--dim)">Market (de-vig)</span><div class="mbar"><i style="width:${(g.impl * 100).toFixed(0)}%;background:var(--dim);"></i></div><span class="mpct">${(g.impl * 100).toFixed(1)}%</span><span class="medge"></span></div>` : `<div class="fnote">no line posted yet</div>`}</div></div>`;
     grid.appendChild(card);
   }
@@ -3054,7 +3309,7 @@ function switchTab(name) {
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
 const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
-const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:PRA", "COMBOS"], ["wnba:rec", "MODEL RECORDS"]];
+const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:PRA", "COMBOS"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
   const tabs = APP_SPORT === "mlb" ? MLB_TABS : WNBA_TABS;
@@ -3069,7 +3324,8 @@ function selectTab(key) {
     WS.view = parts[1] || "board";
     if (parts[2]) WS.stat = parts[2];
     switchTab("wnba");
-    if (WS.loaded) renderWnba();
+    wnbaEnsure(); // any WNBA tab kicks off the load automatically — no manual refresh needed
+    if (WS.loaded || WS.view === "how") renderWnba(); // HOW IT WORKS is readable before data loads
   } else switchTab(key);
 }
 function setSport(s) {
@@ -3110,7 +3366,8 @@ if (typeof module !== "undefined" && module.exports) {
     parseSchedule, parseHitting, parseSplit, parseResults, parsePitchers, parseRoster, pitcherWarnings,
     kevinModel, pythagModel, eloModel, sharpFit, sharpModel, computeAll, projectKs, propLean, hrProject, computeHR, hitProject, computeHits, hitBookPrice, bestBets, bbMax, oddsOK, activePreset, bounceLabel,
     snapshotPicks, gradeJournal, modelRecords, backtestModels, routed, RELAYS, PROXY_MAP, j, jFetch, LADDER, LV, lvPass, decOdds, capTypes, calibrate, CAL_BUCKETS, spQuality, kevinCoreRows, evalCoreWeights, autoTune,
-    WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj, wnbaBestProps, collectLocks, collectValue };
+    WS, WCFG, W_STATS, wnbaFitModels, wnbaPredict, wnbaProj, wnbaBestProps, collectLocks, collectValue,
+    wnbaKevRows, wnbaKevScore, evalWCore, wnbaAutoTune, WW_DEF };
 }
 </script>
 </body>
