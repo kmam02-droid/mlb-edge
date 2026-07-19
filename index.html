@@ -62,6 +62,11 @@
   .bb.top1{border:1.5px solid transparent;background:linear-gradient(160deg,#0f2a24 0%,#0e1e2b 45%,#101722 80%) padding-box,linear-gradient(120deg,#34d399 0%,#22d3ee 45%,#a78bfa 95%) border-box;animation:lvglow 3.2s ease-in-out infinite;}
   .bb.top1::before{height:4px;background:linear-gradient(90deg,#34d399,#22d3ee 50%,#a78bfa);}
   .crownchip{font-size:9px;font-weight:800;letter-spacing:1px;color:#06121c;background:linear-gradient(90deg,#34d399,#22d3ee 55%,#a78bfa);border-radius:5px;padding:2px 8px;margin-left:8px;}
+  /* GOLDEN SWEEP — all four of Kevin's boxes checked: shiny gold card */
+  @keyframes goldshine{0%{background-position:-250% 0;}100%{background-position:250% 0;}}
+  .card.golden{border:1.5px solid transparent;background:linear-gradient(160deg,#251e0e 0%,#1a1510 45%,#12161f 85%) padding-box,linear-gradient(120deg,#f5b93e 0%,#fff3c4 25%,#c98f1b 50%,#f5b93e 75%,#ffe9a8 100%) border-box;box-shadow:0 0 0 1px rgba(245,185,62,.30),0 10px 36px rgba(245,185,62,.22);position:relative;}
+  .card.golden::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(115deg,transparent 32%,rgba(255,240,180,.10) 45%,rgba(255,255,255,.20) 50%,rgba(255,240,180,.10) 55%,transparent 68%);background-size:250% 100%;animation:goldshine 3s linear infinite;pointer-events:none;}
+  .goldbadge{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;letter-spacing:1px;color:#1a1206;background:linear-gradient(90deg,#f5b93e,#ffe9a8 50%,#f5b93e);border-radius:6px;padding:3px 9px;box-shadow:0 2px 10px rgba(245,185,62,.45);}
   .bbtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
   .stars{display:flex;gap:4px;align-items:center;}
   .diamond{width:9px;height:9px;border-radius:2px;transform:rotate(45deg);}
@@ -303,7 +308,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.56";
+const BUILD = "v3.57";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -921,6 +926,23 @@ function pitcherAdjK9(pid, oppTeamId) {
   const k9 = num(p.season.strikeoutsPer9Inn);
   const oppK = S.teams[oppTeamId]?.hit?.kPct, lgK = S.league.kPct || 0.22;
   return k9 * (oppK ? (oppK / lgK) : 1);
+}
+function goldenSweep(g) { // ✨ all four of Kevin's boxes for one side:
+  // ① his starter's K prop line ≥ opponent's + 1  ② better offense  ③ lost yesterday (bounce-back)  ④ hotter 30-day form
+  if (g.state !== "Preview") return null;
+  const kman = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
+  const lineOf = pid => pid == null ? null : (kman[pid] != null && kman[pid] !== "" ? parseFloat(kman[pid]) : (S.props[pid]?.line ?? null));
+  for (const sk of ["home", "away"]) {
+    const side = g[sk], opp = sk === "home" ? g.away : g.home;
+    const th = S.teams[side.id] || {}, ta = S.teams[opp.id] || {};
+    const myL = lineOf(side.pitcherId), opL = lineOf(opp.pitcherId);
+    if (myL == null || opL == null || (myL - opL) < 1) continue;              // ①
+    if (!(th.offZ != null && ta.offZ != null && th.offZ > ta.offZ)) continue; // ②
+    if (!th.daily?.lostY) continue;                                           // ③
+    if (!((th.daily?.form30 ?? -1) > (ta.daily?.form30 ?? 2))) continue;      // ④
+    return { sk, myL, opL };
+  }
+  return null;
 }
 function spQuality(list) { // season grade: run prevention in his starts, sample-shrunk
   const n = list ? list.length : 0; if (!n) return 0;
@@ -1775,6 +1797,8 @@ function renderBoard() {
     `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "time" ? "chronological" : "that model's most confident picks first"}</span>`;
   sortBar.querySelectorAll("[data-msort]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_sortmlb", c.dataset.msort); renderBoard(); }));
   root.appendChild(sortBar);
+  const sweeps = S.games.filter(g => { try { return !!goldenSweep(g); } catch (e) { return false; } });
+  if (sweeps.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold);font-weight:700;">✨ ${sweeps.length} GOLDEN SWEEP${sweeps.length > 1 ? "S" : ""} on today's slate</span> — ${sweeps.map(g => { const s2 = goldenSweep(g); return `<b style="color:var(--txt)">${g[s2.sk].abbr}</b> (${g.away.abbr} @ ${g.home.abbr})`; }).join(" · ")}. A sweep = one team checks all four of your boxes: starter's K line +1 or more, better offense, lost yesterday, hotter 30-day form. Rare by design — when the shiny card shows up, it's your exact system talking.`));
   const grid = el("div", "grid");
   const rank = g => g.state === "Preview" ? 0 : g.state === "Live" ? 1 : 2;
   const bestEdge = g => Math.max(g.edgeHome ?? -99, g.edgeAway ?? -99);
@@ -1805,7 +1829,8 @@ function gameCard(g, vRank) {
     : "";
   const isValue = !played && ((g.edgeHome ?? -99) >= th || (g.edgeAway ?? -99) >= th);
   const pickHome = g.consensus != null && g.consensus >= 0.5;
-  const card = el("div", "card" + (played ? " played" : ""));
+  const gs = goldenSweep(g);
+  const card = el("div", "card" + (played ? " played" : "") + (gs ? " golden" : ""));
   const pH = g.consensus, pA = g.consensus != null ? 1 - g.consensus : null;
   const warnH = g.home.pitcherId ? pitcherWarnings(g.home.pitcherId) : [];
   const warnA = g.away.pitcherId ? pitcherWarnings(g.away.pitcherId) : [];
@@ -1828,6 +1853,7 @@ function gameCard(g, vRank) {
       ${o.book && !played ? `<span class="bookchip">${o.book}</span>` : ""}
       <div class="spacer"></div>
       ${modelResult}
+      ${gs ? `<span class="goldbadge">✨ GOLDEN SWEEP ${g[gs.sk].abbr}</span>` : ""}
       ${rankChip}
       ${isValue ? `<span class="valchip">★ BET</span>` : ""}</div>
     ${teamRow(g.away, o.mlAway, !pickHome && g.consensus != null)}
@@ -1840,6 +1866,14 @@ function gameCard(g, vRank) {
       <div class="pbar"><div style="width:${(pA * 100).toFixed(1)}%;background:var(--blue);"></div><div style="width:${(pH * 100).toFixed(1)}%;background:var(--green);"></div></div>
     </div>` : ""}
     ${!played && g.consensus != null ? pickBanner() : ""}
+    ${gs ? `<div style="margin-top:9px;background:linear-gradient(155deg,rgba(245,185,62,.16),rgba(245,185,62,.04) 65%);border:1px solid rgba(245,185,62,.45);border-radius:10px;padding:8px 11px;">
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.1px;color:var(--gold);margin-bottom:5px;">✨ GOLDEN SWEEP — ${g[gs.sk].abbr} CHECKS ALL FOUR OF YOUR BOXES</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10.5px;font-weight:600;color:#e6d5a8;">
+        <span>✓ starter's K line +${(gs.myL - gs.opL).toFixed(1)} (${gs.myL} vs ${gs.opL})</span>
+        <span>✓ better offense</span>
+        <span>✓ lost yesterday — bounce-back</span>
+        <span>✓ hotter 30-day form (SOS-adj)</span>
+      </div></div>` : ""}
     ${!played ? spreadTotal() : ""}
     <div class="prow">
       ${pitcherCell(g.away, warnA)}
