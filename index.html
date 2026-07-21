@@ -271,7 +271,7 @@
         <div class="sub" id="subline">loading…</div>
       </div>
     </div>
-    <span id="sportSwitch" style="margin-left:8px;"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="epl">⚽ EPL</button><button data-sport="mls">🇺🇸 MLS</button><button data-sport="ucl">🏆 UCL</button><button data-sport="ufc">🥊 UFC</button></span>
+    <span id="sportSwitch" style="margin-left:8px;"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="soc">⚽ SOCCER</button><button data-sport="ufc">🥊 UFC</button></span>
     <div class="spacer"></div>
     <input type="date" id="datePick">
     <button class="btn" id="refreshBtn">Refresh</button>
@@ -309,7 +309,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.65";
+const BUILD = "v3.68";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -4605,27 +4605,168 @@ const GS_CFG = {
   ufc: { name: "UFC", emoji: "🥊", path: "mma/ufc", teamCap: -1, props: [["h2h", "FIGHT WINNER (from the odds feed)"]], oa: "mma_mixed_martial_arts" },
   epl: { name: "EPL", emoji: "⚽", path: "soccer/eng.1", teamCap: 30, soccer: true, mSig: 1.75, tSig: 1.7, eloHFA: 55, eloK: 18, pyx: 1.35, hb: 0.06, btMin: 4, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"], ["player_shots", "SHOTS"]], oa: "soccer_epl" },
   mls: { name: "MLS", emoji: "🇺🇸", path: "soccer/usa.1", teamCap: 40, soccer: true, mSig: 1.85, tSig: 1.8, eloHFA: 60, eloK: 18, pyx: 1.35, hb: 0.065, btMin: 4, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"]], oa: "soccer_usa_mls" },
-  ucl: { name: "UCL", emoji: "🏆", path: "soccer/uefa.champions", teamCap: 60, soccer: true, mSig: 1.8, tSig: 1.75, eloHFA: 50, eloK: 18, pyx: 1.35, hb: 0.055, btMin: 3, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"]], oa: "soccer_uefa_champs_league" }
+  ucl: { name: "UCL", emoji: "🏆", path: "soccer/uefa.champions", teamCap: 60, soccer: true, mSig: 1.8, tSig: 1.75, eloHFA: 50, eloK: 18, pyx: 1.35, hb: 0.055, btMin: 3, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"]], oa: "soccer_uefa_champs_league" },
+  soc: { name: "SOCCER", emoji: "⚽", combo: ["epl", "mls", "ucl"], soccer: true, mSig: 1.8, tSig: 1.75, teamCap: 30, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"], ["player_shots", "SHOTS"]] }
 };
-const GEN_TABS = [["gen:board", "BOARD"], ["gen:props", "PROPS"], ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
+/* per-sport player-prop model tabs (WNBA-style: 60/40 projection · model line · grades · last-10 bars) */
+const GS_PSTATS = {
+  nfl: [
+    { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 35 },
+    { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 18 },
+    { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 16 },
+    { k: "REC", n: "RECEPTIONS", sort: "receiving.receptions", cat: "receiving", lab: "REC", fl: 1.1 }
+  ],
+  cfb: [
+    { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 40 },
+    { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 22 },
+    { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 18 }
+  ],
+  nba: [
+    { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4.5 },
+    { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2.2 },
+    { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.7 },
+    { k: "TPM", n: "3-POINTERS", sort: "offensive.avgPoints", lab: "3PT", made: true, fl: 0.9 },
+    { k: "PRA", n: "PRA", sort: "offensive.avgPoints", labs: ["PTS", "REB", "AST"], fl: 5.5 }
+  ],
+  cbb: [
+    { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4 },
+    { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2 },
+    { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.5 }
+  ],
+  nhl: [
+    { k: "SOG", n: "SHOTS ON GOAL", sort: "offensive.avgShots", lab: "SOG", alt: ["S", "SHOTS"], fl: 0.9 },
+    { k: "G", n: "GOALS", sort: "offensive.goals", lab: "G", fl: 0.35 },
+    { k: "PTS", n: "POINTS", sort: "offensive.points", labs: ["G", "A"], fl: 0.55 }
+  ],
+  epl: [
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+  ],
+  mls: [
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+  ],
+  ucl: [
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+  ],
+  soc: [
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+  ]
+};
+function genTabs(sp) {
+  const ps = GS_PSTATS[sp] || [];
+  return [["gen:board", "BOARD"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ["gen:props", "BOOK PROPS"], ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
+}
+function glParse(gl) { // shared ESPN gamelog shape: combined labels + per-category offsets (football) or flat labels (everything else)
+  const labels = gl?.labels || [];
+  const cats = (gl?.categories || []).map(c2 => ({ name: c2.name, count: num(c2.count) }));
+  const rows = [];
+  for (const stp of gl?.seasonTypes || []) for (const cat of stp?.categories || []) for (const ev of cat?.events || []) {
+    if (!ev?.stats) continue;
+    rows.push({ d: ((gl?.events?.[ev.eventId]?.gameDate) || "").slice(0, 10), stats: ev.stats });
+  }
+  return { labels, cats, rows };
+}
+function glIdx(parsed, ps) { // resolve which stats-column a prop stat lives in
+  const find1 = lab => {
+    if (ps.cat && parsed.cats.length) {
+      let off = 0;
+      for (const c2 of parsed.cats) { if (c2.name === ps.cat) { const li = parsed.labels.slice(off, off + c2.count).indexOf(lab); return li < 0 ? -1 : off + li; } off += c2.count; }
+      return -1;
+    }
+    return parsed.labels.indexOf(lab);
+  };
+  const tryLabs = lab => { let i2 = find1(lab); if (i2 < 0 && ps.alt) for (const a2 of ps.alt) { i2 = find1(a2); if (i2 >= 0) break; } return i2; };
+  if (ps.labs) return ps.labs.map(l2 => find1(l2));
+  return tryLabs(ps.lab);
+}
+function glVals(parsed, ps) { // per-game values, most recent first
+  const idx = glIdx(parsed, ps);
+  const pick = (row, i2) => { const v = row.stats[i2]; if (v == null) return NaN; const s2 = String(v); const m2 = ps.made ? s2.match(/^(\d+)[-–]/) : null; return m2 ? +m2[1] : num(s2); };
+  const out = [];
+  for (const row of parsed.rows) {
+    let v;
+    if (Array.isArray(idx)) { if (idx.some(i2 => i2 < 0)) return []; v = idx.reduce((a2, i2) => a2 + pick(row, i2), 0); }
+    else { if (idx < 0) return []; v = pick(row, idx); }
+    if (isFinite(v)) out.push(v);
+  }
+  return out.slice(0, 18);
+}
+async function genPropsLoad(sp) {
+  const cfg = GS_CFG[sp], s = gSlot(sp);
+  s.pLoading = true; s.pErr = null; renderGen();
+  try {
+    const web = `https://site.web.api.espn.com/apis/common/v3/sports/${cfg.path}`;
+    const lists = {};
+    for (const ps of GS_PSTATS[sp] || []) {
+      if (lists[ps.sort]) continue;
+      try {
+        const ba = await j(`${web}/statistics/byathlete?region=us&lang=en&limit=22&sort=${ps.sort}%3Adesc`);
+        lists[ps.sort] = (ba?.athletes || []).map(a2 => ({ id: +(a2.athlete?.id || 0), name: a2.athlete?.displayName || "", team: a2.athlete?.teamShortName || a2.athlete?.team?.abbreviation || "", hs: a2.athlete?.headshot?.href || a2.athlete?.headshot || "" })).filter(c2 => c2.id && c2.name);
+      } catch (e2) { lists[ps.sort] = []; }
+    }
+    const byId = {};
+    for (const ps of GS_PSTATS[sp] || []) for (const c2 of lists[ps.sort] || []) byId[c2.id] = byId[c2.id] || c2;
+    const players = Object.values(byId).slice(0, 34);
+    if (!players.length) throw new Error("no player leaders returned (off-season feeds can be empty)");
+    s._gl = {};
+    await Promise.all(players.map(async p2 => {
+      try { const gl = await j(`${web}/athletes/${p2.id}/gamelog`); const parsed = glParse(gl); if (parsed.rows.length >= 5) s._gl[p2.id] = { p: p2, parsed }; } catch (e2) {}
+    }));
+    s.pdata = {};
+    for (const ps of GS_PSTATS[sp] || []) {
+      const arr = [];
+      for (const src of (lists[ps.sort] && lists[ps.sort].length ? lists[ps.sort] : players)) {
+        const g2 = s._gl[src.id]; if (!g2) continue;
+        const vals = glVals(g2.parsed, ps);
+        if (vals.length < 5) continue;
+        const recent = vals.slice(0, 5);
+        const proj = 0.6 * mean(recent) + 0.4 * mean(vals);
+        const sigma = Math.max(ps.fl, sd(vals));
+        const cv = mean(vals) > 0 ? sd(vals) / mean(vals) : 9;
+        arr.push({ id: src.id, name: src.name, team: src.team, hs: src.hs, vals, proj, sigma, last5: mean(recent), season: mean(vals), grade: cv <= 0.35 ? "A" : cv <= 0.55 ? "B" : cv <= 0.8 ? "C" : "D" });
+      }
+      arr.sort((a2, b2) => (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
+      s.pdata[ps.k] = arr;
+    }
+    s.pReady = true;
+  } catch (e2) { s.pErr = e2.message; }
+  s.pLoading = false;
+  renderGen();
+}
 const GX = { cur: null, view: "board", d: {} };
 const gSlot = sp => GX.d[sp] = GX.d[sp] || { loaded: false, loading: false, stage: "", teams: {}, results: [], games: [], bt: null, errors: [], props: null, propBusy: false };
-function genEnsure(sp) { const s = gSlot(sp); if (!s.loaded && !s.loading) genLoad(sp); }
+function genEnsure(sp) {
+  const cfg = GS_CFG[sp];
+  if (cfg?.combo) { for (const sub of cfg.combo) { const ss = gSlot(sub); if (!ss.loaded && !ss.loading) genLoad(sub); } return; }
+  const s = gSlot(sp); if (!s.loaded && !s.loading) genLoad(sp);
+}
+const socLg = () => (hasLS && localStorage.getItem("kb_soclg")) || "ALL";
 async function genLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
   s.loading = true; s.errors = []; s.games = []; s.results = []; s.teams = {};
   s.stage = "team list…"; renderGen();
   const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
   if (cfg.teamCap >= 0) { // team-based league (everything except UFC)
+    let tl = null, tlErr = null;
+    for (let att = 0; att < 3 && !tl; att++) { // relay connections hiccup — retry the keystone like the WNBA loader does
+      try { tl = await j(`${base}/teams?limit=${cfg.teamCap === 0 ? 500 : 200}`); }
+      catch (e) { tlErr = e.message; if (att < 2) await new Promise(r => setTimeout(r, 1500)); }
+    }
     try {
-      const tl = await j(`${base}/teams?limit=${cfg.teamCap === 0 ? 500 : 200}`);
       const teams = (tl?.sports?.[0]?.leagues?.[0]?.teams || []).map(t => t.team).filter(Boolean);
       for (const t of teams) s.teams[+t.id] = { id: +t.id, abbr: t.abbreviation || (t.shortDisplayName || "").slice(0, 4).toUpperCase(), name: t.displayName, logo: t.logos?.[0]?.href || "" };
       if (teams.length && hasLS) try { localStorage.setItem("kb_gteams_" + sp, JSON.stringify(Object.values(s.teams))); } catch (e) {}
-      if (!teams.length) throw new Error("empty team list");
+      if (!teams.length) throw new Error(tlErr || "empty team list");
     } catch (e) {
-      s.errors.push("team list: " + e.message);
-      if (hasLS) try { const sv = JSON.parse(localStorage.getItem("kb_gteams_" + sp) || "null"); if (sv) { for (const t of sv) s.teams[t.id] = t; s.errors[s.errors.length - 1] = "team list served from your saved copy"; } } catch (e2) {}
+      s.errors.push("team list: " + e.message + " (3 tries) — RELOAD usually fixes a relay hiccup");
+      if (hasLS) try { const sv = JSON.parse(localStorage.getItem("kb_gteams_" + sp) || "null"); if (sv) { for (const t of sv) s.teams[t.id] = t; s.errors[s.errors.length - 1] = "team list served from your saved copy (nothing is affected)"; } } catch (e2) {}
     }
     const nT = Object.keys(s.teams).length;
     if (cfg.teamCap > 0 && nT > 0 && nT <= cfg.teamCap) { // full season results only for small leagues
@@ -4656,7 +4797,12 @@ async function genLoad(sp) {
   }
   s.stage = "today's games & odds…"; renderGen();
   try {
-    const sb = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=300&groups=50" : ""}`);
+    let sb = null, sbErr = null;
+    for (let att = 0; att < 2 && !sb; att++) {
+      try { sb = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=300&groups=50" : ""}`); }
+      catch (e) { sbErr = e; if (att === 0) await new Promise(r => setTimeout(r, 1200)); }
+    }
+    if (!sb) throw sbErr || new Error("scoreboard unavailable");
     const side = cp => cp ? ({ id: +cp.id, abbr: cp.team?.abbreviation || (cp.athlete ? (cp.athlete.shortName || cp.athlete.displayName) : "?"), name: cp.team?.displayName || cp.athlete?.displayName || "?", logo: cp.team?.logo || cp.team?.logos?.[0]?.href || cp.athlete?.headshot || "", score: cp.score != null ? +cp.score : null, winner: !!cp.winner }) : null;
     s.games = (sb?.events || []).map(ev => {
       const c = ev.competitions?.[0] || {};
@@ -4803,15 +4949,30 @@ async function genFetchProps(sp) {
 function renderGen() {
   const sp = GX.cur; if (!sp) return;
   const root = $("#tab-gen"); if (!root) return;
-  const cfg = GS_CFG[sp], s = gSlot(sp);
+  const cfg = GS_CFG[sp];
+  const combo = cfg.combo || null;
+  const subsOf = () => (combo || [sp]);
+  const s = combo ? null : gSlot(sp);
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `${cfg.emoji} ${cfg.name} <small>· ${cfg.teamCap === -1 ? "fight card + odds" : "board · models · spread &amp; total · props"} — new branch, records build as seasons run</small>`));
-  if (s.loading) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${cfg.name} — ${s.stage || "…"}</div>`)); return; }
-  if (!s.loaded) { const b = el("button", null, `LOAD ${cfg.name}`); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
-  if (s.errors.length) {
-    const soft = s.errors.filter(e2 => /saved copy/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
-    if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span>`));
-    if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
+  root.appendChild(el("div", "h1", `${cfg.emoji} ${cfg.name} <small>· ${cfg.teamCap === -1 ? "fight card + odds" : combo ? "EPL + MLS + UCL in one place — models fit per league" : "board · models · spread &amp; total · props"} — new branch, records build as seasons run</small>`));
+  if (combo) {
+    const slots = combo.map(gSlot);
+    const loadingSubs = combo.filter(k2 => gSlot(k2).loading);
+    if (loadingSubs.length && !slots.some(x => x.loaded)) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${loadingSubs.map(k2 => GS_CFG[k2].name).join(" · ")}…</div>`)); return; }
+    if (!slots.some(x => x.loaded)) { const b = el("button", null, "LOAD SOCCER"); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
+    if (loadingSubs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still loading: ${loadingSubs.map(k2 => GS_CFG[k2].name).join(" · ")} — their games join automatically.</span>`));
+    const allErr = combo.flatMap(k2 => gSlot(k2).errors.map(e2 => GS_CFG[k2].name + " " + e2));
+    const soft2 = allErr.filter(e2 => /saved copy/i.test(e2)), hard2 = allErr.filter(e2 => !soft2.includes(e2));
+    if (hard2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard2.join(" · ")}</span>`));
+    if (soft2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft2.join(" · ")}</span>`));
+  } else {
+    if (s.loading) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${cfg.name} — ${s.stage || "…"}</div>`)); return; }
+    if (!s.loaded) { const b = el("button", null, `LOAD ${cfg.name}`); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
+    if (s.errors.length) {
+      const soft = s.errors.filter(e2 => /saved copy/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
+      if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span>`));
+      if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
+    }
   }
   if (GX.view === "how") {
     const sec = (t2, b2) => { const c2 = el("div", "card"); c2.style.marginBottom = "14px"; c2.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:19px;color:var(--gold);margin-bottom:8px;">${t2}</div><div style="font-size:13.5px;color:#c6ccdb;line-height:1.65;">${b2}</div>`; root.appendChild(c2); };
@@ -4821,92 +4982,161 @@ function renderGen() {
     return;
   }
   if (GX.view === "rec") {
-    const bt = s.bt;
-    if (cfg.teamCap === -1 || cfg.teamCap === 0 || !bt || !bt.n) { root.appendChild(el("div", "nobets", cfg.teamCap === -1 ? "UFC has no team models — nothing to backtest honestly." : !s.results.length ? `No completed ${cfg.name} games loaded yet — off-season or the season hasn't started. Models, records and truth checks light up automatically once real games exist.` : "Not enough completed games yet for a backtest.")); return; }
-    root.appendChild(el("div", "h1", `MODEL RECORDS <small>· ${bt.n} games, walk-forward</small>`));
-    const cards = [["ELO", bt.elo], ["PYTHAG", bt.pyth], ["FORM-10", bt.form], ["ALWAYS HOME", bt.home]].map(([n2, r2]) => `<div class="reccard"><div class="recname">${n2}</div><div class="recwl">${r2.w}-${r2.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(r2.w / Math.max(1, r2.w + r2.l) * 100).toFixed(1)}%</b></div></div>`);
-    root.appendChild(el("div", "recgrid", cards.join("")));
-    const gKey = (hasLS && localStorage.getItem("kb_gcal_" + sp)) || "c";
-    const gNames = { c: "CONSENSUS", e: "ELO", py: "PYTHAG", f: "FORM-10" };
-    root.appendChild(el("div", "h1", `TRUTH CHECK <small>· when it says 60%, does it win 60%?</small>`));
-    const gb = el("div"); gb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
-    gb.innerHTML = Object.entries(gNames).map(([k2, n2]) => `<span class="fchip${k2 === gKey ? " on" : ""}" data-gc="${k2}">${n2}</span>`).join("");
-    gb.querySelectorAll("[data-gc]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_gcal_" + sp, c2.dataset.gc); renderGen(); }));
-    root.appendChild(gb);
-    const gBox = el("div", "card");
-    gBox.innerHTML = calRowsHTML(calibrate(bt.cal, gKey, CAL_BUCKETS, false).filter(b2 => b2.n > 0).map(b2 => b2), 4, 20) || "";
-    root.appendChild(gBox);
-    root.appendChild(el("div", "h1", `SPREAD &amp; TOTAL <small>· walk-forward, 57%+ calls</small>`));
-    root.appendChild(el("div", "recgrid",
-      `<div class="reccard"><div class="recname">SPREAD</div><div class="recwl">${bt.st.sp.w}-${bt.st.sp.l}</div><div class="recsub">${bt.st.sp.n} predictions</div></div>` +
-      `<div class="reccard"><div class="recname">TOTALS</div><div class="recwl">${bt.st.tot.w}-${bt.st.tot.l}</div><div class="recsub">${bt.st.tot.n} predictions</div></div>`));
-    const g2Key = (hasLS && localStorage.getItem("kb_gstcal_" + sp)) || "sp";
-    const g2b = el("div"); g2b.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px;";
-    g2b.innerHTML = [["sp", "SPREAD"], ["tot", "TOTALS"]].map(([k2, n2]) => `<span class="fchip${g2Key === k2 ? " on" : ""}" data-gsc="${k2}">${n2} (${bt.st[k2].cal.length})</span>`).join("");
-    g2b.querySelectorAll("[data-gsc]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_gstcal_" + sp, c2.dataset.gsc); renderGen(); }));
-    root.appendChild(g2b);
-    const g2Box = el("div", "card");
-    g2Box.innerHTML = calRowsHTML(calibrate(bt.st[g2Key].cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || "";
-    root.appendChild(g2Box);
+    for (const sub of subsOf()) {
+      const c3 = GS_CFG[sub], s3 = gSlot(sub), bt = s3.bt;
+      if (combo) root.appendChild(el("div", "h1", `${c3.emoji} ${c3.name}`));
+      if (c3.teamCap === -1 || c3.teamCap === 0 || !bt || !bt.n) { root.appendChild(el("div", "nobets", c3.teamCap === -1 ? "UFC has no team models — nothing to backtest honestly." : !s3.results.length ? `No completed ${c3.name} games loaded yet — off-season or the season hasn't started. Models, records and truth checks light up automatically once real games exist.` : "Not enough completed games yet for a backtest.")); continue; }
+      root.appendChild(el("div", "h1", `MODEL RECORDS <small>· ${bt.n} games, walk-forward${combo ? " · " + c3.name : ""}</small>`));
+      const cards = [["ELO", bt.elo], ["PYTHAG", bt.pyth], ["FORM-10", bt.form], ["ALWAYS HOME", bt.home]].map(([n2, r2]) => `<div class="reccard"><div class="recname">${n2}</div><div class="recwl">${r2.w}-${r2.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(r2.w / Math.max(1, r2.w + r2.l) * 100).toFixed(1)}%</b></div></div>`);
+      root.appendChild(el("div", "recgrid", cards.join("")));
+      const gKey = (hasLS && localStorage.getItem("kb_gcal_" + sub)) || "c";
+      const gNames = { c: "CONSENSUS", e: "ELO", py: "PYTHAG", f: "FORM-10" };
+      root.appendChild(el("div", "h1", `TRUTH CHECK <small>· when it says 60%, does it win 60%?</small>`));
+      const gb = el("div"); gb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+      gb.innerHTML = Object.entries(gNames).map(([k2, n2]) => `<span class="fchip${k2 === gKey ? " on" : ""}" data-gc="${sub}:${k2}">${n2}</span>`).join("");
+      gb.querySelectorAll("[data-gc]").forEach(c2 => c2.addEventListener("click", () => { const [su2, kk2] = c2.dataset.gc.split(":"); if (hasLS) localStorage.setItem("kb_gcal_" + su2, kk2); renderGen(); }));
+      root.appendChild(gb);
+      const gBox = el("div", "card");
+      gBox.innerHTML = calRowsHTML(calibrate(bt.cal, gKey, CAL_BUCKETS, false).filter(b2 => b2.n > 0), 4, 20) || "";
+      root.appendChild(gBox);
+      root.appendChild(el("div", "h1", `SPREAD &amp; TOTAL <small>· walk-forward, 57%+ calls</small>`));
+      root.appendChild(el("div", "recgrid",
+        `<div class="reccard"><div class="recname">SPREAD</div><div class="recwl">${bt.st.sp.w}-${bt.st.sp.l}</div><div class="recsub">${bt.st.sp.n} predictions</div></div>` +
+        `<div class="reccard"><div class="recname">TOTALS</div><div class="recwl">${bt.st.tot.w}-${bt.st.tot.l}</div><div class="recsub">${bt.st.tot.n} predictions</div></div>`));
+      const g2Key = (hasLS && localStorage.getItem("kb_gstcal_" + sub)) || "sp";
+      const g2b = el("div"); g2b.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px;";
+      g2b.innerHTML = [["sp", "SPREAD"], ["tot", "TOTALS"]].map(([k2, n2]) => `<span class="fchip${g2Key === k2 ? " on" : ""}" data-gsc="${sub}:${k2}">${n2} (${bt.st[k2].cal.length})</span>`).join("");
+      g2b.querySelectorAll("[data-gsc]").forEach(c2 => c2.addEventListener("click", () => { const [su2, kk2] = c2.dataset.gsc.split(":"); if (hasLS) localStorage.setItem("kb_gstcal_" + su2, kk2); renderGen(); }));
+      root.appendChild(g2b);
+      const g2Box = el("div", "card");
+      g2Box.innerHTML = calRowsHTML(calibrate(bt.st[g2Key].cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || "";
+      root.appendChild(g2Box);
+    }
+    return;
+  }
+  if (GX.view === "pstat") {
+    const psList = GS_PSTATS[sp] || [];
+    const ps = psList.find(p2 => p2.k === GX.pstat) || psList[0];
+    if (!ps) { root.appendChild(el("div", "nobets", `${cfg.name} has no prop-model tabs.`)); return; }
+    root.appendChild(el("div", "h1", `${ps.n} <small>· player prop model — same engine as the WNBA props</small>`));
+    root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `Each player's projection = 60% their last 5 games + 40% their season rate, from real game logs. The bars are the actual last 10 games vs the model's line. <b>P(OVER)</b> comes from the player's own game-to-game swings — steady players get confident calls. The MODEL LINE is the projection at even odds (≈ −100): a reference point until a book line exists. <b style="color:var(--gold)">Honest limits in this new branch:</b> no opponent adjustment yet, and no backtested prop record here — compare against the book's price on the BOOK PROPS tab before betting anything.`));
+    const pSubs = subsOf();
+    for (const sub of pSubs) { const ss = gSlot(sub); if (!ss.pReady && !ss.pLoading && !ss.pErr) genPropsLoad(sub); }
+    if (pSubs.some(sub => gSlot(sub).pLoading)) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Pulling ${cfg.name} player game logs…</div>`)); return; }
+    const pErrs = pSubs.map(sub => gSlot(sub).pErr ? GS_CFG[sub].name + ": " + gSlot(sub).pErr : null).filter(Boolean);
+    if (pErrs.length === pSubs.length) { root.appendChild(el("div", "nobets", `Player logs unavailable — ${pErrs.join(" · ")}. Off-season feeds are often empty; this fills in once seasons run.`)); const rb2 = el("button", null, "RETRY"); rb2.className = "btn ghost"; rb2.addEventListener("click", () => { for (const sub of pSubs) { const ss = gSlot(sub); ss.pReady = false; ss.pErr = null; } renderGen(); }); root.appendChild(rb2); return; }
+    if (pErrs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Partial: ${pErrs.join(" · ")}</span>`));
+    let arr = pSubs.flatMap(sub => (gSlot(sub).pdata?.[ps.k] || []).map(x => combo ? { ...x, team: (x.team ? x.team + " · " : "") + GS_CFG[sub].name } : x));
+    arr = arr.slice().sort((a2, b2) => (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
+    if (!arr.length) { root.appendChild(el("div", "nobets", `No usable ${ps.n} logs right now (off-season, or this stat isn't in this sport's feed). BOOK PROPS still works.`)); return; }
+    const pgrid = el("div", "grid wide");
+    for (const p2 of arr.slice(0, 15)) {
+      const modelLine = Math.max(0.5, Math.round(p2.proj - 0.5) + 0.5);
+      const pOver = 1 - phi((modelLine - p2.proj) / p2.sigma);
+      const chartVals = p2.vals.slice(0, 10).reverse();
+      const card = el("div", "card kcard");
+      card.innerHTML = `
+        <div class="ktop"><div class="hs big">${p2.hs ? `<img src="${p2.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
+          <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p2.name}</div>
+          <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.vals.length} games logged</div></div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">${gBadge(p2.grade)}<div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">MODEL ${modelLine}</div></div></div>
+        <div class="kmid">
+          <div class="kstat"><div class="v">${p2.proj.toFixed(1)}</div><div class="l">PROJ ${ps.k}</div></div>
+          <div class="vsep"></div>
+          <div class="kstat"><div class="v" style="color:var(--blue);">${modelLine}</div><div class="l">MODEL LINE ≈ −100</div></div>
+          <div class="vsep"></div>
+          <div class="kstat"><div class="v">${(pOver * 100).toFixed(0)}%</div><div class="l">P(OVER)</div></div>
+          <div class="spacer"></div>
+          <div>${sparkSVG(chartVals, modelLine)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${ps.k} — LAST ${chartVals.length} GAMES</div></div>
+        </div>
+        <div class="chips">
+          <span class="chip">season ${p2.season.toFixed(1)}</span><span class="chip">last 5: ${p2.last5.toFixed(1)}</span>
+          <span class="chip">swing ±${p2.sigma.toFixed(1)}</span>
+        </div>`;
+      pgrid.appendChild(card);
+    }
+    root.appendChild(pgrid);
+    const rb3 = el("button", null, "⟳ RELOAD PLAYER LOGS"); rb3.className = "btn ghost"; rb3.style.marginTop = "12px";
+    rb3.addEventListener("click", () => { for (const sub of subsOf()) { const ss = gSlot(sub); ss.pReady = false; ss.pErr = null; } renderGen(); });
+    root.appendChild(rb3);
     return;
   }
   if (GX.view === "props") {
-    root.appendChild(el("div", "subhead", `Most common ${cfg.name} props: <b style="color:var(--txt)">${(cfg.props || []).map(p => p[1]).join(" · ")}</b>. Book lines via your Odds API key — no model claims on this board (honest label: these markets don't have a backtested model here yet).`));
-    if (s.propBusy) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Fetching ${cfg.name} props…</div>`)); return; }
-    if (!s.props) {
-      const b2 = el("button", null, `FETCH TODAY'S ${cfg.name} PROPS (uses ~1 credit per game)`); b2.className = "btn";
-      b2.addEventListener("click", () => genFetchProps(sp));
-      root.appendChild(b2);
-      return;
+    root.appendChild(el("div", "subhead", `Most common props: <b style="color:var(--txt)">${(cfg.props || []).map(p => p[1]).join(" · ")}</b>. Book lines via your Odds API key — no model claims on this board (honest label: these markets don't have a backtested model here yet).`));
+    for (const sub of subsOf()) {
+      const c3 = GS_CFG[sub], s3 = gSlot(sub);
+      if (combo) root.appendChild(el("div", "h1", `${c3.emoji} ${c3.name}`));
+      if (s3.propBusy) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Fetching ${c3.name} props…</div>`)); continue; }
+      if (!s3.props) {
+        const b2 = el("button", null, `FETCH TODAY'S ${c3.name} PROPS (uses ~1 credit per game)`); b2.className = "btn"; b2.style.marginBottom = "12px";
+        b2.addEventListener("click", () => genFetchProps(sub));
+        root.appendChild(b2);
+        continue;
+      }
+      if (s3.props.err) { root.appendChild(el("div", "nobets", s3.props.err)); const b3 = el("button", null, "RETRY"); b3.className = "btn ghost"; b3.addEventListener("click", () => genFetchProps(sub)); root.appendChild(b3); continue; }
+      if (!s3.props.rows.length) { root.appendChild(el("div", "nobets", `No ${c3.name} props posted for ${S.date} — books post closer to game time, or it's an off day.`)); continue; }
+      root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Fetched ${s3.props.fetchedAt} · ${s3.props.games} game(s) · first book per game to save credits.</span>`));
+      const byMarket = {};
+      for (const r2 of s3.props.rows) (byMarket[r2.market] = byMarket[r2.market] || []).push(r2);
+      for (const mk of Object.keys(byMarket)) {
+        const box = el("div", "card"); box.style.marginBottom = "14px";
+        box.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:17px;color:var(--gold);margin-bottom:7px;">${mk}</div>` +
+          byMarket[mk].slice(0, 60).map(r2 => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3.5px 0;border-bottom:1px solid var(--line3);flex-wrap:wrap;">
+            <b style="min-width:130px;">${r2.player || ""}</b><span style="color:var(--dim);">${r2.side}${r2.line != null ? " " + r2.line : ""}</span>
+            <span style="color:var(--dim3);font-size:10.5px;">${r2.game}</span><div class="spacer"></div>
+            <b style="font-family:var(--cond);font-size:15px;color:var(--txt);">${fmtML(r2.price)}</b><span style="color:var(--dim3);font-size:10px;">${r2.book}</span></div>`).join("");
+        root.appendChild(box);
+      }
+      const rb = el("button", null, `⟳ REFRESH ${c3.name} PROPS`); rb.className = "btn ghost"; rb.style.margin = "0 0 14px";
+      rb.addEventListener("click", () => genFetchProps(sub));
+      root.appendChild(rb);
     }
-    if (s.props.err) { root.appendChild(el("div", "nobets", s.props.err)); const b3 = el("button", null, "RETRY"); b3.className = "btn ghost"; b3.addEventListener("click", () => genFetchProps(sp)); root.appendChild(b3); return; }
-    if (!s.props.rows.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} props posted for ${S.date} — books post closer to game time, or it's an off day.`)); return; }
-    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Fetched ${s.props.fetchedAt} · ${s.props.games} game(s) · first book per game to save credits.</span>`));
-    const byMarket = {};
-    for (const r2 of s.props.rows) (byMarket[r2.market] = byMarket[r2.market] || []).push(r2);
-    for (const mk of Object.keys(byMarket)) {
-      const box = el("div", "card"); box.style.marginBottom = "14px";
-      box.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:17px;color:var(--gold);margin-bottom:7px;">${mk}</div>` +
-        byMarket[mk].slice(0, 60).map(r2 => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3.5px 0;border-bottom:1px solid var(--line3);flex-wrap:wrap;">
-          <b style="min-width:130px;">${r2.player || ""}</b><span style="color:var(--dim);">${r2.side}${r2.line != null ? " " + r2.line : ""}</span>
-          <span style="color:var(--dim3);font-size:10.5px;">${r2.game}</span><div class="spacer"></div>
-          <b style="font-family:var(--cond);font-size:15px;color:var(--txt);">${fmtML(r2.price)}</b><span style="color:var(--dim3);font-size:10px;">${r2.book}</span></div>`).join("");
-      root.appendChild(box);
-    }
-    const rb = el("button", null, "⟳ REFRESH PROPS"); rb.className = "btn ghost"; rb.style.marginTop = "10px";
-    rb.addEventListener("click", () => genFetchProps(sp));
-    root.appendChild(rb);
     return;
   }
   // BOARD
-  if (!s.games.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games on ${S.date} — off day or off-season. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
+  let boardGames;
+  if (combo) {
+    const lgSel = socLg();
+    const chips = el("div");
+    chips.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+    chips.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">LEAGUE</span>` +
+      [["ALL", "ALL"], ...combo.map(k2 => [k2, GS_CFG[k2].emoji + " " + GS_CFG[k2].name])].map(([k2, l2]) => `<span class="fchip${lgSel === k2 ? " on" : ""}" data-slg="${k2}">${l2}</span>`).join("");
+    chips.querySelectorAll("[data-slg]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_soclg", c2.dataset.slg); renderGen(); }));
+    root.appendChild(chips);
+    boardGames = combo.filter(k2 => lgSel === "ALL" || lgSel === k2).flatMap(k2 => gSlot(k2).games.map(g2 => ({ g: g2, sub: k2 })));
+    boardGames.sort((a2, b2) => ((a2.g.completed || a2.g.live) ? 1 : 0) - ((b2.g.completed || b2.g.live) ? 1 : 0) || (a2.g.date < b2.g.date ? -1 : 1));
+  } else {
+    boardGames = s.games.map(g2 => ({ g: g2, sub: sp }));
+  }
+  if (!boardGames.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games on ${S.date} — off day or off-season. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
   const grid = el("div", "grid");
-  for (const g of s.games) {
+  for (const { g, sub } of boardGames) {
+    const cfgG = GS_CFG[sub], sG = gSlot(sub);
     const card = el("div", "card" + (g.completed || g.live ? " played" : ""));
     const logo2 = t2 => t2.logo ? `<img src="${t2.logo}" style="width:28px;height:28px;object-fit:contain;">` : "";
     const mrow2 = (n2, p2) => { if (p2 == null) return ""; const hp2 = p2 >= 0.5, ab = hp2 ? g.home.abbr : g.away.abbr, sp2 = hp2 ? p2 : 1 - p2; const col2 = hp2 ? "var(--green)" : "var(--blue)"; return `<div class="mrow"><span class="mlabel">${n2}</span><div class="mbar"><i style="width:${(sp2 * 100).toFixed(0)}%;background:${col2};"></i></div><span class="mpct" style="min-width:76px;"><b style="color:${col2};">${ab}</b> ${(sp2 * 100).toFixed(1)}%</span><span class="medge"></span></div>`; };
     let stp = "";
     if (!g.completed && !g.live && (g.spread != null || g.total != null)) {
       const rows2 = [];
-      if (g.spread != null && g.cons != null) { const pc2 = coverProb(g.cons, g.spread, cfg.mSig); const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
-      if (g.total != null && g.expT != null) { const pOv2 = 1 - phi((g.total - g.expT) / cfg.tSig); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${g.expT.toFixed(1)}</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
+      if (g.spread != null && g.cons != null) { const pc2 = coverProb(g.cons, g.spread, cfgG.mSig); const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
+      if (g.total != null && g.expT != null) { const pOv2 = 1 - phi((g.total - g.expT) / cfgG.tSig); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${g.expT.toFixed(1)}</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
       else if (g.total != null) rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL</span><b>${g.total}</b><span style="color:var(--dim3);font-size:11px;">book line (model needs season data)</span></div>`);
-      if (rows2.length) stp = `<div style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;"><div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--dim);margin-bottom:2px;">SPREAD &amp; TOTAL${s.bt ? "" : " · book lines only"}</div>${rows2.join("")}</div>`;
+      if (rows2.length) stp = `<div style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;"><div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--dim);margin-bottom:2px;">SPREAD &amp; TOTAL${sG.bt ? "" : " · book lines only"}</div>${rows2.join("")}</div>`;
     }
     card.innerHTML = `
       <div class="chead"><span class="time">${timeLabel(g.date)}</span>
         ${g.completed ? '<span class="finchip">FINAL</span>' : g.live ? '<span class="livechip">● LIVE</span>' : ""}
-        ${g.book && !g.completed ? `<span class="bookchip">${g.book}</span>` : ""}<div class="spacer"></div></div>
+        ${g.book && !g.completed ? `<span class="bookchip">${g.book}</span>` : ""}${combo ? `<span class="chip">${cfgG.emoji} ${cfgG.name}</span>` : ""}<div class="spacer"></div></div>
       <div class="trow" style="margin-top:3px;">${logo2(g.away)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${g.away.name.split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : `<div class="tml">${fmtML(g.mlAway)}</div>`}</div>
       <div class="trow" style="margin-top:3px;">${logo2(g.home)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${g.home.name.split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : `<div class="tml">${fmtML(g.mlHome)}</div>`}</div>
       ${g.mlDraw != null && !g.completed ? `<div style="font-size:11px;color:var(--dim);margin-top:4px;">DRAW ${fmtML(g.mlDraw)} <span style="color:var(--dim3)">· 3-way market — model win probs don't include the draw</span></div>` : ""}
-      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10", g.mForm)}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfg.teamCap !== -1 && !s.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
+      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10", g.mForm)}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
       ${stp}`;
     grid.appendChild(card);
   }
   root.appendChild(grid);
   const rl = el("button", null, `RELOAD ${cfg.name} DATA`); rl.className = "btn ghost"; rl.style.marginTop = "14px";
-  rl.addEventListener("click", () => { s.loaded = false; genEnsure(sp); });
+  rl.addEventListener("click", () => { for (const sub of subsOf()) gSlot(sub).loaded = false; genEnsure(sp); });
   root.appendChild(rl);
 }
 function genMenu() {
@@ -4933,7 +5163,7 @@ const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 V
 const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:PRA", "COMBOS"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
-  const tabs = APP_SPORT === "mlb" ? MLB_TABS : APP_SPORT === "wnba" ? WNBA_TABS : GEN_TABS;
+  const tabs = APP_SPORT === "mlb" ? MLB_TABS : APP_SPORT === "wnba" ? WNBA_TABS : genTabs(APP_SPORT);
   const act = active ?? tabs[0][0];
   bar.innerHTML = tabs.map(([k, l]) => `<div class="tab${act === k ? " active" : ""}" data-tab="${k}">${l}</div>`).join("");
   bar.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => selectTab(t.dataset.tab)));
@@ -4941,7 +5171,9 @@ function renderTabs(active) {
 function selectTab(key) {
   renderTabs(key);
   if (key.startsWith("gen")) {
-    GX.view = key.split(":")[1] || "board";
+    const parts = key.split(":");
+    GX.view = parts[1] || "board";
+    if (parts[1] === "pstat") GX.pstat = parts[2];
     switchTab("gen");
     if (GX.cur) { genEnsure(GX.cur); renderGen(); }
     return;
@@ -5000,7 +5232,7 @@ if (typeof module !== "undefined" && module.exports) {
     wnbaKevRows, wnbaKevScore, evalWCore, wnbaAutoTune, WW_DEF, invPhi, coverProb, mlbTotalExp, wnbaTotalExp,
     loadPJ, savePJ, snapshotProps, gradeProps, snapshotWProps, gradeWProps, propRecAgg, propBacktest,
     wnbaBoxModel, snapshotWMl, gradeWMl, wmlRecords, loadWJ, wnbaBoxHist, wnbaBoxBacktest, wnbaKevSpread, wspkCached,
-    GS_CFG, GX, gSlot, genFit, genPredict };
+    GS_CFG, GX, gSlot, genFit, genPredict, GS_PSTATS, genTabs, glParse, glIdx, glVals };
 }
 </script>
 </body>
