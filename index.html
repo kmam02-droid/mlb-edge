@@ -274,6 +274,7 @@
     <span id="sportSwitch" style="margin-left:8px;"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="soc">⚽ SOCCER</button><button data-sport="ufc">🥊 UFC</button></span>
     <div class="spacer"></div>
     <input type="date" id="datePick">
+    <button class="btn" id="nextDayBtn" title="Jump to the next day the current sport plays">⏭ NEXT GAME DAY</button>
     <button class="btn" id="refreshBtn">Refresh</button>
   </div>
   <div class="tabs">
@@ -309,7 +310,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.68";
+const BUILD = "v3.78";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -1707,7 +1708,7 @@ function renderAll() {
 }
 
 /* ---------- BEST BETS + SLATE ---------- */
-function bbMax() { const v = hasLS ? parseInt(localStorage.getItem("kb_bbmax")) : NaN; return isFinite(v) && v >= 4 ? v : CFG.bbDefault; }
+function bbMax() { return 30; } // always maxed — the strip scrolls, so show every play we can give
 function oddsOK(ml, stars) {
   if (ml == null) return true;                    // no price known — let it through
   if (ml < CFG.oddsFloor) return false;           // heavier than -450: too much juice
@@ -1757,7 +1758,7 @@ function bestBets() {
     if (eb != null) return 1;
     return b.pHR - a.pHR;
   });
-  const hrCap = 1 + (N >= 16 ? 1 : 0) + (N >= 24 ? 1 : 0);
+  const hrCap = 3;
   for (const p of hrCand.slice(0, 6)) {
     if (hrs.length >= hrCap) break;
     const bo = S.hrOdds[p.id];
@@ -1768,7 +1769,7 @@ function bestBets() {
   }
   // most likely to record a hit — the high-percentage play of the day
   const hits = [];
-  const hitCap = Math.max(1, Math.round(N * 0.2));
+  const hitCap = 6;
   const hitCand = S.hitPicks.filter(p => { const g = S.games.find(x => x.pk === p.gamePk); return g && g.state === "Preview"; });
   for (const p of hitCand) {
     if (hits.length >= hitCap) break;
@@ -1781,14 +1782,12 @@ function bestBets() {
     hits.push({ kind: "hit", batId: p.id, type: "SAFE HIT", prob: p.pHit, sort: (edge ?? 0) * 5 + p.pHit * 100, stars, edgeTxt: edge != null ? (edge >= 0 ? "+" : "") + edge.toFixed(1) + "%" : (p.pHit * 100).toFixed(0) + "%", teamId: p.teamId, abbr: (p.name || "").split(" ").slice(-1)[0].toUpperCase(), atVs: "vs", oppAbbr: p.oppAbbr, time: p.time, big: hasBook ? fmtML(bo.price) : fmtML(p.fairHit), bigLbl: hasBook ? "BOOK ODDS" : "FAIR ODDS", small: (p.pHit * 100).toFixed(1) + "%", smallLbl: "P(1+ HIT)" });
   }
   mls.sort((a, b) => b.sort - a.sort); mlsExtra.sort((a, b) => b.sort - a.sort); kps.sort((a, b) => b.sort - a.sort);
-  const mlCap = Math.max(2, Math.round(N * 0.45));
-  const kCap = Math.max(1, Math.round(N * 0.3));
-  const out = [...mls.slice(0, mlCap), ...kps.slice(0, kCap), ...hits, ...hrs];
-  // room left under your slider? surface the next-best moneylines below the ★ threshold
+  // no caps on real qualifiers — every above-threshold ML and every A/B strikeout lean makes the strip
+  const out = [...mls, ...kps, ...hits, ...hrs];
+  // still short of the max? surface the next-best moneylines below the ★ threshold as fillers
   for (const e of mlsExtra) { if (out.length >= N) break; out.push(e); }
-  const final = out.slice(0, Math.max(N, mls.slice(0, mlCap).length + kps.slice(0, kCap).length));
-  final.sort((a, b) => (b.prob ?? 0) - (a.prob ?? 0)); // most likely to hit first
-  return final;
+  out.sort((a, b) => (b.prob ?? 0) - (a.prob ?? 0)); // most likely to hit first
+  return out;
 }
 function renderBoard() {
   const root = $("#tab-board"); root.innerHTML = "";
@@ -1799,9 +1798,7 @@ function renderBoard() {
     <div style="font-size:12px;color:var(--dim);font-weight:600;">every bet type · odds zone ${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor} (bigger plus odds only on STRONG+) · <b style="color:var(--txt)">tap a bet to see why</b></div>
     ${S.weightsStamp ? `<span class="chip green" style="font-weight:800;">✓ using your weights · synced ${S.weightsStamp}</span>` : ""}
     <div class="spacer"></div>
-    <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim);font-weight:800;letter-spacing:.8px;white-space:nowrap;">BETS SHOWN
-      <input type="range" min="4" max="30" step="2" value="${bbMax()}" id="bbCount" style="width:110px;">
-      <b id="bbCountVal" style="color:var(--gold);font-family:var(--cond);font-size:17px;">${bbMax()}</b></div>
+    <div style="font-size:10px;color:var(--dim);font-weight:800;letter-spacing:.8px;white-space:nowrap;">SHOWING EVERY QUALIFYING PLAY <b style="color:var(--gold);font-family:var(--cond);font-size:17px;margin-left:6px;">${bets.length}</b></div>
   </div>`));
   if (bets.length) {
     const strip = el("div", "strip");
@@ -1820,19 +1817,16 @@ function renderBoard() {
     }
     root.appendChild(strip);
   } else {
-    root.appendChild(el("div", "nobets", `No plays fit your filters right now (edge ≥ ${S.weights.edgeThresh}%, odds ${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}). Slide BETS SHOWN up for more, or hit Refresh near first pitch — lines move all day.`));
+    root.appendChild(el("div", "nobets", `No plays fit your filters right now (edge ≥ ${S.weights.edgeThresh}%, odds ${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}). Hit Refresh near first pitch — lines move all day.`));
   }
-  const bbSlider = root.querySelector("#bbCount");
-  bbSlider.addEventListener("input", ev => { const v = root.querySelector("#bbCountVal"); if (v) v.textContent = ev.target.value; });
-  bbSlider.addEventListener("change", ev => { if (hasLS) localStorage.setItem("kb_bbmax", ev.target.value); renderBoard(); });
   const mSort = (hasLS && localStorage.getItem("kb_sortmlb")) || "cons";
-  const M_SORTS = [["cons", "CONSENSUS EDGE"], ["kevin", "KEVIN'S MODEL"], ["sharp", "SHARP"], ["pyth", "PYTHAG"], ["elo", "ELO"], ["time", "GAME TIME"]];
+  const M_SORTS = [["cons", "CONSENSUS EDGE"], ["kevin", "KEVIN'S MODEL"], ["sharp", "SHARP"], ["pyth", "PYTHAG"], ["elo", "ELO"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["time", "GAME TIME"]];
   root.appendChild(el("div", "h1", `FULL SLATE <small>· ${S.games.length} games — finished &amp; live drop to the bottom</small>`));
   const sortBar = el("div");
   sortBar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px;";
   sortBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
     M_SORTS.map(([k, l]) => `<span class="fchip${mSort === k ? " on" : ""}" data-msort="${k}">${l}</span>`).join("") +
-    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "time" ? "chronological" : "that model's most confident picks first"}</span>`;
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "time" ? "chronological" : mSort === "spread" ? "strongest run-line lean first" : mSort === "total" ? "strongest over/under lean first" : "that model's most confident picks first"}</span>`;
   sortBar.querySelectorAll("[data-msort]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_sortmlb", c.dataset.msort); renderBoard(); }));
   root.appendChild(sortBar);
   const sweeps = S.games.filter(g => { try { return !!goldenSweep(g); } catch (e) { return false; } });
@@ -1844,8 +1838,28 @@ function renderBoard() {
     const p = mSort === "kevin" ? g.kevin?.pHome : mSort === "pyth" ? g.pyth?.pHome : mSort === "elo" ? g.elo?.pHome : mSort === "sharp" ? g.sharp?.pHome : g.consensus;
     return p == null ? -1 : Math.max(p, 1 - p);
   };
+  const spConf = g => {
+    const o2 = S.odds[g.pk] || {};
+    if (o2.spread == null || g.consensus == null) return -1;
+    const src2 = (hasLS && localStorage.getItem("kb_stsrc")) || "cons";
+    const p = src2 === "kevin" ? (g.kevin?.pHome ?? g.consensus) : g.consensus;
+    const pc = coverProb(p, o2.spread, 3.9);
+    return pc == null ? -1 : Math.max(pc, 1 - pc);
+  };
+  const totConf = g => {
+    const o2 = S.odds[g.pk] || {};
+    if (o2.total == null) return -1;
+    const ex = mlbTotalExp(g);
+    if (ex == null) return -1;
+    const pOv = 1 - phi((o2.total - ex) / 4.4);
+    return Math.max(pOv, 1 - pOv);
+  };
   const sorted = [...S.games].sort((a, b) => rank(a) - rank(b) ||
-    (mSort === "time" ? (a.time < b.time ? -1 : 1) : mSort === "cons" ? bestEdge(b) - bestEdge(a) : mConf(b) - mConf(a)));
+    (mSort === "time" ? (a.time < b.time ? -1 : 1)
+      : mSort === "cons" ? bestEdge(b) - bestEdge(a)
+      : mSort === "spread" ? spConf(b) - spConf(a)
+      : mSort === "total" ? totConf(b) - totConf(a)
+      : mConf(b) - mConf(a)));
   let vRank = 0;
   for (const g of sorted) {
     const r = (g.state === "Preview" && bestEdge(g) > -90) ? ++vRank : null;
@@ -2961,7 +2975,7 @@ function pageGuide() {
     <p>4. <b>HOME RUNS</b> — anytime-HR probabilities and fair odds. <b>HITS</b> — the high-percentage play: who's most likely to record a hit tonight, with BET/PASS calls once you enter (or fetch) your book's price.</p>
     <p>5. <b>RECORDS</b> — the win/loss history of every model: your tracked picks graded automatically against final scores, plus a season-long backtest including your model's core at your current weights.</p>
     <p>6. <b>MY MODEL</b> — presets plus a slider for every factor, with a live preview showing your changes hit the board in real time.</p>
-    <p>7. <b>Best Bets is tuned to you:</b> odds between ${fmtML(CFG.plusOddsMax)} and ${CFG.oddsFloor} only (bigger plus odds must be STRONG or better), the BETS SHOWN slider controls how deep the board digs, and tapping any bet opens the model's full reasoning.</p>
+    <p>7. <b>Best Bets is tuned to you:</b> odds between ${fmtML(CFG.plusOddsMax)} and ${CFG.oddsFloor} only (bigger plus odds must be STRONG or better), the strip always shows every play that qualifies (scroll sideways for all of them), and tapping any bet opens the model's full reasoning.</p>
     <p>8. <b>On your phone:</b> start the app with Start_MLB_Daily_Edge.bat on the PC (run it as administrator once and allow the firewall prompt) — the black window prints a <b>phone link</b> like http://192.168.x.x:8177. Open that on your phone on the same Wi-Fi. Note: records/settings live per device.</p>
     <h2>Why four algorithms for the same bet?</h2>
     <p>Kevin's Model sees <i>tonight's matchup</i>, Pythag+Log5 sees <i>season-long run quality</i>, Elo sees <i>who actually beat whom, recency-weighted</i>, and <b>Sharp</b> is an auto-fitted blend of Elo + Pythag + form, trained on the first 65% of the season and validated on the rest (its honest holdout record is on the RECORDS tab). When they land on the same side of the market number, that's a much stronger signal than one model alone.</p>
@@ -4409,7 +4423,7 @@ function renderWnba() {
   root.appendChild(el("div", "h1", `GAMES <small>· ${WS.games.length} on ${S.date}</small>`));
   if (!WS.games.length) root.appendChild(el("div", "nobets", "No WNBA games on this date — could be a league break. Try the date picker up top (then RELOAD below), and check PLAYER PROPS and MODEL RECORDS — they work any day."));
   const wSortK = (hasLS && localStorage.getItem("kb_sortwnba")) || "cons";
-  const W_SORTS = [["cons", "CONSENSUS"], ["kev", "KEVIN'S W"], ["box", "W-BOX"], ["sharp", "W-SHARP"], ["elo", "W-ELO"], ["pyth", "W-PYTHAG"], ["form", "W-FORM"], ["time", "GAME TIME"]];
+  const W_SORTS = [["cons", "CONSENSUS"], ["kev", "KEVIN'S W"], ["box", "W-BOX"], ["sharp", "W-SHARP"], ["elo", "W-ELO"], ["pyth", "W-PYTHAG"], ["form", "W-FORM"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["time", "GAME TIME"]];
   if (WS.games.length > 1) {
     const wsBar = el("div");
     wsBar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px;";
@@ -4420,6 +4434,20 @@ function renderWnba() {
     root.appendChild(wsBar);
   }
   const wConfOf = g => {
+    if (wSortK === "spread") {
+      if (g.spread == null || g.cons == null) return -1;
+      const src2 = (hasLS && localStorage.getItem("kb_stsrc")) || "cons";
+      const p2 = src2 === "kevin" ? (g.mKev ?? g.cons) : g.cons;
+      const pc = coverProb(p2, g.spread, 11.5);
+      return pc == null ? -1 : Math.max(pc, 1 - pc);
+    }
+    if (wSortK === "total") {
+      if (g.total == null) return -1;
+      const ex = wnbaTotalExp(g);
+      if (ex == null) return -1;
+      const pOv = 1 - phi((g.total - ex) / 14.5);
+      return Math.max(pOv, 1 - pOv);
+    }
     const p = wSortK === "kev" ? g.mKev : wSortK === "box" ? g.mBox : wSortK === "elo" ? g.mElo : wSortK === "pyth" ? g.mPyth : wSortK === "form" ? g.mForm : wSortK === "sharp" ? g.mSharp : g.cons;
     return p == null ? -1 : Math.max(p, 1 - p);
   };
@@ -4611,57 +4639,124 @@ const GS_CFG = {
 /* per-sport player-prop model tabs (WNBA-style: 60/40 projection · model line · grades · last-10 bars) */
 const GS_PSTATS = {
   nfl: [
-    { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 35 },
-    { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 18 },
-    { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 16 },
-    { k: "REC", n: "RECEPTIONS", sort: "receiving.receptions", cat: "receiving", lab: "REC", fl: 1.1 }
+    { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 35, cls: "yds" },
+    { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 18, cls: "yds" },
+    { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 16, cls: "yds" },
+    { k: "REC", n: "RECEPTIONS", sort: "receiving.receptions", cat: "receiving", lab: "REC", fl: 1.1, cls: "count" }
   ],
   cfb: [
-    { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 40 },
-    { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 22 },
-    { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 18 }
+    { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 40, cls: "yds" },
+    { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 22, cls: "yds" },
+    { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 18, cls: "yds" }
   ],
   nba: [
-    { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4.5 },
-    { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2.2 },
-    { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.7 },
-    { k: "TPM", n: "3-POINTERS", sort: "offensive.avgPoints", lab: "3PT", made: true, fl: 0.9 },
-    { k: "PRA", n: "PRA", sort: "offensive.avgPoints", labs: ["PTS", "REB", "AST"], fl: 5.5 }
+    { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4.5, cls: "big" },
+    { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2.2, cls: "count" },
+    { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.7, cls: "count" },
+    { k: "TPM", n: "3-POINTERS", sort: "offensive.avgPoints", lab: "3PT", made: true, fl: 0.9, cls: "count" },
+    { k: "PRA", n: "PRA", sort: "offensive.avgPoints", labs: ["PTS", "REB", "AST"], fl: 5.5, cls: "big" }
   ],
   cbb: [
-    { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4 },
-    { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2 },
-    { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.5 }
+    { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4, cls: "big" },
+    { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2, cls: "count" },
+    { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.5, cls: "count" }
   ],
   nhl: [
-    { k: "SOG", n: "SHOTS ON GOAL", sort: "offensive.avgShots", lab: "SOG", alt: ["S", "SHOTS"], fl: 0.9 },
-    { k: "G", n: "GOALS", sort: "offensive.goals", lab: "G", fl: 0.35 },
-    { k: "PTS", n: "POINTS", sort: "offensive.points", labs: ["G", "A"], fl: 0.55 }
+    { k: "SOG", n: "SHOTS ON GOAL", sort: "offensive.avgShots", lab: "SOG", alt: ["S", "SHOTS"], fl: 0.9, cls: "count" },
+    { k: "G", n: "GOALS", sort: "offensive.goals", lab: "G", fl: 0.35, cls: "count" },
+    { k: "PTS", n: "POINTS", sort: "offensive.points", labs: ["G", "A"], fl: 0.55, cls: "count" }
   ],
   epl: [
-    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
-    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
-    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8, cls: "count" },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5, cls: "count" },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3, cls: "count" }
   ],
   mls: [
-    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
-    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
-    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8, cls: "count" },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5, cls: "count" },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3, cls: "count" }
   ],
   ucl: [
-    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
-    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
-    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8, cls: "count" },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5, cls: "count" },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3, cls: "count" }
   ],
   soc: [
-    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8 },
-    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5 },
-    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3 }
+    { k: "SH", n: "SHOTS", sort: "offensive.shotsTotal", lab: "SH", alt: ["SHOTS"], fl: 0.8, cls: "count" },
+    { k: "SOT", n: "SHOTS ON TARGET", sort: "offensive.shotsOnTarget", lab: "ST", alt: ["SOT"], fl: 0.5, cls: "count" },
+    { k: "G", n: "GOALS (ANYTIME)", sort: "offensive.goals", lab: "G", fl: 0.3, cls: "count" }
   ]
 };
+/* ================================================================
+   PROP MODEL LAB — research-grounded engines per stat class:
+   · counts (goals · shots · threes · rebounds · assists · receptions):
+     Poisson processes (Maher 1982; Dixon–Coles 1997) — P(over) from the
+     Poisson CDF; overdispersed samples fall back to a Normal (NB-approx)
+   · yardage (pass/rush/rec yds): right-skewed → log-normal fits
+   · big counts (points · PRA): Normal via CLT
+   · recency: EWMA (half-life 6 games) vs flat season vs robust medians
+   Every model is backtested walk-forward on each player's own logs at a
+   rolling-median reference line (the same honest book-line proxy used
+   by the MLB/WNBA prop backtests), then truth-checked.
+   ================================================================ */
+function poisCdf(k, lam) { if (lam <= 0) return 1; let s2 = 0, t2 = Math.exp(-lam); for (let i = 0; i <= k; i++) { s2 += t2; t2 *= lam / (i + 1); } return Math.min(1, s2); }
+function ewmaMean(vals, hl = 6) { const a2 = 1 - Math.pow(0.5, 1 / hl); let m2 = vals[0] ?? 0; for (let i = 1; i < vals.length; i++) m2 = a2 * vals[i] + (1 - a2) * m2; return m2; }
+function lognFit(vals) { const lg2 = vals.map(v => Math.log(Math.max(0, v) + 1)); return { m: mean(lg2), s: Math.max(0.12, sd(lg2)) }; }
+function median2(vals) { const s2 = vals.slice().sort((a2, b2) => a2 - b2); const n2 = s2.length; return n2 ? (n2 % 2 ? s2[(n2 - 1) / 2] : (s2[n2 / 2 - 1] + s2[n2 / 2]) / 2) : 0; }
+function pmModels(cls) { // each: fit(prior chronological) → { proj, pOver(L) }
+  const countP = lam => L2 => 1 - poisCdf(Math.floor(L2), Math.max(0.05, lam));
+  const normP = (mu, sg) => L2 => 1 - phi((L2 - mu) / Math.max(0.35, sg));
+  const lognP = f2 => L2 => 1 - phi((Math.log(L2 + 1) - f2.m) / f2.s);
+  if (cls === "count") return [
+    { key: "bl", name: "BLEND-NORMAL", fit: v => { const p2 = 0.6 * mean(v.slice(-5)) + 0.4 * mean(v); return { proj: p2, pOver: normP(p2, sd(v)) }; } },
+    { key: "ep", name: "EWMA-POISSON", fit: v => { const lam = ewmaMean(v); const od = mean(v) > 0 && (sd(v) ** 2) / mean(v) > 1.6; return { proj: lam, pOver: od ? normP(lam, sd(v)) : countP(lam), od }; } },
+    { key: "sp2", name: "SEASON-POISSON", fit: v => { const lam = mean(v); return { proj: lam, pOver: countP(lam) }; } }
+  ];
+  if (cls === "yds") return [
+    { key: "bl", name: "BLEND-NORMAL", fit: v => { const p2 = 0.6 * mean(v.slice(-5)) + 0.4 * mean(v); return { proj: p2, pOver: normP(p2, sd(v)) }; } },
+    { key: "el", name: "EWMA-LOGNORMAL", fit: v => { const f2 = lognFit(v); const w2 = ewmaMean(v); const f3 = { m: Math.log(w2 + 1) - f2.s * f2.s / 2 + (f2.m - (Math.log(mean(v) + 1) - f2.s * f2.s / 2)), s: f2.s }; return { proj: w2, pOver: lognP({ m: Math.log(Math.max(1, w2 + 1)) , s: f2.s }) }; } },
+    { key: "ml", name: "MEDIAN-LOGNORMAL", fit: v => { const md = median2(v.slice(-10)); const f2 = lognFit(v); return { proj: md, pOver: lognP({ m: Math.log(md + 1), s: f2.s }) }; } }
+  ];
+  return [ // big counts
+    { key: "bl", name: "BLEND-NORMAL", fit: v => { const p2 = 0.6 * mean(v.slice(-5)) + 0.4 * mean(v); return { proj: p2, pOver: normP(p2, sd(v)) }; } },
+    { key: "ew", name: "EWMA-NORMAL", fit: v => { const w2 = ewmaMean(v); return { proj: w2, pOver: normP(w2, sd(v)) }; } },
+    { key: "tr", name: "TRIM-10 NORMAL", fit: v => { const l10 = v.slice(-10).slice().sort((a2, b2) => a2 - b2); const t10 = l10.length > 4 ? l10.slice(1, -1) : l10; const p2 = mean(t10); return { proj: p2, pOver: normP(p2, sd(v)) }; } }
+  ];
+}
+function pmBacktest(players, cls) { // walk-forward per player at rolling-median reference lines ± an offset
+  const models = pmModels(cls);
+  const out = {};
+  for (const m2 of models) out[m2.key] = { name: m2.name, w: 0, l: 0, n: 0, cal: [] };
+  for (const p2 of players || []) {
+    const chron = (p2.vals || []).slice().reverse(); // oldest → newest
+    if (chron.length < 8) continue;
+    for (let i = 6; i < chron.length; i++) {
+      const prior = chron.slice(0, i);
+      const ref = median2(prior.slice(-10));
+      const delta = cls === "yds" ? Math.max(5, Math.round(ref * 0.15)) : cls === "big" ? 2 : 1;
+      const act = chron[i];
+      for (const off of [-delta, 0, delta]) {
+        const L2 = Math.max(0.5, Math.round((ref + off) * 2) / 2 % 1 === 0 ? Math.round(ref + off) + 0.5 : Math.round((ref + off) * 2) / 2);
+        if (act === L2) continue;
+        for (const m2 of models) {
+          try {
+            const f2 = m2.fit(prior);
+            const pOv = clamp(f2.pOver(L2), 0.01, 0.99);
+            const side = Math.max(pOv, 1 - pOv);
+            const won = (pOv >= 0.5) === (act > L2);
+            const o2 = out[m2.key];
+            o2.n++; o2.cal.push({ p: side, y: won });
+            if (side >= 0.60) { won ? o2.w++ : o2.l++; }
+          } catch (e2) {}
+        }
+      }
+    }
+  }
+  return out;
+}
 function genTabs(sp) {
   const ps = GS_PSTATS[sp] || [];
-  return [["gen:board", "BOARD"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ["gen:props", "BOOK PROPS"], ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
+  return [["gen:board", "BOARD"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
 }
 function glParse(gl) { // shared ESPN gamelog shape: combined labels + per-category offsets (football) or flat labels (everything else)
   const labels = gl?.labels || [];
@@ -4748,25 +4843,55 @@ function genEnsure(sp) {
   const s = gSlot(sp); if (!s.loaded && !s.loading) genLoad(sp);
 }
 const socLg = () => (hasLS && localStorage.getItem("kb_soclg")) || "ALL";
+function genNextBtn(sp) { // ⏭ jump to the next date this sport plays — works from cache even mid-load
+  const subs = GS_CFG[sp].combo || [sp];
+  let list = subs.flatMap(k2 => { const s3 = gSlot(k2); const a2 = (s3.calendar || []).slice(); if (s3.nextDay) a2.push(s3.nextDay); return a2; });
+  if (hasLS) for (const k2 of subs) {
+    try { const sv = JSON.parse(localStorage.getItem("kb_gcaldr_" + k2) || "null"); if (sv) list = list.concat(sv); } catch (e) {}
+    try { const nv = JSON.parse(localStorage.getItem("kb_gnext_" + k2) || "null"); if (nv) list.push(nv); } catch (e) {}
+  }
+  const dates = [...new Set(list)].sort();
+  const nx = dates.find(d2 => d2 > S.date);
+  if (!nx) return null;
+  const nb = el("button", null, `⏭ NEXT ${GS_CFG[sp].name} GAME DAY — ${nx}`);
+  nb.className = "btn";
+  nb.addEventListener("click", () => {
+    const dp = $("#datePick");
+    if (dp) { dp.value = nx; dp.dispatchEvent(new Event("change")); } else { S.date = nx; }
+    for (const sub of subs) gSlot(sub).loaded = false;
+    genEnsure(sp);
+    setStatus(`Jumped to ${nx} — the whole app now shows that date (date picker up top to come back).`);
+  });
+  return nb;
+}
 async function genLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
   s.loading = true; s.errors = []; s.games = []; s.results = []; s.teams = {};
   s.stage = "team list…"; renderGen();
   const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
+  // hydrate from cache FIRST — the page is useful (and the ⏭ jump button live) before the network even answers
+  if (hasLS) {
+    try { const sv = JSON.parse(localStorage.getItem("kb_gteams_" + sp) || "null"); if (sv) for (const t of sv) s.teams[t.id] = t; } catch (e) {}
+    try { const sc2 = JSON.parse(localStorage.getItem("kb_gcaldr_" + sp) || "null"); if (sc2?.length) s.calendar = sc2; } catch (e) {}
+  }
+  const hadCache = Object.keys(s.teams).length > 0;
   if (cfg.teamCap >= 0) { // team-based league (everything except UFC)
     let tl = null, tlErr = null;
-    for (let att = 0; att < 3 && !tl; att++) { // relay connections hiccup — retry the keystone like the WNBA loader does
-      try { tl = await j(`${base}/teams?limit=${cfg.teamCap === 0 ? 500 : 200}`); }
-      catch (e) { tlErr = e.message; if (att < 2) await new Promise(r => setTimeout(r, 1500)); }
+    const tlLimit = cfg.teamCap === 0 ? 500 : Math.max(40, cfg.teamCap + 8); // small payloads survive flaky relays far better
+    const tlTries = hadCache ? 1 : 4; // with a cache in hand, don't make the user wait on retries
+    for (let att = 0; att < tlTries && !tl; att++) {
+      try { tl = await j(`${base}/teams?limit=${tlLimit}`); }
+      catch (e) { tlErr = e.message; if (att < tlTries - 1) await new Promise(r => setTimeout(r, 1200 + att * 900)); }
     }
+    if (!tl && hadCache) tlErr = null; // cache carries the day silently
     try {
       const teams = (tl?.sports?.[0]?.leagues?.[0]?.teams || []).map(t => t.team).filter(Boolean);
       for (const t of teams) s.teams[+t.id] = { id: +t.id, abbr: t.abbreviation || (t.shortDisplayName || "").slice(0, 4).toUpperCase(), name: t.displayName, logo: t.logos?.[0]?.href || "" };
       if (teams.length && hasLS) try { localStorage.setItem("kb_gteams_" + sp, JSON.stringify(Object.values(s.teams))); } catch (e) {}
       if (!teams.length) throw new Error(tlErr || "empty team list");
     } catch (e) {
-      s.errors.push("team list: " + e.message + " (3 tries) — RELOAD usually fixes a relay hiccup");
-      if (hasLS) try { const sv = JSON.parse(localStorage.getItem("kb_gteams_" + sp) || "null"); if (sv) { for (const t of sv) s.teams[t.id] = t; s.errors[s.errors.length - 1] = "team list served from your saved copy (nothing is affected)"; } } catch (e2) {}
+      if (hadCache) { if (!s.errors.some(x => /saved copy/.test(x))) s.errors.push("team list served from your saved copy (nothing is affected)"); }
+      else s.errors.push("team list: " + e.message + " — auto-retry will handle it");
     }
     const nT = Object.keys(s.teams).length;
     if (cfg.teamCap > 0 && nT > 0 && nT <= cfg.teamCap) { // full season results only for small leagues
@@ -4803,6 +4928,16 @@ async function genLoad(sp) {
       catch (e) { sbErr = e; if (att === 0) await new Promise(r => setTimeout(r, 1200)); }
     }
     if (!sb) throw sbErr || new Error("scoreboard unavailable");
+    // capture the league calendar → powers the "next game day" jump (NFL nests weeks inside entries)
+    try {
+      const flat = [];
+      for (const c2 of sb?.leagues?.[0]?.calendar || []) {
+        if (typeof c2 === "string") flat.push(c2.slice(0, 10));
+        else if (c2?.startDate) flat.push(String(c2.startDate).slice(0, 10));
+        if (Array.isArray(c2?.entries)) for (const e3 of c2.entries) if (e3?.startDate) flat.push(String(e3.startDate).slice(0, 10));
+      }
+      if (flat.length) s.calendar = [...new Set(flat)].sort();
+    } catch (e) {}
     const side = cp => cp ? ({ id: +cp.id, abbr: cp.team?.abbreviation || (cp.athlete ? (cp.athlete.shortName || cp.athlete.displayName) : "?"), name: cp.team?.displayName || cp.athlete?.displayName || "?", logo: cp.team?.logo || cp.team?.logos?.[0]?.href || cp.athlete?.headshot || "", score: cp.score != null ? +cp.score : null, winner: !!cp.winner }) : null;
     s.games = (sb?.events || []).map(ev => {
       const c = ev.competitions?.[0] || {};
@@ -4822,6 +4957,51 @@ async function genLoad(sp) {
     }).filter(g => g.home && g.away);
     if (s.bt?.state) for (const g of s.games) genPredict(sp, g);
   } catch (e) { s.errors.push("scoreboard: " + e.message); }
+  // NEXT-GAME-DAY guarantee, three layers deep:
+  // ① the dated scoreboard's calendar  ② the undated scoreboard's calendar
+  // ③ if both only contain the PAST (ESPN serves last season all offseason), probe forward until real events appear
+  const hasFuture = () => (s.calendar || []).some(d2 => d2 > S.date) || (s.nextDay && s.nextDay > S.date);
+  if (!hasFuture()) {
+    try {
+      let sb2 = null;
+      for (let att = 0; att < 2 && !sb2; att++) { try { sb2 = await j(`${base}/scoreboard`); } catch (e) { if (att === 0) await new Promise(r => setTimeout(r, 1000)); } }
+      const flat2 = [];
+      for (const c2 of sb2?.leagues?.[0]?.calendar || []) {
+        if (typeof c2 === "string") flat2.push(c2.slice(0, 10));
+        else if (c2?.startDate) flat2.push(String(c2.startDate).slice(0, 10));
+        if (Array.isArray(c2?.entries)) for (const e3 of c2.entries) if (e3?.startDate) flat2.push(String(e3.startDate).slice(0, 10));
+      }
+      if (flat2.length) s.calendar = [...new Set([...(s.calendar || []), ...flat2])].sort();
+      // bonus: the undated scoreboard often lists the next scheduled events directly
+      const evD = (sb2?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(d2 => d2 > S.date).sort();
+      if (evD.length) s.nextDay = evD[0];
+    } catch (e) {}
+  }
+  if (!hasFuture()) {
+    let cachedNx = null;
+    if (hasLS) try { const sv = JSON.parse(localStorage.getItem("kb_gnext_" + sp) || "null"); if (sv && sv > S.date) cachedNx = sv; } catch (e) {}
+    if (cachedNx) s.nextDay = cachedNx;
+    else {
+      for (const off of [7, 14, 21, 30, 45, 60, 90]) {
+        try {
+          const dd = addDays(S.date, off);
+          const sb3 = await j(`${base}/scoreboard?dates=${dd.replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=50&groups=50" : ""}`);
+          const dts = (sb3?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(Boolean).sort();
+          if (dts.length) { s.nextDay = dts[0] > S.date ? dts[0] : dd; break; }
+        } catch (e) {}
+      }
+    }
+  }
+  if (s.nextDay && hasLS) { try { localStorage.setItem("kb_gnext_" + sp, JSON.stringify(s.nextDay)); } catch (e) {} }
+  if (s.calendar?.length && hasLS) { try { localStorage.setItem("kb_gcaldr_" + sp, JSON.stringify(s.calendar)); } catch (e) {} }
+  else if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gcaldr_" + sp) || "null"); if (sv?.length) s.calendar = sv; } catch (e) {} }
+  // self-healing: a totally failed load retries itself — no button-pressing required
+  const noTeams = cfg.teamCap >= 0 && !Object.keys(s.teams).length;
+  if (noTeams && (s.autoRetry || 0) < 2) {
+    s.autoRetry = (s.autoRetry || 0) + 1;
+    s.errors.push(`network hiccup — auto-retrying in 12s (attempt ${s.autoRetry + 1} of 3, no button-pressing needed)`);
+    setTimeout(() => { s.loaded = false; if (GX.cur === sp || (GS_CFG[GX.cur]?.combo || []).includes(sp)) genEnsure(sp); }, 12000);
+  } else if (!noTeams) { s.autoRetry = 0; }
   s.loaded = true; s.loading = false;
   renderGen();
 }
@@ -4958,27 +5138,34 @@ function renderGen() {
   if (combo) {
     const slots = combo.map(gSlot);
     const loadingSubs = combo.filter(k2 => gSlot(k2).loading);
-    if (loadingSubs.length && !slots.some(x => x.loaded)) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${loadingSubs.map(k2 => GS_CFG[k2].name).join(" · ")}…</div>`)); return; }
+    if (loadingSubs.length && !slots.some(x => x.loaded)) {
+      root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${loadingSubs.map(k2 => GS_CFG[k2].name).join(" · ")}…</div>`));
+      const nb0 = genNextBtn(sp); if (nb0) { nb0.style.marginTop = "12px"; root.appendChild(nb0); root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">You can jump ahead while this loads.</span>`)); }
+      return;
+    }
     if (!slots.some(x => x.loaded)) { const b = el("button", null, "LOAD SOCCER"); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
     if (loadingSubs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still loading: ${loadingSubs.map(k2 => GS_CFG[k2].name).join(" · ")} — their games join automatically.</span>`));
     const allErr = combo.flatMap(k2 => gSlot(k2).errors.map(e2 => GS_CFG[k2].name + " " + e2));
-    const soft2 = allErr.filter(e2 => /saved copy/i.test(e2)), hard2 = allErr.filter(e2 => !soft2.includes(e2));
+    const soft2 = allErr.filter(e2 => /saved copy|auto-retrying/i.test(e2)), hard2 = allErr.filter(e2 => !soft2.includes(e2));
     if (hard2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard2.join(" · ")}</span>`));
     if (soft2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft2.join(" · ")}</span>`));
   } else {
-    if (s.loading) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${cfg.name} — ${s.stage || "…"}</div>`)); return; }
+    if (s.loading) {
+      root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${cfg.name} — ${s.stage || "…"}</div>`));
+      const nb0 = genNextBtn(sp); if (nb0) { nb0.style.marginTop = "12px"; root.appendChild(nb0); root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">You can jump ahead while this loads.</span>`)); }
+      return;
+    }
     if (!s.loaded) { const b = el("button", null, `LOAD ${cfg.name}`); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
     if (s.errors.length) {
-      const soft = s.errors.filter(e2 => /saved copy/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
+      const soft = s.errors.filter(e2 => /saved copy|auto-retrying/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
       if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span>`));
       if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
     }
   }
   if (GX.view === "how") {
     const sec = (t2, b2) => { const c2 = el("div", "card"); c2.style.marginBottom = "14px"; c2.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:19px;color:var(--gold);margin-bottom:8px;">${t2}</div><div style="font-size:13.5px;color:#c6ccdb;line-height:1.65;">${b2}</div>`; root.appendChild(c2); };
-    if (cfg.teamCap === -1) sec("UFC — WHAT THIS TAB IS", `Fight cards with the book's moneylines. No team stats exist in MMA, so <b style="color:var(--txt)">no models make claims here</b> — this is an odds board plus whatever fight props your Odds API key returns. If it ever pretends to predict a fight, don't trust it.`);
+    if (cfg.teamCap === -1) sec("UFC — WHAT THIS TAB IS", `Fight cards with the book's moneylines. No team stats exist in MMA, so <b style="color:var(--txt)">no models make claims here</b> — it's an odds board, nothing more. If it ever pretends to predict a fight, don't trust it.`);
     else sec("THE MODELS (SAME HONESTY RULES AS MLB/WNBA)", `Three generic engines run wherever full season results exist: <b style="color:var(--txt)">ELO</b> (rating updated each game, margin-weighted, home bump), <b style="color:var(--txt)">PYTHAG</b> (points/goals for &amp; against → expected win rate, matchup-combined), and <b style="color:var(--txt)">FORM-10</b> (net margin last 10). Consensus = the average. All walk-forward, all backtested with a TRUTH CHECK on MODEL RECORDS. Spread &amp; total use the same margin-bell-curve idea, tuned per sport (this sport: margins ±${cfg.mSig}, totals ±${cfg.tSig}).${cfg.soccer ? ` <br><br>⚠ <b style="color:var(--gold)">Soccer honesty:</b> matches can DRAW — these are 2-way win probabilities (draws skipped in grading, half-credit in Elo). The book's draw price shows on each card; a 55% "win prob" is NOT a 55% moneyline bet in a 3-way market.` : ""}${cfg.teamCap === 0 ? ` <br><br>⚠ College leagues are huge, so full-season replays aren't fetched — the board, odds and props work now; models join once a compact results source is wired.` : ""} Records here are young — trust them only as their sample grows.`);
-    if ((cfg.props || []).length) sec("MOST COMMON PROPS", `Via your Odds API key on the PROPS tab: ${cfg.props.map(p => p[1]).join(" · ")}. These are the book's lines (no model claims yet) — a live prop board, refreshed on demand to respect your monthly credits.`);
     return;
   }
   if (GX.view === "rec") {
@@ -5018,8 +5205,10 @@ function renderGen() {
     const psList = GS_PSTATS[sp] || [];
     const ps = psList.find(p2 => p2.k === GX.pstat) || psList[0];
     if (!ps) { root.appendChild(el("div", "nobets", `${cfg.name} has no prop-model tabs.`)); return; }
-    root.appendChild(el("div", "h1", `${ps.n} <small>· player prop model — same engine as the WNBA props</small>`));
-    root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `Each player's projection = 60% their last 5 games + 40% their season rate, from real game logs. The bars are the actual last 10 games vs the model's line. <b>P(OVER)</b> comes from the player's own game-to-game swings — steady players get confident calls. The MODEL LINE is the projection at even odds (≈ −100): a reference point until a book line exists. <b style="color:var(--gold)">Honest limits in this new branch:</b> no opponent adjustment yet, and no backtested prop record here — compare against the book's price on the BOOK PROPS tab before betting anything.`));
+    const cls = ps.cls || "big";
+    const pmDefs = pmModels(cls);
+    root.appendChild(el("div", "h1", `${ps.n} <small>· ${pmDefs.length} research-grounded models, backtested below</small>`));
+    root.appendChild(expBox("HOW THESE MODELS WORK — 20 SECONDS", `${cls === "count" ? `Counting stats like this behave like <b>Poisson processes</b> (the math behind classic soccer-goals research — Maher 1982, Dixon–Coles 1997). Three engines compete: <b style="color:var(--txt)">BLEND-NORMAL</b> (60/40 recency blend, bell curve), <b style="color:var(--txt)">EWMA-POISSON</b> (exponentially-weighted recent form feeding a Poisson curve; switches to a wider Normal when a player's variance says the Poisson is too confident), and <b style="color:var(--txt)">SEASON-POISSON</b> (flat season rate — the control group that tests whether chasing recency helps at all).` : cls === "yds" ? `Yardage isn't a bell curve — it's <b>right-skewed</b> (one 75-yard breakaway drags the average), so two of the three engines use a <b>log-normal</b> distribution: <b style="color:var(--txt)">BLEND-NORMAL</b> (the naive baseline), <b style="color:var(--txt)">EWMA-LOGNORMAL</b> (recency-weighted center, skew-aware curve), and <b style="color:var(--txt)">MEDIAN-LOGNORMAL</b> (robust rolling median center — blowup games can't fool it).` : `Big scoring numbers average out to a bell curve, so three Normal engines compete on their centers: <b style="color:var(--txt)">BLEND-NORMAL</b> (60/40 recency), <b style="color:var(--txt)">EWMA-NORMAL</b> (exponential half-life of 6 games), and <b style="color:var(--txt)">TRIM-10 NORMAL</b> (last 10 with the best and worst nights thrown out).`} Every engine is <b>backtested walk-forward on each player's own games</b> at a rolling-median reference line (the same honest book-line stand-in the MLB/WNBA prop backtests use) — records and a TRUTH CHECK are at the bottom of this tab. <b style="color:var(--gold)">Still honest:</b> no opponent adjustment yet — always check your book's real price before betting any of these.`));
     const pSubs = subsOf();
     for (const sub of pSubs) { const ss = gSlot(sub); if (!ss.pReady && !ss.pLoading && !ss.pErr) genPropsLoad(sub); }
     if (pSubs.some(sub => gSlot(sub).pLoading)) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Pulling ${cfg.name} player game logs…</div>`)); return; }
@@ -5028,12 +5217,15 @@ function renderGen() {
     if (pErrs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Partial: ${pErrs.join(" · ")}</span>`));
     let arr = pSubs.flatMap(sub => (gSlot(sub).pdata?.[ps.k] || []).map(x => combo ? { ...x, team: (x.team ? x.team + " · " : "") + GS_CFG[sub].name } : x));
     arr = arr.slice().sort((a2, b2) => (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
-    if (!arr.length) { root.appendChild(el("div", "nobets", `No usable ${ps.n} logs right now (off-season, or this stat isn't in this sport's feed). BOOK PROPS still works.`)); return; }
+    if (!arr.length) { root.appendChild(el("div", "nobets", `No usable ${ps.n} logs right now (off-season, or this stat isn't in this sport's feed) — check back once the season runs.`)); return; }
     const pgrid = el("div", "grid wide");
     for (const p2 of arr.slice(0, 15)) {
-      const modelLine = Math.max(0.5, Math.round(p2.proj - 0.5) + 0.5);
-      const pOver = 1 - phi((modelLine - p2.proj) / p2.sigma);
+      const chron = p2.vals.slice().reverse();
+      const fits = pmDefs.map(m2 => { try { const f2 = m2.fit(chron); return { name: m2.name, proj: f2.proj, pOver: f2.pOver }; } catch (e2) { return null; } }).filter(Boolean);
+      const consProj = fits.length ? mean(fits.map(f2 => f2.proj)) : p2.proj;
+      const modelLine = Math.max(0.5, Math.round(consProj - 0.5) + 0.5);
       const chartVals = p2.vals.slice(0, 10).reverse();
+      const agree = fits.length && fits.every(f2 => (f2.pOver(modelLine) >= 0.5) === (fits[0].pOver(modelLine) >= 0.5));
       const card = el("div", "card kcard");
       card.innerHTML = `
         <div class="ktop"><div class="hs big">${p2.hs ? `<img src="${p2.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
@@ -5041,28 +5233,48 @@ function renderGen() {
           <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.vals.length} games logged</div></div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">${gBadge(p2.grade)}<div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">MODEL ${modelLine}</div></div></div>
         <div class="kmid">
-          <div class="kstat"><div class="v">${p2.proj.toFixed(1)}</div><div class="l">PROJ ${ps.k}</div></div>
+          <div class="kstat"><div class="v">${consProj.toFixed(1)}</div><div class="l">CONSENSUS PROJ</div></div>
           <div class="vsep"></div>
-          <div class="kstat"><div class="v" style="color:var(--blue);">${modelLine}</div><div class="l">MODEL LINE ≈ −100</div></div>
-          <div class="vsep"></div>
-          <div class="kstat"><div class="v">${(pOver * 100).toFixed(0)}%</div><div class="l">P(OVER)</div></div>
+          <div class="kstat"><div class="v" style="color:${agree ? "var(--green)" : "var(--gold)"};">${agree ? "YES" : "SPLIT"}</div><div class="l">MODELS AGREE?</div></div>
           <div class="spacer"></div>
           <div>${sparkSVG(chartVals, modelLine)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${ps.k} — LAST ${chartVals.length} GAMES</div></div>
         </div>
-        <div class="chips">
+        <div style="margin-top:8px;">${fits.map(f2 => { const po = clamp(f2.pOver(modelLine), 0.01, 0.99); const hp2 = po >= 0.5; return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:2px 0;"><span style="color:var(--dim);flex:0 0 132px;">${f2.name}</span><b>${f2.proj.toFixed(1)}</b><div class="spacer"></div><b style="color:${hp2 ? "var(--green)" : "var(--red)"};">${hp2 ? "OVER" : "UNDER"} ${modelLine} · ${(Math.max(po, 1 - po) * 100).toFixed(0)}%</b></div>`; }).join("")}</div>
+        <div class="chips" style="margin-top:7px;">
           <span class="chip">season ${p2.season.toFixed(1)}</span><span class="chip">last 5: ${p2.last5.toFixed(1)}</span>
           <span class="chip">swing ±${p2.sigma.toFixed(1)}</span>
         </div>`;
       pgrid.appendChild(card);
     }
     root.appendChild(pgrid);
+    // ---- PROP MODEL BACKTEST + TRUTH CHECK for this stat ----
+    const pmKey = sp + ":" + ps.k;
+    GX._pmbt = GX._pmbt || {};
+    if (!GX._pmbt[pmKey]) { try { GX._pmbt[pmKey] = pmBacktest(arr, cls); } catch (e2) { GX._pmbt[pmKey] = {}; } }
+    const pmb = GX._pmbt[pmKey];
+    const pmKeys = Object.keys(pmb);
+    if (pmKeys.length && pmKeys.some(k2 => pmb[k2].n > 0)) {
+      root.appendChild(el("div", "h1", `${ps.n} — MODEL BACKTEST <small>· each engine replayed walk-forward on these players' own games</small>`));
+      root.appendChild(el("div", "recgrid", pmKeys.map(k2 => { const r2 = pmb[k2]; const t2 = r2.w + r2.l; return `<div class="reccard"><div class="recname">${r2.name}</div><div class="recwl">${t2 ? r2.w + "-" + r2.l : "—"}</div><div class="recsub">${t2 ? `win% <b style="color:var(--txt)">${(r2.w / t2 * 100).toFixed(1)}%</b> at 60%+ calls` : "no 60%+ calls"} · ${r2.n} predictions</div></div>`; }).join("")));
+      const pmSel = (hasLS && localStorage.getItem("kb_pmcal_" + sp)) || pmKeys[0];
+      const pmBar = el("div"); pmBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px;";
+      pmBar.innerHTML = pmKeys.map(k2 => `<span class="fchip${pmSel === k2 ? " on" : ""}" data-pm="${k2}">${pmb[k2].name} (${pmb[k2].cal.length})</span>`).join("");
+      pmBar.querySelectorAll("[data-pm]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_pmcal_" + sp, c2.dataset.pm); renderGen(); }));
+      root.appendChild(pmBar);
+      const pmBox = el("div", "card");
+      const selDat = pmb[pmSel] || pmb[pmKeys[0]];
+      pmBox.innerHTML = calRowsHTML(calibrate(selDat.cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || '<div style="color:var(--dim);font-size:13px;">Not enough history yet.</div>';
+      root.appendChild(pmBox);
+      root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Reference lines = each player's rolling median ± a step (no historical book lines exist). The engine that stays ✓ honest across buckets is the one to trust — a shiny record with a lying truth check is worthless.</span>`));
+    }
     const rb3 = el("button", null, "⟳ RELOAD PLAYER LOGS"); rb3.className = "btn ghost"; rb3.style.marginTop = "12px";
     rb3.addEventListener("click", () => { for (const sub of subsOf()) { const ss = gSlot(sub); ss.pReady = false; ss.pErr = null; } renderGen(); });
     root.appendChild(rb3);
     return;
   }
   if (GX.view === "props") {
-    root.appendChild(el("div", "subhead", `Most common props: <b style="color:var(--txt)">${(cfg.props || []).map(p => p[1]).join(" · ")}</b>. Book lines via your Odds API key — no model claims on this board (honest label: these markets don't have a backtested model here yet).`));
+    root.appendChild(el("div", "h1", `BOOK ODDS <small>· the sportsbook's actual prop menu — real lines, real prices</small>`));
+    root.appendChild(el("div", "subhead", `<b style="color:var(--txt)">What this page is:</b> the raw prop lines and prices a sportsbook is offering right now, pulled through your Odds API key. <b style="color:var(--txt)">No models touch these numbers</b> — this is what the book says, so you can compare it against the model tabs (${(cfg.props || []).map(p => p[1]).join(" · ")}). Model says a guy clears 6.5 and the book prices the over at plus money? That's your play. Model and book agree? Pass.`));
     for (const sub of subsOf()) {
       const c3 = GS_CFG[sub], s3 = gSlot(sub);
       if (combo) root.appendChild(el("div", "h1", `${c3.emoji} ${c3.name}`));
@@ -5109,6 +5321,23 @@ function renderGen() {
     boardGames = s.games.map(g2 => ({ g: g2, sub: sp }));
   }
   if (!boardGames.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games on ${S.date} — off day or off-season. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
+  if (boardGames.length > 1) {
+    const gSortK = (hasLS && localStorage.getItem("kb_gsort_" + sp)) || "time";
+    const gsBar = el("div");
+    gsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+    gsBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
+      [["cons", "CONSENSUS"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["time", "GAME TIME"]].map(([k2, l2]) => `<span class="fchip${gSortK === k2 ? " on" : ""}" data-gsort="${k2}">${l2}</span>`).join("");
+    gsBar.querySelectorAll("[data-gsort]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_gsort_" + sp, c2.dataset.gsort); renderGen(); }));
+    root.appendChild(gsBar);
+    const gConf = ent => {
+      const c3 = GS_CFG[ent.sub], g2 = ent.g;
+      if (gSortK === "spread") { if (g2.spread == null || g2.cons == null) return -1; const pc = coverProb(g2.cons, g2.spread, c3.mSig || 10); return pc == null ? -1 : Math.max(pc, 1 - pc); }
+      if (gSortK === "total") { if (g2.total == null || g2.expT == null) return -1; const pOv = 1 - phi((g2.total - g2.expT) / (c3.tSig || 10)); return Math.max(pOv, 1 - pOv); }
+      return g2.cons == null ? -1 : Math.max(g2.cons, 1 - g2.cons);
+    };
+    boardGames.sort((a2, b2) => ((a2.g.completed || a2.g.live) ? 1 : 0) - ((b2.g.completed || b2.g.live) ? 1 : 0) ||
+      (gSortK === "time" ? (a2.g.date < b2.g.date ? -1 : 1) : gConf(b2) - gConf(a2)));
+  }
   const grid = el("div", "grid");
   for (const { g, sub } of boardGames) {
     const cfgG = GS_CFG[sub], sG = gSlot(sub);
@@ -5135,9 +5364,14 @@ function renderGen() {
     grid.appendChild(card);
   }
   root.appendChild(grid);
-  const rl = el("button", null, `RELOAD ${cfg.name} DATA`); rl.className = "btn ghost"; rl.style.marginTop = "14px";
+  const btnRow = el("div");
+  btnRow.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;";
+  const nb = genNextBtn(sp);
+  if (nb) btnRow.appendChild(nb);
+  const rl = el("button", null, `RELOAD ${cfg.name} DATA`); rl.className = "btn ghost";
   rl.addEventListener("click", () => { for (const sub of subsOf()) gSlot(sub).loaded = false; genEnsure(sp); });
-  root.appendChild(rl);
+  btnRow.appendChild(rl);
+  root.appendChild(btnRow);
 }
 function genMenu() {
   let menu = document.getElementById("genMenu");
@@ -5196,9 +5430,63 @@ function setSport(s) {
   const st = document.getElementById("sportTitle"); if (st) st.textContent = isGen ? GS_CFG[s].name : s === "wnba" ? "WNBA" : "MLB";
   selectTab(isGen ? "gen:board" : s === "wnba" ? "wnba:board" : "board");
 }
+async function nextGameDay() { // resolves the next date the CURRENT sport plays — every sport, cached per sport
+  const sp = APP_SPORT;
+  const cacheGet = k2 => { if (!hasLS) return null; try { const v = JSON.parse(localStorage.getItem("kb_gnext_" + k2) || "null"); return v && v > S.date ? v : null; } catch (e) { return null; } };
+  const cacheSet = (k2, v) => { if (hasLS && v) try { localStorage.setItem("kb_gnext_" + k2, JSON.stringify(v)); } catch (e) {} };
+  const espnNext = async (path, k2, dense) => {
+    const c2 = cacheGet(k2); if (c2) return c2;
+    const base2 = `https://site.api.espn.com/apis/site/v2/sports/${path}`;
+    try {
+      const sb2 = await j(`${base2}/scoreboard`);
+      const evD = (sb2?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(d2 => d2 > S.date).sort();
+      if (evD[0]) { cacheSet(k2, evD[0]); return evD[0]; }
+    } catch (e) {}
+    for (const off of dense ? [1, 2, 3, 4, 5, 7, 10, 14, 21] : [7, 14, 21, 30, 45, 60, 90]) {
+      try {
+        const dd = addDays(S.date, off);
+        const sb3 = await j(`${base2}/scoreboard?dates=${dd.replace(/-/g, "")}`);
+        const dts = (sb3?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(Boolean).sort();
+        if (dts.length) { const v = dts[0] > S.date ? dts[0] : dd; cacheSet(k2, v); return v; }
+      } catch (e) {}
+    }
+    return null;
+  };
+  if (sp === "mlb") {
+    const c2 = cacheGet("mlb"); if (c2) return c2;
+    try {
+      const d2 = await j(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${addDays(S.date, 1)}&endDate=${addDays(S.date, 10)}&fields=dates,date,totalGames`);
+      const hit = (d2?.dates || []).find(x => (x.totalGames || 0) > 0);
+      if (hit) { cacheSet("mlb", hit.date); return hit.date; }
+    } catch (e) {}
+    return null;
+  }
+  if (sp === "wnba") return espnNext("basketball/wnba", "wnba", true);
+  const cfg = GS_CFG[sp]; if (!cfg) return null;
+  const subs = cfg.combo || [sp];
+  let best = null;
+  for (const sub of subs) {
+    const s3 = gSlot(sub);
+    let v = (s3.calendar || []).find(d3 => d3 > S.date) || (s3.nextDay && s3.nextDay > S.date ? s3.nextDay : null) || cacheGet(sub);
+    if (!v) v = await espnNext(GS_CFG[sub].path, sub, !!cfg.soccer);
+    if (v && (!best || v < best)) best = v;
+  }
+  return best;
+}
 if (typeof document !== "undefined") {
   renderTabs("board");
   document.querySelectorAll("#sportSwitch button").forEach(b => b.addEventListener("click", () => setSport(b.dataset.sport)));
+  document.getElementById("nextDayBtn")?.addEventListener("click", async () => {
+    const b2 = document.getElementById("nextDayBtn");
+    b2.disabled = true; const old = b2.textContent; b2.textContent = "⏭ finding…";
+    const nx = await nextGameDay().catch(() => null);
+    b2.disabled = false; b2.textContent = old;
+    if (!nx) { setStatus("Couldn't find the next game day — network hiccup, try again in a moment.", true); return; }
+    const dp = $("#datePick");
+    dp.value = nx; dp.dispatchEvent(new Event("change"));
+    if (GS_CFG[APP_SPORT]) { for (const sub of (GS_CFG[APP_SPORT].combo || [APP_SPORT])) gSlot(sub).loaded = false; genEnsure(APP_SPORT); }
+    setStatus(`⏭ Jumped to ${nx} — the next ${GS_CFG[APP_SPORT]?.name || APP_SPORT.toUpperCase()} game day. Date picker brings you back.`);
+  });
 }
 function init() {
   const f = document.querySelector(".foot");
@@ -5232,7 +5520,8 @@ if (typeof module !== "undefined" && module.exports) {
     wnbaKevRows, wnbaKevScore, evalWCore, wnbaAutoTune, WW_DEF, invPhi, coverProb, mlbTotalExp, wnbaTotalExp,
     loadPJ, savePJ, snapshotProps, gradeProps, snapshotWProps, gradeWProps, propRecAgg, propBacktest,
     wnbaBoxModel, snapshotWMl, gradeWMl, wmlRecords, loadWJ, wnbaBoxHist, wnbaBoxBacktest, wnbaKevSpread, wspkCached,
-    GS_CFG, GX, gSlot, genFit, genPredict, GS_PSTATS, genTabs, glParse, glIdx, glVals };
+    GS_CFG, GX, gSlot, genFit, genPredict, GS_PSTATS, genTabs, glParse, glIdx, glVals,
+    poisCdf, ewmaMean, lognFit, median2, pmModels, pmBacktest };
 }
 </script>
 </body>
