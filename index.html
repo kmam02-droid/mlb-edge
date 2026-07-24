@@ -151,6 +151,30 @@
   .lineinput input{width:64px;background:transparent;border:none;outline:none;color:var(--gold);font-family:var(--cond);font-weight:800;font-size:18px;text-align:center;padding:0;}
   .lineinput input::placeholder{color:var(--dim3);font-weight:600;}
   .tier{font-size:9px;font-weight:800;letter-spacing:.8px;padding:2px 7px;border-radius:5px;margin-top:4px;display:inline-block;}
+  .whybtn{margin-top:9px;width:100%;text-align:left;background:var(--panel3);border:1px solid rgba(255,255,255,0.07);color:var(--dim);font-weight:800;font-size:10px;letter-spacing:.9px;padding:6px 10px;border-radius:8px;cursor:pointer;}
+  .whybtn:hover{color:var(--txt);}
+  .whybox{display:none;margin-top:6px;padding:9px 11px;background:rgba(0,0,0,0.28);border:1px solid rgba(255,255,255,0.07);border-radius:8px;font-size:12px;line-height:1.55;color:#c6ccdb;}
+  .whybox.open{display:block;}
+  .whybox .wrow{display:flex;gap:8px;padding:2.5px 0;align-items:baseline;}
+  .whybox .wrow .wl{color:var(--dim);flex:0 0 148px;font-size:11px;}
+  .whybox .wrow .wm{flex:1;color:var(--dim3);font-size:10.5px;}
+  .whybox .wrow b{margin-left:auto;font-family:var(--cond);font-size:14.5px;white-space:nowrap;}
+  .whybox .wnote{margin-top:7px;color:var(--dim3);font-size:11px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;}
+  .altgrid2{display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;}
+  .altgrid2 .alth{font-size:9px;color:var(--dim3);letter-spacing:1px;font-weight:800;}
+  .altgrid2 .altcell{font-size:11.5px;white-space:nowrap;padding:2.5px 7px;border-radius:6px;}
+  .altgrid2 .altcell .altln{font-family:var(--cond);font-size:14.5px;font-weight:800;color:var(--txt);margin-right:5px;}
+  .altgrid2 .fav{color:var(--green);font-weight:700;}
+  .altgrid2 .dim{color:var(--dim3);}
+  .altgrid2 .main{background:rgba(245,185,62,0.10);}
+  .altgrid2 .main .altln{color:var(--gold);}
+  .altgrid{display:grid;grid-template-columns:64px 1fr 1fr;gap:2px 10px;align-items:baseline;}
+  .altgrid .alth{font-size:9px;color:var(--dim3);letter-spacing:1px;font-weight:800;}
+  .altgrid .altl{font-family:var(--cond);font-weight:800;font-size:14.5px;}
+  .altgrid .altl.main{color:var(--gold);}
+  .altgrid .fav{color:var(--green);font-weight:700;font-size:11.5px;white-space:nowrap;}
+  .altgrid .favU{color:var(--red);font-weight:700;font-size:11.5px;white-space:nowrap;}
+  .altgrid .dim{color:var(--dim3);font-size:11.5px;white-space:nowrap;}
   svg.spark{background:var(--panel3);border-radius:6px;}
   /* MY MODEL */
   .modelwrap{display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start;}
@@ -310,7 +334,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.78";
+const BUILD = "v3.83";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -2141,7 +2165,68 @@ function warnExplain(txt) {
   for (const [re, fn] of WARN_INFO) if (re.test(txt)) return fn(txt);
   return "This flag marks a reliability concern the model found in this player's recent data — treat projections for them with extra caution.";
 }
+function whyBox(rows, note) { // tap-to-expand "why the model says this" — rows: [label, value, mid?]
+  return `<button class="whybtn" data-why>▸ WHY THE MODEL SAYS THIS — tap for the math</button>
+    <div class="whybox">${rows.filter(Boolean).map(r => `<div class="wrow"><span class="wl">${r[0]}</span><span class="wm">${r[2] || ""}</span><b>${r[1]}</b></div>`).join("")}${note ? `<div class="wnote">${note}</div>` : ""}</div>`;
+}
+/* ---------- ALTERNATE LINES: model-priced ladders for every prop ---------- */
+function altRungs(pOverFn, center, step, n = 3) { // rungs center ± n·step on the .5 grid
+  const rows = [];
+  for (let k = -n; k <= n; k++) {
+    const L = Math.round((center + k * step) * 2) / 2;
+    if (L < 0.5 || rows.some(r => r.L === L)) continue;
+    const p = pOverFn(L);
+    if (p == null || !isFinite(p)) continue;
+    rows.push({ L, p: clamp(p, 0.005, 0.995) });
+  }
+  return rows;
+}
+function altBox(rows, mainLine, title, note) {
+  if (!rows || rows.length < 2) return "";
+  return `<button class="whybtn" data-why>▸ ${title || "ALT LINES — every rung priced"}</button>
+    <div class="whybox"><div class="altgrid"><span class="alth">LINE</span><span class="alth">OVER · FAIR</span><span class="alth">UNDER · FAIR</span>
+    ${rows.map(r => { const po = r.p, pu = 1 - po; const main = mainLine != null && Math.abs(r.L - mainLine) < 0.26; return `<span class="altl${main ? " main" : ""}">${main ? "★ " : ""}${r.L}</span><span class="${po >= 0.5 ? "fav" : "dim"}">${(po * 100).toFixed(0)}% · ${fmtML(probToAmerican(po))}</span><span class="${pu > 0.5 ? "favU" : "dim"}">${(pu * 100).toFixed(0)}% · ${fmtML(probToAmerican(pu))}</span>`; }).join("")}</div>
+    <div class="wnote">${note || "Model fair odds at every alternate rung. The rule never changes: bet a rung only when your book pays MORE than fair on that side. ★ = tonight's posted/reference line."}</div></div>`;
+}
+function binomAtLeast(k, n, q) { // P(X ≥ k) for n independent tries at rate q
+  let below = 0, ch = 1;
+  for (let i = 0; i < k; i++) { if (i > 0) ch = ch * (n - i + 1) / i; below += ch * Math.pow(q, i) * Math.pow(1 - q, n - i); }
+  return clamp(1 - below, 0.0005, 0.9995);
+}
+function altBoxDiscrete(rows, title, note) { // for "k+" props (hits, HRs) — one-sided markets
+  if (!rows || !rows.length) return "";
+  return `<button class="whybtn" data-why>▸ ${title}</button>
+    <div class="whybox"><div class="altgrid"><span class="alth">PROP</span><span class="alth">MODEL CHANCE</span><span class="alth">FAIR ODDS</span>
+    ${rows.map(r => `<span class="altl">${r.lbl}</span><span class="${r.p >= 0.5 ? "fav" : "dim"}">${(r.p * 100).toFixed(1)}%</span><span class="${r.p >= 0.5 ? "fav" : "dim"}">${fmtML(probToAmerican(r.p))}</span>`).join("")}</div>
+    <div class="wnote">${note}</div></div>`;
+}
+function altSpreadBox(pHome, spread, sig, hAbbr, aAbbr, step, title, note) { // alt spread ladder — each side labeled with ITS OWN number
+  if (pHome == null || spread == null) return "";
+  const rows = [];
+  for (let k = -6; k <= 6; k++) {
+    const s2 = Math.round((spread + k * step) * 2) / 2;
+    if (rows.some(r => r.s === s2)) continue;
+    const pc = coverProb(pHome, s2, sig);
+    if (pc == null || !isFinite(pc)) continue;
+    rows.push({ s: s2, pc: clamp(pc, 0.005, 0.995) });
+  }
+  if (rows.length < 2) return "";
+  const cell = (ab, ln, p, main, star) => `<span class="altcell${main ? " main" : ""} ${p >= 0.5 ? "fav" : "dim"}">${star ? "★ " : ""}<b class="altln">${ab} ${ln > 0 ? "+" : ""}${ln}</b> → ${(p * 100).toFixed(0)}% · ${fmtML(probToAmerican(p))}</span>`;
+  return `<button class="whybtn" data-why>▸ ${title || "ALT SPREADS — every rung priced"}</button>
+    <div class="whybox"><div class="altgrid2"><span class="alth">BACK ${hAbbr}</span><span class="alth">BACK ${aAbbr}</span>
+    ${rows.map(r => { const main = Math.abs(r.s - spread) < 0.26; return cell(hAbbr, r.s, r.pc, main, main) + cell(aAbbr, -r.s, 1 - r.pc, main, false); }).join("")}</div>
+    <div class="wnote">${note || `Every row is one line, both sides of it: back ${hAbbr} at the number on the left OR ${aAbbr} at its mirror on the right — each shows that side's own chance and fair price. ★ row = tonight's posted line. Green = that side is favored to cover; value = your book pays more than fair.`}</div></div>`;
+}
 if (typeof document !== "undefined") document.addEventListener("click", e => {
+  const wb = e.target.closest?.("[data-why]");
+  if (wb) {
+    const bx = wb.nextElementSibling;
+    if (bx?.classList.contains("whybox")) {
+      bx.classList.toggle("open");
+      wb.textContent = (bx.classList.contains("open") ? "▾" : "▸") + wb.textContent.slice(1);
+    }
+    return;
+  }
   const w = e.target.closest?.(".warn");
   if (!w) return;
   closeBetModal();
@@ -2190,7 +2275,8 @@ function stModalMLB(g, o) {
       stRow2("→ expected victory margin (bell curve, ±3.9 runs)", (mu >= 0 ? "+" : "") + mu.toFixed(2) + " runs") +
       stRow2("Book run line", `${g.home.abbr} ${o.spread > 0 ? "+" : ""}${o.spread}`) +
       stRow2(`P(${g.home.abbr} ${o.spread > 0 ? "+" : ""}${o.spread} covers)`, fmtPct(pc)) +
-      stRow2(`P(${g.away.abbr} ${-o.spread > 0 ? "+" : ""}${-o.spread} covers)`, fmtPct(1 - pc));
+      stRow2(`P(${g.away.abbr} ${-o.spread > 0 ? "+" : ""}${-o.spread} covers)`, fmtPct(1 - pc)) +
+      altSpreadBox(pSrc, o.spread, 3.9, g.home.abbr, g.away.abbr, 1, "ALT RUN LINES — every rung priced");
   }
   if (o.total != null && dh && da && dh.gp >= 15 && da.gp >= 15) {
     const rpgLive = id => { const t2 = S.teams[id]?.daily; return t2 && t2.gp >= 5 ? t2.rs / t2.gp : 4.5; };
@@ -2203,7 +2289,8 @@ function stModalMLB(g, o) {
       stRow2(`Starter nudges (grades ${qH.toFixed(2)} / ${qA.toFixed(2)})`, "each side ×(1 − 0.05·grade)") +
       stRow2("Model total", exp2 != null ? exp2.toFixed(2) + " runs" : "—") +
       stRow2("Book total", String(o.total)) +
-      (exp2 != null ? stRow2(`P(OVER ${o.total}) — totals swing ±4.4 runs`, fmtPct(1 - phi((o.total - exp2) / 4.4))) : "");
+      (exp2 != null ? stRow2(`P(OVER ${o.total}) — totals swing ±4.4 runs`, fmtPct(1 - phi((o.total - exp2) / 4.4))) +
+        altBox(altRungs(L2 => 1 - phi((L2 - exp2) / 4.4), o.total, 1, 3), o.total, "ALT TOTALS — every rung priced", `Bell curve centered on the model's ${exp2.toFixed(2)}-run total, width ±4.4. Compare with your book's alternate totals menu — a rung is only a bet when the book beats fair.`) : "");
   } else if (o.total != null) {
     hTot = stHead("TOTAL") + `<div style="font-size:12px;color:var(--dim);">Needs 15+ games played by both teams.</div>`;
   }
@@ -2227,7 +2314,8 @@ function stModalW(g) {
       stRow2("→ expected margin (bell curve, ±11.5 pts)", (mu >= 0 ? "+" : "") + mu.toFixed(1) + " pts") +
       stRow2("Book spread", `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}`) +
       stRow2(`P(${g.home.abbr} covers)`, fmtPct(pc)) +
-      stRow2(`P(${g.away.abbr} covers)`, fmtPct(1 - pc));
+      stRow2(`P(${g.away.abbr} covers)`, fmtPct(1 - pc)) +
+      altSpreadBox(wpSrc, g.spread, 11.5, g.home.abbr, g.away.abbr, 2, "ALT SPREADS — every rung priced");
   }
   const c = WS.state?.cum, ch = c?.[g.home.id], ca = c?.[g.away.id];
   if (g.total != null && ch?.gp >= 8 && ca?.gp >= 8) {
@@ -2239,7 +2327,8 @@ function stModalW(g) {
       stRow2(`${g.away.abbr} offense vs ${g.home.abbr} defense`, "same formula") +
       stRow2("Model total", exp2 != null ? exp2.toFixed(1) + " pts" : "—") +
       stRow2("Book total", String(g.total)) +
-      (exp2 != null ? stRow2(`P(OVER ${g.total}) — totals swing ±14.5 pts`, fmtPct(1 - phi((g.total - exp2) / 14.5))) : "");
+      (exp2 != null ? stRow2(`P(OVER ${g.total}) — totals swing ±14.5 pts`, fmtPct(1 - phi((g.total - exp2) / 14.5))) +
+        altBox(altRungs(L2 => 1 - phi((L2 - exp2) / 14.5), g.total, 2, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve centered on the model's ${exp2.toFixed(1)}-point total, width ±14.5. Compare with your book's alternate totals — bet a rung only when the book beats fair.`) : "");
   } else if (g.total != null) {
     hTot = stHead("TOTAL") + `<div style="font-size:12px;color:var(--dim);">Needs 8+ games played by both teams.</div>`;
   }
@@ -2343,7 +2432,22 @@ function kCard(r, manual) {
         <span class="lbl" style="display:block;">BOOK</span>
         ${pr.overPrice != null && pr.underPrice != null ? `<b style="font-family:var(--cond);font-weight:800;font-size:17px;color:var(--txt);">o${fmtML(pr.overPrice)} / u${fmtML(pr.underPrice)}</b>` : (pr.line != null ? `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim);">line ${pr.line}</b>` : `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim3);">—</b>`)}
       </span>
-    </div>`;
+    </div>
+    ${(() => {
+      const st2 = S.pitchers[proj.pid]?.season || {};
+      const l3 = proj.last.slice(-3);
+      return whyBox([
+        ["His strikeout pace", (num(st2.strikeoutsPer9Inn) || 0).toFixed(1) + " K/9", `season rate · avgs ${proj.kMean != null ? proj.kMean.toFixed(1) : "—"} Ks a start`],
+        l3.length ? ["Last 3 starts", l3.join(" · ") + " Ks", "recent form (35% of the K-rate blend)"] : null,
+        ["How deep he pitches", proj.expIP.toFixed(1) + " IP", "60% recent starts / 40% season — his leash"],
+        ["Tonight's opponent", "×" + proj.oppMult.toFixed(2), `${opp.abbr} strike out ${(100 * (S.teams[opp.id]?.hit?.kPct ?? 0)).toFixed(1)}% vs league ${(100 * (S.league.kPct || 0.22)).toFixed(1)}%`],
+        proj.flags.length ? ["Matchup profile", proj.flags.join(", "), "lineup style vs his arsenal"] : null,
+        ["→ Projected strikeouts", proj.projK.toFixed(1), "pace × innings × opponent"],
+        ["His night-to-night swing", "±" + proj.sigma.toFixed(1) + " Ks", proj.cv != null && proj.cv <= 0.4 ? "steady — calls get confidence" : "boom-bust — calls stay humble"],
+        line != null && lean ? [`P(OVER ${line})`, (lean.pOver * 100).toFixed(0) + "%", "bell curve centered on the projection, width = his swing"] : null,
+      ], line != null ? `The call: projection ${proj.projK.toFixed(1)} vs line ${line} — a gap of ${(proj.projK - line >= 0 ? "+" : "") + (proj.projK - line).toFixed(1)} Ks, sized against his ±${proj.sigma.toFixed(1)} swing. Big gap + steady pitcher = strong call; small gap or wild swings = pass.` : `No book line yet — the projection stands alone until one posts.`);
+    })()}
+    ${altBox(altRungs(L2 => 1 - phi((L2 - proj.projK) / proj.sigma), line != null ? line : Math.round(proj.projK - 0.5) + 0.5, 1, 3), line, "ALT K LINES — every rung priced", `Bell curve centered on his ${proj.projK.toFixed(1)}-K projection, width = his ±${proj.sigma.toFixed(1)} swing. Compare with your book's alternate strikeout menu — bet a rung only when the book beats fair.`)}`;
   card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
     m[ev.target.dataset.pid] = ev.target.value;
@@ -2456,7 +2560,22 @@ function hitCard(p) {
         <span class="lbl" style="display:block;">BOOK</span>
         ${bo?.price != null && isFinite(bo.price) ? `<b style="font-family:var(--cond);font-weight:800;font-size:19px;color:${(p.pHit - americanToProb(bo.price)) >= 0 ? "var(--green)" : "var(--red)"};">${fmtML(bo.price)}</b>` : `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim3);">—</b>`}
       </span>
-    </div>`;
+    </div>
+    ${whyBox([
+      ["His real hitting", (p.avg ? p.avg.toFixed(3).replace(/^0/, "") : "—") + ` on ${p.ab} AB`, "steadied toward league avg so hot streaks don't fool it"],
+      ["Opposing starter", (p.starterBAA ? p.starterBAA.toFixed(3).replace(/^0/, "") : "—") + " BAA", `hitters bat that vs him · league ${(S.league.avg || 0.245).toFixed(3).replace(/^0/, "")}`],
+      ["Strikeout matchup", "×" + (p.kAdj != null ? p.kAdj.toFixed(2) : "1.00"), p.kAdj != null && p.kAdj < 0.97 ? "high-K arm eats hittable at-bats" : "no whiff problem tonight"],
+      ["→ Per-at-bat hit chance", p.adjAvg.toFixed(3).replace(/^0/, ""), "his shrunk AVG × pitching × K matchup"],
+      ["At-bats expected", "~" + CFG.hitExpAB, "a regular's typical night"],
+      [`→ P(at least one hit)`, (p.pHit * 100).toFixed(1) + "%", `1 − (miss every AB) = 1 − (1−${p.adjAvg.toFixed(3).replace(/^0/, "")})^${CFG.hitExpAB}`],
+      ["Fair odds", fmtML(p.fairHit), "what this chance is worth"],
+      bo?.price != null && isFinite(bo.price) ? ["Book price", fmtML(bo.price) + ` (${bo.source})`, (p.pHit - americanToProb(bo.price)) >= 0.02 ? "pays better than fair → value" : "pays worse than fair → pass"] : null,
+    ], `The whole bet: he only needs ONE hit in ~${CFG.hitExpAB} tries. That's why these run 70–80% — and why the price matters more than the hitter. BET only fires when the book pays lighter than fair.`)}
+    ${altBoxDiscrete([
+      { lbl: "1+ HITS", p: p.pHit },
+      { lbl: "2+ HITS", p: binomAtLeast(2, CFG.hitExpAB, p.adjAvg) },
+      { lbl: "3+ HITS", p: binomAtLeast(3, CFG.hitExpAB, p.adjAvg) },
+    ], "ALT HIT PROPS — 2+ and 3+ priced", `Binomial math on his ${p.adjAvg.toFixed(3).replace(/^0/, "")} per-AB chance over ~${CFG.hitExpAB} ABs. 2+/3+ hits pay plus money for a reason — only take them when your book beats these fair odds.`)}`;
   card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_hitml_" + S.date) || "{}") : {};
     m[ev.target.dataset.hid] = ev.target.value;
@@ -2501,7 +2620,21 @@ function hrCard(p) {
         <span class="lbl" style="display:block;">BOOK</span>
         ${bo?.price != null ? `<b style="font-family:var(--cond);font-weight:800;font-size:19px;color:${(p.pHR - americanToProb(bo.price)) >= 0 ? "var(--green)" : "var(--red)"};">${fmtML(bo.price)}</b>` : `<b style="font-family:var(--cond);font-weight:700;font-size:15px;color:var(--dim3);">—</b>`}
       </span>
-    </div>`;
+    </div>
+    ${whyBox([
+      ["His raw power", `${p.hr} HR in ${p.pa} PA`, `shrunk to ${(p.rate * 100).toFixed(1)}% per PA so a hot week can't inflate it`],
+      ["Tonight's pitching", "×" + p.pitchFactor.toFixed(2), `${p.starterName} allows ${p.starterHr9.toFixed(2)} HR/9 + the bullpen's share`],
+      ["The ballpark", "×" + p.parkAdj.toFixed(2), (parkPct >= 0 ? "+" : "") + parkPct + "% homer-friendly vs neutral"],
+      ["→ Per-PA homer chance", (p.perPA * 100).toFixed(2) + "%", "power × pitching × park"],
+      ["Plate appearances", "~" + CFG.hrExpPA, "his typical night"],
+      ["→ P(home run tonight)", (p.pHR * 100).toFixed(1) + "%", `1 − (no HR all night) = 1 − (1−${(p.perPA * 100).toFixed(2)}%)^${CFG.hrExpPA}`],
+      ["Fair odds", fmtML(p.fair), "what that chance should pay"],
+      bo?.price != null ? ["Book price", fmtML(bo.price), (p.pHR - americanToProb(bo.price)) >= 0 ? "book pays MORE than fair → value" : "book pays less than fair → pass"] : null,
+    ], `Homers are rare even for sluggers — the play is never "will he?" but "does the book pay more than the true odds?" Fair ${fmtML(p.fair)} means anything better is value, anything worse is a donation.`)}
+    ${altBoxDiscrete([
+      { lbl: "1+ HR", p: p.pHR },
+      { lbl: "2+ HR", p: binomAtLeast(2, CFG.hrExpPA, p.perPA) },
+    ], "ALT HR PROPS — the 2+ moonshot priced", `Binomial on his ${(p.perPA * 100).toFixed(2)}% per-PA chance over ~${CFG.hrExpPA} PAs. A 2+ HR night is a lottery ticket — fair is usually four digits, so most book prices are a ripoff. Only value when they beat this number.`)}`;
   return card;
 }
 
@@ -4584,7 +4717,18 @@ function renderWnba() {
         <span class="chip ${pr.mult > 1.02 ? "green" : pr.mult < 0.98 ? "red" : ""}">opp factor ×${pr.mult.toFixed(2)}</span>
         ${bo?.over != null ? `<span class="chip">over ${fmtML(bo.over)}</span>` : (!hasRealLine && pOver != null ? `<span class="chip" style="color:var(--blue)">fair over ${fmtML(probToAmerican(pOver))}</span>` : "")}
         ${(() => { if (!hasRealLine || pOver == null) return ""; const s = Math.max(pOver, 1 - pOver); const t = s >= 0.62 ? ["STRONG BET", "var(--green)", "rgba(52,211,153,0.14)"] : s >= 0.56 ? ["GOOD", "var(--gold)", "rgba(245,185,62,0.13)"] : s >= 0.52 ? ["ALRIGHT", "var(--blue)", "rgba(91,157,255,0.12)"] : ["PASS", "var(--dim)", "var(--panel3)"]; return `<span class="tier" style="color:${t[1]};background:${t[2]};">${t[0]}</span>`; })()}
-      </div>`;
+      </div>
+      ${whyBox([
+        ["Her last 5 games", pr.last5.toFixed(1) + " " + WS.stat, "60% of the projection — form matters most"],
+        ["Her season rate", pr.avg.toFixed(1) + " " + WS.stat, `40% of the projection · ${pr.n} games`],
+        ["Blend", (pr.mult !== 0 ? (pr.proj / pr.mult) : pr.proj).toFixed(1), "0.6 × last-5 + 0.4 × season"],
+        pr.oppAbbr ? ["Tonight's defense", "×" + pr.mult.toFixed(2), `${pr.oppAbbr} ${pr.mult > 1.02 ? "leak more than average" : pr.mult < 0.98 ? "clamp down" : "are about average"} for this stat`] : null,
+        ["→ Projection", pr.proj.toFixed(1) + " " + WS.stat, "blend × defense factor"],
+        ["Her night-to-night swing", "±" + pr.sigma.toFixed(1), pr.sigma <= (WCFG.statFloors[WS.stat] || 3) * 1.15 ? "steady — calls get confidence" : "boom-bust — calls stay humble"],
+        pOver != null && line != null ? [`P(OVER ${line})`, (pOver * 100).toFixed(0) + "%", "bell curve centered on her projection, width = her swing"] : null,
+        pr.warn ? ["⚠ Heads up", pr.warn, "recent minutes tell the truth before box scores do"] : null,
+      ], hasRealLine ? `The call: projection ${pr.proj.toFixed(1)} vs line ${line} — a ${(pr.proj - line >= 0 ? "+" : "") + (pr.proj - line).toFixed(1)} gap against her ±${pr.sigma.toFixed(1)} swing. 62%+ = STRONG BET, 56%+ = GOOD, below 52% = pass.` : `Blue MODEL LINE = her projection rounded to the nearest half — a reference at even odds, not a bet, until a real book line posts.`)}
+      ${altBox(altRungs(L3 => 1 - phi((L3 - pr.proj) / pr.sigma), line ?? modelLine, { PTS: 2, REB: 1, AST: 1, PRA: 2.5, "P+R": 2, "P+A": 2, "R+A": 1.5 }[WS.stat] || 2, 3), hasRealLine ? line : modelLine, `ALT ${WS.stat} LINES — every rung priced`, `Bell curve centered on her ${pr.proj.toFixed(1)} projection, width = her ±${pr.sigma.toFixed(1)} swing. Compare with your book's alternate ${WS.stat} menu — a rung is only a bet when the book pays more than fair.`)}`;
     card.querySelector(".manline")?.addEventListener("change", ev => {
       const m = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
       m[ev.target.dataset.wpid] = ev.target.value;
@@ -5216,22 +5360,31 @@ function renderGen() {
     if (pErrs.length === pSubs.length) { root.appendChild(el("div", "nobets", `Player logs unavailable — ${pErrs.join(" · ")}. Off-season feeds are often empty; this fills in once seasons run.`)); const rb2 = el("button", null, "RETRY"); rb2.className = "btn ghost"; rb2.addEventListener("click", () => { for (const sub of pSubs) { const ss = gSlot(sub); ss.pReady = false; ss.pErr = null; } renderGen(); }); root.appendChild(rb2); return; }
     if (pErrs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Partial: ${pErrs.join(" · ")}</span>`));
     let arr = pSubs.flatMap(sub => (gSlot(sub).pdata?.[ps.k] || []).map(x => combo ? { ...x, team: (x.team ? x.team + " · " : "") + GS_CFG[sub].name } : x));
-    arr = arr.slice().sort((a2, b2) => (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
     if (!arr.length) { root.appendChild(el("div", "nobets", `No usable ${ps.n} logs right now (off-season, or this stat isn't in this sport's feed) — check back once the season runs.`)); return; }
-    const pgrid = el("div", "grid wide");
-    for (const p2 of arr.slice(0, 15)) {
+    // best → worst: strongest, most agreed-on model calls first
+    const enrich = arr.map(p2 => {
       const chron = p2.vals.slice().reverse();
       const fits = pmDefs.map(m2 => { try { const f2 = m2.fit(chron); return { name: m2.name, proj: f2.proj, pOver: f2.pOver }; } catch (e2) { return null; } }).filter(Boolean);
       const consProj = fits.length ? mean(fits.map(f2 => f2.proj)) : p2.proj;
       const modelLine = Math.max(0.5, Math.round(consProj - 0.5) + 0.5);
+      const agree = fits.length > 0 && fits.every(f2 => (f2.pOver(modelLine) >= 0.5) === (fits[0].pOver(modelLine) >= 0.5));
+      const conf = fits.length ? mean(fits.map(f2 => { const po = clamp(f2.pOver(modelLine), 0.01, 0.99); return Math.max(po, 1 - po); })) : 0;
+      return { p2, fits, consProj, modelLine, agree, conf };
+    });
+    enrich.sort((a2, b2) => (b2.conf + (b2.agree ? 0.035 : 0)) - (a2.conf + (a2.agree ? 0.035 : 0)) || (b2.p2.proj / b2.p2.sigma) - (a2.p2.proj / a2.p2.sigma));
+    root.appendChild(el("div", "subhead", `Ordered <b style="color:var(--txt)">best → worst</b>: the calls the engines are most confident in — and most unanimous on — come first.`));
+    const pgrid = el("div", "grid wide");
+    let pRank = 0;
+    for (const en of enrich.slice(0, 15)) {
+      const { p2, fits, consProj, modelLine, agree, conf } = en;
+      pRank++;
       const chartVals = p2.vals.slice(0, 10).reverse();
-      const agree = fits.length && fits.every(f2 => (f2.pOver(modelLine) >= 0.5) === (fits[0].pOver(modelLine) >= 0.5));
       const card = el("div", "card kcard");
       card.innerHTML = `
         <div class="ktop"><div class="hs big">${p2.hs ? `<img src="${p2.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
           <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p2.name}</div>
           <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.vals.length} games logged</div></div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">${gBadge(p2.grade)}<div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">MODEL ${modelLine}</div></div></div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;"><div style="display:flex;gap:5px;align-items:center;"><span style="font-size:10px;font-weight:800;color:${pRank === 1 ? "var(--gold)" : "var(--dim3)"};letter-spacing:.5px;">#${pRank}</span>${gBadge(p2.grade)}</div><div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">MODEL ${modelLine}</div><div style="font-size:9.5px;color:${agree ? "var(--green)" : "var(--dim3)"};font-weight:700;">${(conf * 100).toFixed(0)}% conviction</div></div></div>
         <div class="kmid">
           <div class="kstat"><div class="v">${consProj.toFixed(1)}</div><div class="l">CONSENSUS PROJ</div></div>
           <div class="vsep"></div>
@@ -5243,7 +5396,23 @@ function renderGen() {
         <div class="chips" style="margin-top:7px;">
           <span class="chip">season ${p2.season.toFixed(1)}</span><span class="chip">last 5: ${p2.last5.toFixed(1)}</span>
           <span class="chip">swing ±${p2.sigma.toFixed(1)}</span>
-        </div>`;
+        </div>
+        ${whyBox([
+          ["Last 5 vs season", `${p2.last5.toFixed(1)} vs ${p2.season.toFixed(1)}`, p2.last5 > p2.season * 1.08 ? "trending UP — recency engines lean over" : p2.last5 < p2.season * 0.92 ? "trending DOWN — recency engines lean under" : "steady — the engines mostly agree"],
+          ["Night-to-night swing", "±" + p2.sigma.toFixed(1), p2.grade === "A" || p2.grade === "B" ? "consistent — calls earn confidence" : "volatile — every call gets discounted"],
+          ["Model line", String(modelLine), "consensus projection rounded to the nearest half"],
+          ["Engines' verdicts", fits.map(f2 => (f2.pOver(modelLine) >= 0.5 ? "OVER" : "UNDER")).join(" · "), agree ? "unanimous — that's what buys the rank" : "split — one engine sees it differently, so this drops"],
+          ["Conviction", (conf * 100).toFixed(0) + "%", "average certainty of the engines at the model line"],
+        ], `${cls === "count" ? "Counting stats follow a Poisson curve (goals-research math) — rare-event streaks mean less than they look." : cls === "yds" ? "Yardage is skewed — one breakaway inflates averages, so the log-normal engines trust the median more than the mean." : "Big scoring numbers act like a bell curve, so the engines argue about the center, not the shape."} Each engine projects from a different read of his games; the rank on this card = how confident AND unanimous they are. No book line exists here yet — always check the real price first.`)}
+        ${(() => {
+          const chron2 = p2.vals.slice().reverse();
+          let pOverFn, dist;
+          if (cls === "count") { const lam = Math.max(0.05, consProj); pOverFn = L3 => 1 - poisCdf(Math.floor(L3), lam); dist = "Poisson curve on the consensus rate"; }
+          else if (cls === "yds") { const f3 = lognFit(chron2); pOverFn = L3 => 1 - phi((Math.log(L3 + 1) - f3.m) / f3.s); dist = "log-normal fit to his own games (skew-aware)"; }
+          else { pOverFn = L3 => 1 - phi((L3 - consProj) / Math.max(0.5, p2.sigma)); dist = "bell curve on the consensus projection"; }
+          const step2 = cls === "count" ? 1 : cls === "yds" ? Math.max(5, Math.round(consProj * 0.12 / 5) * 5) : 2;
+          return altBox(altRungs(pOverFn, modelLine, step2, 3), modelLine, `ALT ${ps.k} LINES — every rung priced`, `${dist.charAt(0).toUpperCase() + dist.slice(1)}, rungs every ${step2}. No book lines exist in this feed — these are pure model fair odds, so compare against your book's alternate menu before betting anything.`);
+        })()}`;
       pgrid.appendChild(card);
     }
     root.appendChild(pgrid);
@@ -5322,7 +5491,7 @@ function renderGen() {
   }
   if (!boardGames.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games on ${S.date} — off day or off-season. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
   if (boardGames.length > 1) {
-    const gSortK = (hasLS && localStorage.getItem("kb_gsort_" + sp)) || "time";
+    const gSortK = (hasLS && localStorage.getItem("kb_gsort_" + sp)) || "cons";
     const gsBar = el("div");
     gsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
     gsBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
@@ -5350,7 +5519,11 @@ function renderGen() {
       if (g.spread != null && g.cons != null) { const pc2 = coverProb(g.cons, g.spread, cfgG.mSig); const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
       if (g.total != null && g.expT != null) { const pOv2 = 1 - phi((g.total - g.expT) / cfgG.tSig); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${g.expT.toFixed(1)}</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
       else if (g.total != null) rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL</span><b>${g.total}</b><span style="color:var(--dim3);font-size:11px;">book line (model needs season data)</span></div>`);
-      if (rows2.length) stp = `<div style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;"><div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--dim);margin-bottom:2px;">SPREAD &amp; TOTAL${sG.bt ? "" : " · book lines only"}</div>${rows2.join("")}</div>`;
+      const spStep = cfgG.mSig <= 3 ? 0.5 : cfgG.mSig <= 8 ? 1 : Math.max(2, Math.round(cfgG.mSig / 4));
+      const totStep = cfgG.tSig <= 3 ? 0.5 : cfgG.tSig <= 8 ? 1 : Math.max(2, Math.round(cfgG.tSig / 4));
+      const altSp = g.spread != null && g.cons != null ? altSpreadBox(g.cons, g.spread, cfgG.mSig, g.home.abbr, g.away.abbr, spStep, "ALT SPREADS — every rung priced") : "";
+      const altTot = g.total != null && g.expT != null ? altBox(altRungs(L3 => 1 - phi((L3 - g.expT) / cfgG.tSig), g.total, totStep, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve on the model's ${g.expT.toFixed(1)} total, width ±${cfgG.tSig}. Bet a rung only when your book beats fair.`) : "";
+      if (rows2.length) stp = `<div style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;"><div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--dim);margin-bottom:2px;">SPREAD &amp; TOTAL${sG.bt ? "" : " · book lines only"}</div>${rows2.join("")}${altSp}${altTot}</div>`;
     }
     card.innerHTML = `
       <div class="chead"><span class="time">${timeLabel(g.date)}</span>
