@@ -334,7 +334,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.83";
+const BUILD = "v3.98";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -750,6 +750,7 @@ function hrGrade(p, bo) {
   return GLET(n);
 }
 function kGradeU(proj, lean, line) { // consistency + lean strength
+  if (proj.grade === "U") return "U"; // unproven stays unproven — no lean strength can grade a guess
   let n = GNUM[proj.grade] || 1;
   if (lean && lean.lean !== "PASS" && line != null) {
     const s = Math.max(lean.pOver, 1 - lean.pOver);
@@ -994,6 +995,15 @@ function spGrade(list, date, rpg) { // the STARTING PITCHER factor: 65% season g
   const f30 = spForm30(list, date, rpg);
   return f30 == null ? base : 0.65 * base + 0.35 * f30;
 }
+function spUnproven(pid) { // "unproven" = little or no MLB starting track record — the model should KNOW it's guessing
+  if (pid == null) return { un: true, why: "no starter named yet" };
+  const p = S.pitchers[pid];
+  if (!p?.season) return { un: true, gs: 0, bf: 0, why: "no MLB season stats" };
+  const gs = num(p.season.gamesStarted) || num(p.season.gamesPlayed) || 0;
+  const bf = num(p.season.battersFaced) || 0;
+  if (gs < 4 || bf < 90) return { un: true, gs, bf, why: `only ${gs} start${gs === 1 ? "" : "s"} · ${bf} batters faced` };
+  return { un: false, gs, bf };
+}
 function kevinModel(g) {
   const W = S.weights, f = [];
   const th = S.teams[g.home.id] || {}, ta = S.teams[g.away.id] || {};
@@ -1013,7 +1023,16 @@ function kevinModel(g) {
   const fB = (th.daily?.lostY ? 1 : 0) - (ta.daily?.lostY ? 1 : 0);
   f.push({ name: "Lost yesterday", val: fB, w: W.wBounce });
   const score = 0.9 * f.reduce((s, x) => s + x.w * x.val, 0) + W.hfa;
-  return { pHome: logistic(score), factors: f };
+  // UNPROVEN STARTER CHECK: a rookie/call-up starter means the pitcher factor is a guess —
+  // each unproven arm trims Kevin's conviction 15% toward a coin flip (direction never flips, confidence does)
+  const uH = spUnproven(g.home.pitcherId), uA = spUnproven(g.away.pitcherId);
+  const unCt = (uH.un ? 1 : 0) + (uA.un ? 1 : 0);
+  let pHome = logistic(score);
+  if (unCt) {
+    pHome = 0.5 + (pHome - 0.5) * (1 - 0.15 * unCt);
+    f.push({ name: `⚠ Unproven starter${unCt > 1 ? "s ×2" : ""} — conviction trimmed ${unCt * 15}%`, val: 0, w: 0 });
+  }
+  return { pHome, factors: f, unproven: unCt ? { home: uH.un ? uH : null, away: uA.un ? uA : null, ct: unCt } : null };
 }
 function mlbTotalExp(g) { // expected total runs: each lineup vs the other side's run prevention, nudged by tonight's starters
   const dh = S.teams[g.home.id]?.daily, da = S.teams[g.away.id]?.daily;
@@ -1125,7 +1144,17 @@ function computeAll() {
 
 /* ---------- STRIKEOUT PROP MODEL ---------- */
 function projectKs(pid, oppTeamId) {
-  const p = S.pitchers[pid]; if (!p?.season) return null;
+  const p = S.pitchers[pid];
+  if (!p?.season) {
+    // UNPROVEN — no MLB season at all: league-prior projection with wide error bars, visible but never bet-eligible
+    if (!p) return null;
+    const lgK0 = S.league.kPct || 0.22;
+    const opp0 = S.teams[oppTeamId]?.hit;
+    const oppMult0 = opp0 ? clamp(opp0.kPct / lgK0, 0.75, 1.3) : 1;
+    return { pid, projK: lgK0 * oppMult0 * (15 * 1.4), expIP: 5, kMean: null, kSd: null, cv: null, grade: "U",
+      last: [], flags: ["UNPROVEN — league-prior projection"], oppMult: oppMult0, sigma: 2.6,
+      warns: ["UNPROVEN ARM — NO MLB TRACK RECORD"], unproven: true };
+  }
   const st = p.season;
   const seasonOuts = ipToOuts(st.inningsPitched);
   const gs = Math.max(1, num(st.gamesStarted) || num(st.gamesPlayed));
@@ -1150,13 +1179,22 @@ function projectKs(pid, oppTeamId) {
     if (lowOBP && hrHungry) { profileBoost = 0.3; flags.push("Over-friendly ✓"); }
     else if (!lowOBP && !whiffy && opp.kPct < (S.league.kPct || 0.22) * 0.93) { profileBoost = -0.3; flags.push("Contact team ✗"); }
   }
-  const projK = blendK * oppMult * (expOuts * bfPerOut) + profileBoost;
+  // UNPROVEN small-sample shrink: a tiny MLB sample gets pulled toward the league rate, error bars widen
+  const bfN = num(st.battersFaced) || 0;
+  const gsN = num(st.gamesStarted) || num(st.gamesPlayed) || 0;
+  const unpv = gsN < 4 || bfN < 90;
+  let blendK2 = blendK;
+  if (unpv) { const wS = bfN / (bfN + 120); blendK2 = wS * blendK + (1 - wS) * (S.league.kPct || 0.22); }
+  const projK = blendK2 * oppMult * (expOuts * bfPerOut) + profileBoost;
   const ks = logs.map(l => l.k);
   const kSd = ks.length >= CFG.minStartsForGrade ? sd(ks) : null;
   const kMean = ks.length ? mean(ks) : null;
   const cv = (kSd != null && kMean > 0) ? kSd / kMean : null;
-  const grade = cv == null ? "?" : cv <= 0.28 ? "A" : cv <= 0.4 ? "B" : cv <= 0.55 ? "C" : "D";
-  return { pid, projK, expIP: expOuts / 3, kMean, kSd, cv, grade, last: ks.slice(-10), flags, oppMult, sigma: Math.max(kSd ?? 1.8, 1.5), warns: pitcherWarnings(pid) };
+  const grade = unpv ? "U" : cv == null ? "?" : cv <= 0.28 ? "A" : cv <= 0.4 ? "B" : cv <= 0.55 ? "C" : "D";
+  const flags2 = unpv ? [`UNPROVEN (${gsN} start${gsN === 1 ? "" : "s"}) — shrunk to league rate`, ...flags] : flags;
+  const warns2 = pitcherWarnings(pid);
+  if (unpv && !warns2.some(w => /UNPROVEN/.test(w))) warns2.unshift("UNPROVEN ARM — SMALL MLB SAMPLE");
+  return { pid, projK, expIP: expOuts / 3, kMean, kSd, cv, grade, last: ks.slice(-10), flags: flags2, oppMult, sigma: unpv ? Math.max(kSd ?? 2.3, 2.3) : Math.max(kSd ?? 1.8, 1.5), warns: warns2, unproven: unpv };
 }
 function propLean(proj, line) {
   if (line == null || !isFinite(line)) return null;
@@ -1844,13 +1882,13 @@ function renderBoard() {
     root.appendChild(el("div", "nobets", `No plays fit your filters right now (edge ≥ ${S.weights.edgeThresh}%, odds ${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}). Hit Refresh near first pitch — lines move all day.`));
   }
   const mSort = (hasLS && localStorage.getItem("kb_sortmlb")) || "cons";
-  const M_SORTS = [["cons", "CONSENSUS EDGE"], ["kevin", "KEVIN'S MODEL"], ["sharp", "SHARP"], ["pyth", "PYTHAG"], ["elo", "ELO"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["time", "GAME TIME"]];
+  const M_SORTS = [["cons", "CONSENSUS EDGE"], ["prob", "WIN PROB"], ["kevin", "KEVIN'S MODEL"], ["sharp", "SHARP"], ["pyth", "PYTHAG"], ["elo", "ELO"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["time", "GAME TIME"]];
   root.appendChild(el("div", "h1", `FULL SLATE <small>· ${S.games.length} games — finished &amp; live drop to the bottom</small>`));
   const sortBar = el("div");
   sortBar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px;";
   sortBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
     M_SORTS.map(([k, l]) => `<span class="fchip${mSort === k ? " on" : ""}" data-msort="${k}">${l}</span>`).join("") +
-    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "time" ? "chronological" : mSort === "spread" ? "strongest run-line lean first" : mSort === "total" ? "strongest over/under lean first" : "that model's most confident picks first"}</span>`;
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "prob" ? "the biggest consensus favorites first — most likely ML winners" : mSort === "time" ? "chronological" : mSort === "spread" ? "strongest run-line lean first" : mSort === "total" ? "strongest over/under lean first" : "that model's most confident picks first"}</span>`;
   sortBar.querySelectorAll("[data-msort]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_sortmlb", c.dataset.msort); renderBoard(); }));
   root.appendChild(sortBar);
   const sweeps = S.games.filter(g => { try { return !!goldenSweep(g); } catch (e) { return false; } });
@@ -1883,7 +1921,7 @@ function renderBoard() {
       : mSort === "cons" ? bestEdge(b) - bestEdge(a)
       : mSort === "spread" ? spConf(b) - spConf(a)
       : mSort === "total" ? totConf(b) - totConf(a)
-      : mConf(b) - mConf(a)));
+      : mConf(b) - mConf(a))); // "prob" and per-model sorts share mConf: the favorite's win probability, biggest first
   let vRank = 0;
   for (const g of sorted) {
     const r = (g.state === "Preview" && bestEdge(g) > -90) ? ++vRank : null;
@@ -2011,12 +2049,15 @@ function gameCard(g, vRank) {
   }
   function pitcherCell(side, warns) {
     const kp = side.pitcherId ? S.props[side.pitcherId] : null;
+    const proj = side.pitcherId ? S.pitchers[side.pitcherId]?.proj : null;
+    const gap = proj && kp?.line != null ? proj.projK - kp.line : null;
     const kTxt = kp?.line != null
       ? `<div class="pline" style="color:var(--gold);font-weight:700;">K O/U ${kp.line}${kp.overPrice != null && kp.underPrice != null ? ` · o${fmtML(kp.overPrice)} / u${fmtML(kp.underPrice)}` : ""}</div>`
       : "";
+    const pjTxt = proj ? `<div class="pline" style="color:${gap != null ? (gap >= 0.7 ? "var(--green)" : gap <= -0.7 ? "var(--red)" : "var(--dim)") : "var(--blue)"};font-weight:700;">proj ${proj.projK.toFixed(1)} Ks${proj.grade === "U" ? " · U" : ""}${gap != null ? ` (${gap >= 0 ? "+" : ""}${gap.toFixed(1)} vs line)` : ""}</div>` : "";
     return `<div class="pit">${side.pitcherId ? hsImg(side.pitcherId) : '<div class="hs"></div>'}
       <div style="min-width:0;"><div class="pname">${side.pitcherName}</div><div class="pline">${side.pitcherId ? pitcherLineTxt(side.pitcherId) : ""}</div>
-      ${kTxt}
+      ${kTxt}${pjTxt}
       ${warns.map(w => `<span class="warn">⚠ ${w}</span>`).join(" ")}</div></div>`;
   }
 }
@@ -2159,7 +2200,8 @@ const WARN_INFO = [
   [/EARLY HOOKS/i, () => `<b>What it means:</b> his season workload looks normal, but his <i>last three starts</i> averaged under ~4⅓ innings — something recent (struggles, minor injury, manager's plan) is cutting his outings short.<br><br><b>Why it matters for betting:</b> season-long stats say one thing, but the recent leash says another — and strikeout volume follows innings. Be skeptical of his K over until he completes a normal-length start again.`],
   [/MINUTES DOWN/i, () => `<b>What it means:</b> her minutes in the last three games are well below her season norm — could be a rotation change, injury management, or blowouts.<br><br><b>Why it matters for betting:</b> every projection assumes her usual playing time. If the shorter minutes continue, points/rebounds/assists all shrink with them — overs are risky until her minutes stabilize.`],
   [/MINUTES SWINGY/i, () => `<b>What it means:</b> her playing time varies a lot night to night — foul trouble, matchups, blowouts.<br><br><b>Why it matters for betting:</b> volatile minutes mean volatile stat lines. The projection is a decent midpoint but the range around it is wide, so P(OVER) is less trustworthy than for a steady-minutes player.`],
-  [/ONLY \d+ PA/i, w => `<b>What it means:</b> only ${(w.match(/\d+/) || ["few"])[0]} plate appearances this season — his hitting rates (especially home-run rate) aren't stable yet at that sample size.<br><br><b>Why it matters for betting:</b> a hot month in 100 PA can look like elite power and vanish next week. The model already shrinks his numbers toward league average, but extra caution is warranted.`]
+  [/ONLY \d+ PA/i, w => `<b>What it means:</b> only ${(w.match(/\d+/) || ["few"])[0]} plate appearances this season — his hitting rates (especially home-run rate) aren't stable yet at that sample size.<br><br><b>Why it matters for betting:</b> a hot month in 100 PA can look like elite power and vanish next week. The model already shrinks his numbers toward league average, but extra caution is warranted.`],
+  [/UNPROVEN/i, () => `<b>What it means:</b> this starter has little or no MLB track record — a rookie, a call-up, or an opener. There isn't enough big-league data to know what he really is yet.<br><br><b>How the models handle it:</b> his strikeout projection is <b>shrunk toward the league-average rate</b> (the less he's pitched, the harder the shrink) with widened error bars and a <b>GRADE U</b>, and <b>Kevin's Model trims its conviction 15% toward a coin flip</b> for any game he starts — the pick's direction never flips, only its confidence.<br><br><b>Why it matters for betting:</b> books misprice rookie starts in BOTH directions, and so do models. The app shows the projection so you can consider him — but keeps him out of Best Bets, LOCKS and K-prop calls until he's proven something. If you know scouting info the stats can't see (elite MiLB whiff numbers, a big-league arsenal), that's YOUR edge to take manually — not the model's to fake.`]
 ];
 function warnExplain(txt) {
   for (const [re, fn] of WARN_INFO) if (re.test(txt)) return fn(txt);
@@ -2363,7 +2405,19 @@ function renderKs() {
     rows.push({ g, side, sideKey, proj });
   }
   if (!rows.length) { root.appendChild(el("div", "nobets", "No starter data yet for this date.")); return; }
-  // best value first: priced edges → strongest leans → the rest; started games greyed at the bottom
+  // ---- sorts: value · worst-hitting opponent (season K%) · cold last 30 · grade · consistency ----
+  const kSortK = (hasLS && localStorage.getItem("kb_ksort")) || "value";
+  const oppOf = r => r.sideKey === "home" ? r.g.away : r.g.home;
+  const K_SORTS = [["value", "BEST VALUE"], ["whiff", "WORST-HITTING OPPONENT"], ["cold30", "COLD LAST 30"], ["grade", "GRADE"], ["consist", "MOST CONSISTENT"]];
+  const ksBar = el("div");
+  ksBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+  ksBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
+    K_SORTS.map(([k2, l2]) => `<span class="fchip${kSortK === k2 ? " on" : ""}" data-ks="${k2}">${l2}</span>`).join("") +
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${kSortK === "value" ? "real priced edges first, then the strongest leans" : kSortK === "whiff" ? `pitchers facing the whiffiest lineups first (season K%, league ${(100 * (S.league.kPct || 0.22)).toFixed(1)}%)` : kSortK === "cold30" ? "pitchers facing the coldest lineups first — 30-day offense, weighted by the pitching they faced" : kSortK === "grade" ? "A-grade metronomes first, boom-bust and UNPROVEN last" : "smallest night-to-night K swing first — the most repeatable arms"}</span>`;
+  ksBar.querySelectorAll("[data-ks]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_ksort", c.dataset.ks); renderKs(); }));
+  root.appendChild(ksBar);
+  let rows2 = rows;
+  // best value: priced edges → strongest leans → the rest; started games greyed at the bottom
   const kVal = r => {
     if (r.g.state !== "Preview") return [3, 0];
     const line = lineFor(r.proj.pid, manual);
@@ -2376,10 +2430,27 @@ function renderKs() {
     if (lean && lean.lean !== "PASS" && line != null) return [1, Math.max(lean.pOver, 1 - lean.pOver) - 0.5];
     return [2, -(r.proj.grade || "D").charCodeAt(0)];
   };
-  rows.sort((a, b) => { const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; });
-  root.appendChild(el("div", "subhead", `Cards run <b style="color:var(--txt)">best value → worst</b>: real priced edges first, then the strongest leans, then the rest. Games that already started sink to the bottom, greyed.`));
+  const gnum = r => GNUM[r.proj.grade] || 0; // U and ? sink below D
+  const cvv = r => r.proj.cv == null ? 9 : r.proj.cv;
+  const oppK = r => S.teams[oppOf(r).id]?.hit?.kPct ?? -1;
+  const oppC30 = r => S.teams[oppOf(r).id]?.daily?.off30adj ?? 99; // missing data sinks
+  rows2.sort((a, b) => {
+    const sa = a.g.state !== "Preview" ? 1 : 0, sb = b.g.state !== "Preview" ? 1 : 0;
+    if (sa !== sb) return sa - sb;
+    if (kSortK === "grade") { const d2 = gnum(b) - gnum(a); if (d2) return d2; const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; }
+    if (kSortK === "consist") { const d2 = cvv(a) - cvv(b); if (d2) return d2; return gnum(b) - gnum(a); }
+    if (kSortK === "whiff") { const d2 = oppK(b) - oppK(a); if (d2) return d2; const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; }
+    if (kSortK === "cold30") { const d2 = oppC30(a) - oppC30(b); if (d2) return d2; const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; }
+    const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1];
+  });
+  root.appendChild(el("div", "subhead", kSortK === "value"
+    ? `Cards run <b style="color:var(--txt)">best value → worst</b>: real priced edges first, then the strongest leans, then the rest. Games that already started sink to the bottom, greyed.`
+    : kSortK === "whiff" ? `Cards run <b style="color:var(--txt)">easiest strikeout matchup → toughest</b> by the opposing lineup's season K%. Started games sink, greyed.`
+    : kSortK === "cold30" ? `Cards run <b style="color:var(--txt)">coldest opposing bats → hottest</b> on the 30-day opp-adjusted average. Cold lineups chase, whiff, and go quietly. Started games sink, greyed.`
+    : kSortK === "grade" ? `Cards run <b style="color:var(--txt)">GRADE A → D</b> (UNPROVEN last) — the most repeatable arms first, value breaks ties. Started games sink, greyed.`
+    : `Cards run <b style="color:var(--txt)">steadiest → swingiest</b> by each arm's night-to-night K variation. Started games sink, greyed.`));
   const grid = el("div", "grid wide");
-  for (const r of rows) grid.appendChild(kCard(r, manual));
+  for (const r of rows2) grid.appendChild(kCard(r, manual));
   root.appendChild(grid);
   $("#fetchKBtn")?.addEventListener("click", fetchPropPrices);
 }
@@ -2437,7 +2508,8 @@ function kCard(r, manual) {
       const st2 = S.pitchers[proj.pid]?.season || {};
       const l3 = proj.last.slice(-3);
       return whyBox([
-        ["His strikeout pace", (num(st2.strikeoutsPer9Inn) || 0).toFixed(1) + " K/9", `season rate · avgs ${proj.kMean != null ? proj.kMean.toFixed(1) : "—"} Ks a start`],
+        proj.unproven ? ["⚠ UNPROVEN ARM", proj.kMean == null ? "league prior" : "shrunk to league rate", proj.kMean == null ? "no MLB sample — projection is the league-average starter" : "tiny MLB sample — numbers pulled toward league average, error bars widened"] : null,
+        ["His strikeout pace", proj.kMean == null && proj.unproven ? "—" : (num(st2.strikeoutsPer9Inn) || 0).toFixed(1) + " K/9", `season rate · avgs ${proj.kMean != null ? proj.kMean.toFixed(1) : "—"} Ks a start`],
         l3.length ? ["Last 3 starts", l3.join(" · ") + " Ks", "recent form (35% of the K-rate blend)"] : null,
         ["How deep he pitches", proj.expIP.toFixed(1) + " IP", "60% recent starts / 40% season — his leash"],
         ["Tonight's opponent", "×" + proj.oppMult.toFixed(2), `${opp.abbr} strike out ${(100 * (S.teams[opp.id]?.hit?.kPct ?? 0)).toFixed(1)}% vs league ${(100 * (S.league.kPct || 0.22)).toFixed(1)}%`],
@@ -2457,6 +2529,37 @@ function kCard(r, manual) {
   return card;
 }
 
+/* ---------- HOT FORM: last-7-games log pull for every projected hitter (day-cached, chunked) ---------- */
+async function fetchHotForm() {
+  if (S._hotBusy || S.hot) return;
+  if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_hot") || "null"); if (sv?.d === S.date && sv.hot) { S.hot = sv.hot; try { renderHits(); renderHR(); } catch (e) {} return; } } catch (e) {} }
+  const ids = [...new Set([...(S.hitPicks || []).map(p => p.id), ...(S.hrPicks || []).filter(p => !p.lowPA).map(p => p.id)])];
+  if (!ids.length) return;
+  S._hotBusy = true; S.hotStage = "0/" + ids.length;
+  const hot = {};
+  try {
+    for (let i = 0; i < ids.length; i += 40) {
+      const chunk = ids.slice(i, i + 40);
+      const d2 = await j(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[hitting],type=[gameLog])&fields=people,id,stats,splits,date,stat,hits,atBats,homeRuns`);
+      for (const per of d2?.people || []) {
+        const sp2 = per?.stats?.[0]?.splits || [];
+        const last7 = sp2.slice(-7);
+        if (!last7.length) continue;
+        let h = 0, ab = 0, hr = 0, streak = 0;
+        for (const s2 of last7) { h += num(s2.stat?.hits); ab += num(s2.stat?.atBats); hr += num(s2.stat?.homeRuns); }
+        for (let k2 = sp2.length - 1; k2 >= 0; k2--) { if (num(sp2[k2].stat?.hits) > 0) streak++; else break; }
+        hot[per.id] = { avg7: ab ? h / ab : null, h7: h, ab7: ab, hr7: hr, streak };
+      }
+      S.hotStage = Math.min(i + 40, ids.length) + "/" + ids.length;
+      if (i + 40 < ids.length) await new Promise(r => setTimeout(r, 180));
+    }
+    S.hot = hot;
+    if (hasLS) try { localStorage.setItem("kb_hot", JSON.stringify({ d: S.date, hot })); } catch (e) {}
+  } catch (e) { S.hotErr = e.message; }
+  S._hotBusy = false;
+  try { renderHits(); renderHR(); } catch (e) {}
+}
+const hotOf = id => S.hot?.[id] || null;
 /* ---------- HOME RUNS TAB ---------- */
 function renderHR() {
   const root = $("#tab-hr"); root.innerHTML = "";
@@ -2466,21 +2569,56 @@ function renderHR() {
   root.appendChild(el("div", "subhead", `Anytime-HR probability per hitter: shrunk HR-rate × opposing pitching (starter share by his real innings + bullpen) × park, over ~4 plate appearances. Compare FAIR ODDS to your book's anytime-HR price — value = book pays more than fair. <select id="hrFilter" style="margin-left:8px;">${opts}</select> <button class="btn ghost" id="fetchHrBtn" style="margin-left:6px;">Fetch book prices (Odds API)</button>`));
   const stMap = {}; for (const g of S.games) stMap[g.pk] = g.state !== "Preview";
   const pool = S.hrPicks.filter(p => S.hrFilter === "all" || String(p.gamePk) === String(S.hrFilter));
+  const rSortK = (hasLS && localStorage.getItem("kb_hrsort")) || "likely";
+  const rsBar = el("div");
+  rsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+  rsBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
+    [["likely", "MOST LIKELY"], ["wp", "WORST PITCHER"], ["hot", "🔥 HOT HITTERS"]].map(([k2, l2]) => `<span class="fchip${rSortK === k2 ? " on" : ""}" data-rs="${k2}">${l2}</span>`).join("") +
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${rSortK === "wp" ? "hitters facing the biggest gopher-ball arms first (highest HR/9 allowed)" : rSortK === "hot" ? "most homers in the last 7 games first — real box scores" : "highest homer chance first, value breaks near-ties"}</span>`;
+  rsBar.querySelectorAll("[data-rs]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_hrsort", c.dataset.rs); renderHR(); }));
+  root.appendChild(rsBar);
+  if (!S.hot && !S._hotBusy) fetchHotForm();
+  if (rSortK === "hot" && !S.hot) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">${S._hotBusy ? `Pulling last-7 game logs (${S.hotStage || "…"}) — cards re-sort when done.` : S.hotErr ? "Game-log fetch failed (" + S.hotErr + ") — showing MOST LIKELY order until it lands." : "Warming up the last-7 logs…"}</span>`));
   // most likely to homer first; among near-equal probabilities, the better book price (value) wins the spot
   const hrEdge = p => { const bo = S.hrOdds[p.id]; return bo?.price != null ? p.pHR - americanToProb(bo.price) : 0; };
   pool.sort((a, b) => {
     const sa = stMap[a.gamePk] ? 1 : 0, sb = stMap[b.gamePk] ? 1 : 0;
     if (sa !== sb) return sa - sb;
+    if (rSortK === "wp") {
+      const d2 = (b.starterHr9 ?? -1) - (a.starterHr9 ?? -1); if (d2) return d2;
+      const d3 = (b.pitchFactor ?? 0) - (a.pitchFactor ?? 0); if (d3) return d3;
+      return b.pHR - a.pHR;
+    }
+    if (rSortK === "hot" && S.hot) {
+      const ha = hotOf(a.id), hb = hotOf(b.id);
+      const d2 = (hb?.hr7 ?? -1) - (ha?.hr7 ?? -1); if (d2) return d2;
+      const d3 = (hb?.avg7 ?? -1) - (ha?.avg7 ?? -1); if (d3) return d3;
+      return b.pHR - a.pHR;
+    }
     const ba = Math.round(a.pHR * 200), bb = Math.round(b.pHR * 200); // half-point likelihood buckets
     if (bb !== ba) return bb - ba;
     return hrEdge(b) - hrEdge(a);
   });
-  const picks = pool.slice(0, S.hrFilter === "all" ? 24 : 20);
+  const hrAll = hasLS && localStorage.getItem("kb_hrall") === "1";
+  const hrCap = S.hrFilter === "all" ? 48 : 26;
+  const picks = hrAll ? pool : pool.slice(0, hrCap);
   if (!picks.length) { root.appendChild(el("div", "nobets", "No hitter data loaded yet — hit Refresh.")); return; }
-  root.appendChild(el("div", "subhead", `Cards run <b style="color:var(--txt)">most likely to homer → least</b>; when two hitters sit within half a point of each other, <b style="color:var(--txt)">value breaks the tie</b> — the one whose book price beats his model chance ranks higher. Started games sink to the bottom, greyed.`));
+  root.appendChild(el("div", "subhead", rSortK === "wp"
+    ? `Cards run <b style="color:var(--txt)">worst opposing pitching → best</b>: the starters who give up the most homers per 9 first (full pitching factor breaks ties) — gopher-ball arms are where HR value hides. Started games sink, greyed.`
+    : rSortK === "hot" ? `Cards run <b style="color:var(--txt)">hottest bats → coldest</b>: homers in the last 7 games (real box scores), recent average breaks ties. Honest note: hot streaks predict less than they feel like they do — the model chance is still the number that matters. Started games sink, greyed.`
+    : `Cards run <b style="color:var(--txt)">most likely to homer → least</b>; when two hitters sit within half a point of each other, <b style="color:var(--txt)">value breaks the tie</b> — the one whose book price beats his model chance ranks higher. Started games sink to the bottom, greyed.`));
   const grid = el("div", "grid wide");
   for (const p of picks) { const c = hrCard(p); if (stMap[p.gamePk]) c.classList.add("started"); grid.appendChild(c); }
   root.appendChild(grid);
+  if (pool.length > picks.length) {
+    const mb = el("button", null, `▾ SHOW ALL ${pool.length} HITTERS`); mb.className = "btn ghost"; mb.style.marginTop = "12px";
+    mb.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_hrall", "1"); renderHR(); });
+    root.appendChild(mb);
+  } else if (hrAll && pool.length > hrCap) {
+    const mb = el("button", null, "▴ SHOW FEWER"); mb.className = "btn ghost"; mb.style.marginTop = "12px";
+    mb.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_hrall", ""); renderHR(); });
+    root.appendChild(mb);
+  }
   $("#hrFilter").addEventListener("change", ev => { S.hrFilter = ev.target.value; renderHR(); });
   $("#fetchHrBtn").addEventListener("click", fetchHrPrices);
 }
@@ -2494,20 +2632,51 @@ function renderHits() {
   root.appendChild(el("div", "subhead", `Chance of at least one hit tonight — shrunk AVG × opposing pitching (starter's innings share + bullpen) × strikeout matchup, over ~${CFG.hitExpAB} ABs. Regulars (${CFG.minHitPA}+ PA) only. <b style="color:var(--txt)">BET only when the book pays lighter than fair</b> — type your book's "to record a hit" price into a card, or fetch prices with an Odds API key. <select id="hitFilter" style="margin-left:8px;">${opts}</select> <button class="btn ghost" id="fetchHitBtn" style="margin-left:6px;">Fetch book prices (Odds API)</button>`));
   const stMap = {}; for (const g of S.games) stMap[g.pk] = g.state !== "Preview";
   const hpool = S.hitPicks.filter(p => S.hitFilter === "all" || String(p.gamePk) === String(S.hitFilter));
+  const hSortK = (hasLS && localStorage.getItem("kb_hitsort")) || "value";
+  const hsBar = el("div");
+  hsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+  hsBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
+    [["value", "BEST VALUE"], ["wp", "WORST PITCHER"], ["hot", "🔥 HOT HITTERS"]].map(([k2, l2]) => `<span class="fchip${hSortK === k2 ? " on" : ""}" data-hs="${k2}">${l2}</span>`).join("") +
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${hSortK === "wp" ? "hitters facing the most hittable starters first (highest BAA allowed)" : hSortK === "hot" ? "highest average over the last 7 games first — real box scores, hit streaks break ties" : "priced edges first, then raw hit probability"}</span>`;
+  hsBar.querySelectorAll("[data-hs]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_hitsort", c.dataset.hs); renderHits(); }));
+  root.appendChild(hsBar);
+  if (!S.hot && !S._hotBusy) fetchHotForm();
+  if (hSortK === "hot" && !S.hot) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">${S._hotBusy ? `Pulling last-7 game logs (${S.hotStage || "…"}) — cards re-sort when done.` : S.hotErr ? "Game-log fetch failed (" + S.hotErr + ") — showing BEST VALUE order until it lands." : "Warming up the last-7 logs…"}</span>`));
   // best value → worst: book-priced edges first, then raw hit probability; started games grey at the bottom
   const hitVal = p => { const bo = hitBookPrice(p.id); return bo?.price != null && isFinite(bo.price) ? [0, p.pHit - americanToProb(bo.price)] : [1, p.pHit]; };
   hpool.sort((a, b) => {
     const sa = stMap[a.gamePk] ? 1 : 0, sb = stMap[b.gamePk] ? 1 : 0;
     if (sa !== sb) return sa - sb;
+    if (hSortK === "wp") { const d2 = (b.starterBAA ?? -1) - (a.starterBAA ?? -1); if (d2) return d2; }
+    if (hSortK === "hot" && S.hot) {
+      const ha = hotOf(a.id), hb = hotOf(b.id);
+      const aa2 = ha && ha.ab7 >= 10 ? ha.avg7 : -1, bb2 = hb && hb.ab7 >= 10 ? hb.avg7 : -1;
+      const d2 = bb2 - aa2; if (d2) return d2;
+      const d3 = (hb?.streak ?? 0) - (ha?.streak ?? 0); if (d3) return d3;
+    }
     const va = hitVal(a), vb = hitVal(b);
     return va[0] - vb[0] || vb[1] - va[1];
   });
-  const picks = hpool.slice(0, S.hitFilter === "all" ? 18 : 12);
+  const hitAll = hasLS && localStorage.getItem("kb_hitall") === "1";
+  const hitCapN = S.hitFilter === "all" ? 30 : 16;
+  const picks = hitAll ? hpool : hpool.slice(0, hitCapN);
   if (!picks.length) { root.appendChild(el("div", "nobets", "No hitter data loaded yet — hit Refresh.")); return; }
-  root.appendChild(el("div", "subhead", `Cards run <b style="color:var(--txt)">best value → worst</b>: hitters with a book price rank by edge (model chance vs the price), the rest by hit probability. Started games sink to the bottom, greyed.`));
+  root.appendChild(el("div", "subhead", hSortK === "wp"
+    ? `Cards run <b style="color:var(--txt)">worst opposing starter → best</b>: the arms giving up the highest batting average first — soft pitching is where safe hits live. Started games sink, greyed.`
+    : hSortK === "hot" ? `Cards run <b style="color:var(--txt)">hottest bats → coldest</b>: last-7-game average from real box scores (10+ ABs required), active hit streaks break ties. Honest note: streaks fade fast — the model chance is still the better predictor. Started games sink, greyed.`
+    : `Cards run <b style="color:var(--txt)">best value → worst</b>: hitters with a book price rank by edge (model chance vs the price), the rest by hit probability. Started games sink to the bottom, greyed.`));
   const hgrid = el("div", "grid wide");
   for (const p of picks) { const c = hitCard(p); if (stMap[p.gamePk]) c.classList.add("started"); hgrid.appendChild(c); }
   root.appendChild(hgrid);
+  if (hpool.length > picks.length) {
+    const mb2 = el("button", null, `▾ SHOW ALL ${hpool.length} HITTERS`); mb2.className = "btn ghost"; mb2.style.marginTop = "12px";
+    mb2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_hitall", "1"); renderHits(); });
+    root.appendChild(mb2);
+  } else if (hitAll && hpool.length > hitCapN) {
+    const mb2 = el("button", null, "▴ SHOW FEWER"); mb2.className = "btn ghost"; mb2.style.marginTop = "12px";
+    mb2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_hitall", ""); renderHits(); });
+    root.appendChild(mb2);
+  }
   $("#hitFilter").addEventListener("change", ev => { S.hitFilter = ev.target.value; renderHits(); });
   $("#fetchHitBtn").addEventListener("click", fetchHitPrices);
 }
@@ -2555,6 +2724,7 @@ function hitCard(p) {
       ${gBadge(hitGrade(p, bo))}
       <span class="chip ${p.starterBAA > (S.league.avg || 0.245) * 1.04 ? "green" : ""}">opp starter allows ${p.starterBAA ? p.starterBAA.toFixed(3).replace(/^0/, "") : "—"} AVG</span>
       <span class="chip ${p.kAdj != null && p.kAdj < 0.95 ? "red" : ""}">K matchup ×${p.kAdj != null ? p.kAdj.toFixed(2) : "1.00"}</span>
+      ${(() => { const h2 = hotOf(p.id); if (!h2 || h2.avg7 == null || h2.ab7 < 8) return ""; return `<span class="chip ${h2.avg7 >= 0.35 ? "green" : h2.avg7 <= 0.18 ? "red" : ""}">${h2.avg7 >= 0.35 ? "🔥 " : ""}last 7: ${h2.avg7.toFixed(3).replace(/^0/, "")} (${h2.h7}-for-${h2.ab7})</span>${h2.streak >= 4 ? `<span class="chip green">${h2.streak}-game hit streak</span>` : ""}`; })()}
       ${verdict}
       <span style="margin-left:auto;text-align:right;align-self:flex-end;">
         <span class="lbl" style="display:block;">BOOK</span>
@@ -2615,6 +2785,7 @@ function hrCard(p) {
       <span class="chip ${p.starterHr9 > 1.2 ? "gold" : ""}">${p.starterName.split(" ").slice(-1)[0]} ${p.starterHr9.toFixed(2)} HR/9</span>
       <span class="chip ${parkPct > 3 ? "gold" : parkPct < -3 ? "red" : ""}">park ${parkPct >= 0 ? "+" : ""}${parkPct}%</span>
       <span class="chip">pitch factor ×${p.pitchFactor.toFixed(2)}</span>
+      ${(() => { const h2 = hotOf(p.id); if (!h2) return ""; return h2.hr7 >= 1 ? `<span class="chip ${h2.hr7 >= 2 ? "green" : ""}">${h2.hr7 >= 2 ? "🔥 " : ""}${h2.hr7} HR last 7</span>` : ""; })()}
       ${edgeTxt}
       <span style="margin-left:auto;text-align:right;align-self:flex-end;">
         <span class="lbl" style="display:block;">BOOK</span>
@@ -3835,11 +4006,12 @@ function capTypes(list, caps) { // keep hits/HRs from flooding the board — MLs
 /* ---- LOCKS/VALUE filters: sport + odds window (persisted) ---- */
 const LADDER = [-450, -400, -350, -300, -275, -250, -225, -200, -180, -160, -150, -140, -130, -120, -110, 100, 110, 120, 130, 140, 150, 175, 200, 250, 300];
 const decOdds = ml => ml < 0 ? 1 + 100 / (-ml) : 1 + ml / 100;
+const LV_SPORTS = ["ALL", "MLB", "WNBA", "nfl", "nba", "nhl", "soc"]; // sports with real models & prices
 const LV = (() => {
   const d = { locks: { sport: "ALL", lo: 0, hi: LADDER.length - 1 }, value: { sport: "ALL", lo: 0, hi: LADDER.length - 1 } };
   try {
     const s = hasLS ? JSON.parse(localStorage.getItem("kb_lvfilter") || "null") : null;
-    if (s) for (const k of ["locks", "value"]) if (s[k]) d[k] = { sport: ["ALL", "MLB", "WNBA"].includes(s[k].sport) ? s[k].sport : "ALL", lo: clamp(s[k].lo | 0, 0, LADDER.length - 1), hi: clamp(s[k].hi | 0, 0, LADDER.length - 1) };
+    if (s) for (const k of ["locks", "value"]) if (s[k]) d[k] = { sport: LV_SPORTS.includes(s[k].sport) ? s[k].sport : "ALL", lo: clamp(s[k].lo | 0, 0, LADDER.length - 1), hi: clamp(s[k].hi | 0, 0, LADDER.length - 1) };
   } catch (e) {}
   for (const k of ["locks", "value"]) if (d[k].lo > d[k].hi) { d[k].lo = 0; d[k].hi = LADDER.length - 1; }
   return d;
@@ -3847,8 +4019,10 @@ const LV = (() => {
 function saveLV() { if (hasLS) try { localStorage.setItem("kb_lvfilter", JSON.stringify(LV)); } catch (e) {} }
 const lvActive = k => LV[k].sport !== "ALL" || LV[k].lo !== 0 || LV[k].hi !== LADDER.length - 1;
 function lvPass(f, x) {
-  if (f.sport === "MLB" && x.sport.indexOf("MLB") < 0) return false;
-  if (f.sport === "WNBA" && x.sport.indexOf("WNBA") < 0) return false;
+  if (f.sport !== "ALL") {
+    const key = x.sportKey || (x.sport.indexOf("MLB") >= 0 ? "MLB" : "WNBA"); // legacy MLB/WNBA rows carry no key
+    if (key !== f.sport) return false;
+  }
   if (f.lo === 0 && f.hi === LADDER.length - 1) return true;
   // filter on the bet's real price; if no book price yet, judge by the model's fair odds instead
   const o = x.odds != null && isFinite(x.odds) ? x.odds : (x.prob != null ? probToAmerican(clamp(x.prob, 0.02, 0.98)) : null);
@@ -3872,8 +4046,9 @@ function lvFilterBar(kind, rerender) {
   const popCss = "display:none;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:6px;background:var(--panel3);border:1px solid var(--line2);border-radius:12px;padding:10px;margin-top:9px;";
   const bar = el("div");
   bar.style.cssText = "display:block;height:auto;max-height:none;overflow:visible;background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:14px 16px 13px;margin:0 0 16px;";
+  const SPORT_CHIPS = [["ALL", "ALL SPORTS"], ["MLB", "⚾ MLB"], ["WNBA", "🏀 WNBA"], ["nfl", "🏈 NFL"], ["nba", "🏀 NBA"], ["nhl", "🏒 NHL"], ["soc", "⚽ SOCCER"]];
   bar.innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${lab("SPORT")}${[["ALL", "ALL SPORTS"], ["MLB", "⚾ MLB ONLY"], ["WNBA", "🏀 WNBA ONLY"]].map(([k, l]) => `<span class="fchip${f.sport === k ? " on" : ""}" data-s="${k}">${l}</span>`).join("")}${lvActive(kind) ? `<span class="fchip reset" data-r="1" style="margin-left:auto;">✕ RESET</span>` : ""}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${lab("SPORT")}${SPORT_CHIPS.map(([k, l]) => `<span class="fchip${f.sport === k ? " on" : ""}" data-s="${k}">${l}</span>`).join("")}${lvActive(kind) ? `<span class="fchip reset" data-r="1" style="margin-left:auto;">✕ RESET</span>` : ""}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">
       ${lab("PRICE")}
       ${QUICK.map(([l], i) => `<span class="fchip${activeQuick === i ? " on" : ""}" data-q="${i}">${l}</span>`).join("")}
@@ -3896,7 +4071,7 @@ function lvFilterBar(kind, rerender) {
     }
     if (c.dataset.r) { f.sport = "ALL"; f.lo = 0; f.hi = max; }
     else if (c.dataset.q != null) { const [, lo2, hi2] = QUICK[+c.dataset.q]; f.lo = lo2; f.hi = hi2; }
-    else f.sport = c.dataset.s;
+    else { f.sport = c.dataset.s; if (GS_CFG[f.sport]) try { genEnsure(f.sport); } catch (e) {} } // picking a new sport loads it on the spot
     saveLV(); rerender();
   }));
   bar.querySelectorAll("[data-set]").forEach(b => b.addEventListener("click", () => {
@@ -3909,6 +4084,49 @@ function lvFilterBar(kind, rerender) {
   return bar;
 }
 
+function collectGenLV(mode) { // NFL/NBA/NHL/soccer moneylines for LOCKS & VALUE — every loaded sport joins the party
+  const out = [];
+  for (const sp of Object.keys(GS_CFG)) {
+    const cfg = GS_CFG[sp];
+    if (cfg.combo || cfg.teamCap <= 0) continue; // combos handled via their leagues; UFC/college have no models
+    const s = gSlot(sp);
+    if (!s.loaded || !s.games?.length) continue;
+    for (const g of s.games) {
+      if (g.completed || g.live || g.cons == null) continue;
+      const homeSide = g.cons >= 0.5;
+      const prob = homeSide ? g.cons : 1 - g.cons;
+      const ml = homeSide ? g.mlHome : g.mlAway;
+      const gsd = p => p == null ? null : (homeSide ? p : 1 - p);
+      let dv = null;
+      if (g.mlHome != null && g.mlAway != null) { try { const [ih] = deVig(americanToProb(g.mlHome), americanToProb(g.mlAway)); dv = homeSide ? ih : 1 - ih; } catch (e) {} }
+      const label = homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr;
+      const spTag = cfg.emoji + " " + cfg.name;
+      const sportKey = cfg.soccer ? "soc" : sp;
+      const info = [
+        ["Elo", gsd(g.mElo) != null ? fmtPct(gsd(g.mElo)) : "—"],
+        ["Pythag", gsd(g.mPyth) != null ? fmtPct(gsd(g.mPyth)) : "—"],
+        ["Form-10", gsd(g.mForm) != null ? fmtPct(gsd(g.mForm)) : "—"],
+        ["Consensus", fmtPct(prob), "var(--green)"],
+        ["Market (de-vig)", dv != null ? fmtPct(dv) : "no line yet"],
+        ["Edge vs market", dv != null ? ((prob - dv) * 100 >= 0 ? "+" : "") + ((prob - dv) * 100).toFixed(1) + "%" : "—", "var(--gold)"],
+        ["Model records", s.bt?.n ? `backtested on ${s.bt.n} games — see MODEL RECORDS` : "young season — records still building"]
+      ];
+      if (cfg.soccer) info.push(["⚠ Draws", "3-way market — win prob excludes the draw", "var(--gold)"]);
+      const go = () => { setSport(cfg.soccer ? "soc" : sp); };
+      if (mode === "locks") {
+        if (prob < (cfg.soccer ? 0.60 : 0.55)) continue; // soccer draws punish overconfidence — demand more
+        if (ml != null && !oddsOK(ml, 2)) continue;
+        out.push({ sportKey, sport: spTag, type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label, sub: "3-model consensus" + (cfg.soccer ? " · 2-way (draw aside)" : ""), time: g.date, go, info });
+      } else {
+        if (dv == null || ml == null) continue;
+        const edge = (prob - dv) * 100;
+        if (edge < 2 || !oddsOK(ml, 2)) continue;
+        out.push({ sportKey, sport: spTag, type: "MONEYLINE", edge, prob, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label, sub: `model ${(prob * 100).toFixed(1)}% vs market ${(dv * 100).toFixed(1)}%`, time: g.date, go, info });
+      }
+    }
+  }
+  return out;
+}
 function collectLocks() {
   const out = [];
   const th = 0.55; // gather from 55%; ≥60% are the real locks, 55-60% fill thin days as LEANs
@@ -4016,6 +4234,7 @@ function collectLocks() {
         ] });
     }
   }
+  out.push(...collectGenLV("locks"));
   out.sort((a, b) => b.prob - a.prob);
   const flt = out.filter(x => lvPass(LV.locks, x));
   const capped = capTypes(flt, { hit: 3, hr: 1, wprop: LV.locks.sport === "WNBA" ? 8 : 4 });
@@ -4028,10 +4247,12 @@ function collectLocks() {
 function renderLocks() {
   const root = $("#tab-locks"); if (!root) return;
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `🔒 LOCKS <small>· both sports · the bets most likely to hit today</small>`));
-  root.appendChild(el("div", "subhead", `Everything the models give <b style="color:var(--txt)">60%+ to cash</b>, inside your odds zone (${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}), pre-game only, sorted by probability. Straight talk: "likely" is not "guaranteed" — a 70% bet still loses 3 times in 10, and heavy favorites pay little. These are the steady singles, not lottery tickets. <b style="color:var(--txt)">Tap any card to drop down its full model breakdown</b> — the OPEN FULL TAB button inside jumps to the page if you want more.`));
+  root.appendChild(el("div", "h1", `🔒 LOCKS <small>· every sport · the bets most likely to hit today</small>`));
+  root.appendChild(el("div", "subhead", `Everything the models give <b style="color:var(--txt)">60%+ to cash</b>, inside your odds zone (${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}), pre-game only, sorted by probability. Straight talk: "likely" is not "guaranteed" — a 70% bet still loses 3 times in 10, and heavy favorites pay little. These are the steady singles, not lottery tickets. <b style="color:var(--txt)">NFL · NBA · NHL · SOCCER moneylines join automatically once loaded — tap a sport chip below and it loads on the spot</b> (soccer locks demand 60%+ because draws punish overconfidence). Tap any card for its full model breakdown.`));
   if (!WS.loaded && !WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Loading WNBA in the background to include basketball…</span>`));
   else if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"}) — its locks will appear when done.</span>`));
+  const lvGenBusy = Object.keys(GS_CFG).filter(k => !GS_CFG[k].combo && gSlot(k).loading).map(k => GS_CFG[k].name);
+  if (lvGenBusy.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still loading: ${lvGenBusy.join(" · ")} — their plays join automatically.</span>`));
   root.appendChild(lvFilterBar("locks", renderLocks));
   const locks = collectLocks();
   if (!locks.length) {
@@ -4193,6 +4414,7 @@ function collectValue() {
         ] });
     }
   }
+  out.push(...collectGenLV("value"));
   out.sort((a, b) => b.edge - a.edge);
   const flt = out.filter(x => lvPass(LV.value, x));
   const capped = capTypes(flt, { hit: 3, hr: 2, wprop: LV.value.sport === "WNBA" ? 8 : 4 });
@@ -4204,9 +4426,11 @@ function collectValue() {
 function renderValue() {
   const root = $("#tab-value"); if (!root) return;
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `💎 VALUE <small>· both sports · where the models beat the market's price</small>`));
+  root.appendChild(el("div", "h1", `💎 VALUE <small>· every sport · where the models beat the market's price</small>`));
   root.appendChild(el("div", "subhead", `LOCKS asks "what's most likely to win?" — VALUE asks "<b style="color:var(--txt)">where is the book paying too much?</b>" Edge = model probability minus the market's de-vigged probability. A +5% edge at plus money can be worth more long-run than a 75% favorite at a heavy price. Tiers: <b style="color:var(--green)">MAX ≥ 8%</b> · <b style="color:var(--gold)">STRONG ≥ 5%</b> · <b style="color:var(--blue)">VALUE ≥ 3%</b> · smaller edges show as THIN on quiet days. All pre-game, inside your odds zone. <b style="color:var(--txt)">Tap any card to drop down its full model breakdown</b> — OPEN FULL TAB inside jumps to the page.`));
   if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"})…</span>`));
+  const lvGenBusy2 = Object.keys(GS_CFG).filter(k => !GS_CFG[k].combo && gSlot(k).loading).map(k => GS_CFG[k].name);
+  if (lvGenBusy2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still loading: ${lvGenBusy2.join(" · ")} — their edges join automatically.</span>`));
   root.appendChild(lvFilterBar("value", renderValue));
   const vals = collectValue();
   if (!vals.length) {
@@ -4900,7 +5124,7 @@ function pmBacktest(players, cls) { // walk-forward per player at rolling-median
 }
 function genTabs(sp) {
   const ps = GS_PSTATS[sp] || [];
-  return [["gen:board", "BOARD"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
+  return [["gen:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
 }
 function glParse(gl) { // shared ESPN gamelog shape: combined labels + per-category offsets (football) or flat labels (everything else)
   const labels = gl?.labels || [];
@@ -4942,6 +5166,56 @@ async function genPropsLoad(sp) {
   s.pLoading = true; s.pErr = null; renderGen();
   try {
     const web = `https://site.web.api.espn.com/apis/common/v3/sports/${cfg.path}`;
+    if (cfg.soccer) {
+      // ESPN's public soccer feed has NO per-game player logs — honest fallback: core season leaders + per-player season statistics (rate-based Poisson)
+      const lg2 = cfg.path.split("/")[1];
+      let yr = new Date(S.date || Date.now()).getFullYear();
+      try { const meta = await j(`${web}/statistics/byathlete?region=us&lang=en&limit=1`); yr = meta?.currentSeason?.year || yr; } catch (e2) {}
+      const core = `https://sports.core.api.espn.com/v2/sports/soccer/leagues/${lg2}/seasons/${yr}`;
+      let ld = null;
+      for (const ty of [1, 0]) {
+        try { const cand = await j(`${core}/types/${ty}/leaders?limit=40`); if (cand?.categories?.length) { ld = cand; break; } } catch (e2) {}
+      }
+      const cats = (ld?.categories || []).filter(c2 => ["goals", "totalShots", "shotsOnTarget"].includes(c2.name));
+      if (!cats.length) throw new Error("no season leaders yet (league likely between seasons)");
+      const ids = {};
+      for (const c2 of cats) for (const l2 of (c2.leaders || []).slice(0, 14)) {
+        const m2 = String(l2.athlete?.$ref || "").match(/athletes\/(\d+)/);
+        if (m2) { const id2 = +m2[1]; ids[id2] = ids[id2] || { id: id2 }; }
+      }
+      const players = Object.values(ids).slice(0, 20);
+      if (!players.length) throw new Error("no player leaders returned");
+      await Promise.all(players.map(async p2 => {
+        try {
+          const [ath, st2] = await Promise.all([
+            j(`${core}/athletes/${p2.id}?lang=en&region=us`),
+            j(`${core}/types/1/athletes/${p2.id}/statistics/0?lang=en&region=us`).catch(() => j(`${core}/types/0/athletes/${p2.id}/statistics/0?lang=en&region=us`))
+          ]);
+          p2.name = ath?.displayName || "";
+          p2.hs = ath?.headshot?.href || `https://a.espncdn.com/i/headshots/soccer/players/full/${p2.id}.png`;
+          const tm2 = String(ath?.team?.$ref || "").match(/teams\/(\d+)/);
+          p2.team = tm2 ? (s.teams[+tm2[1]]?.abbr || s.teams[+tm2[1]]?.name || "") : "";
+          const sv = {};
+          for (const cat2 of st2?.splits?.categories || []) for (const x2 of cat2.stats || []) sv[x2.name] = x2.value;
+          p2.apps = sv.appearances || 0; p2.min = sv.minutes || 0;
+          p2.tot = { G: sv.totalGoals ?? 0, SH: sv.totalShots ?? 0, SOT: sv.shotsOnTarget ?? 0 };
+        } catch (e2) {}
+      }));
+      s.pdata = {};
+      for (const ps of GS_PSTATS[sp] || []) {
+        const arr = [];
+        for (const p2 of players) {
+          if (!p2.name || !p2.apps || p2.apps < 4 || !p2.tot) continue;
+          const lam = (p2.tot[ps.k] ?? 0) / p2.apps;
+          if (!(lam > 0)) continue;
+          arr.push({ id: p2.id, name: p2.name, team: p2.team, hs: p2.hs, lam, apps: p2.apps, total: p2.tot[ps.k], min: p2.min, rate: true,
+            grade: p2.apps >= 12 ? "A" : p2.apps >= 8 ? "B" : p2.apps >= 5 ? "C" : "D" });
+        }
+        arr.sort((a2, b2) => b2.lam - a2.lam);
+        s.pdata[ps.k] = arr;
+      }
+      s.pReady = true; s.pLoading = false; renderGen(); return;
+    }
     const lists = {};
     for (const ps of GS_PSTATS[sp] || []) {
       if (lists[ps.sort]) continue;
@@ -5008,6 +5282,81 @@ function genNextBtn(sp) { // ⏭ jump to the next date this sport plays — work
   });
   return nb;
 }
+async function genFetchResults(sp) { // season results in gentle chunks — parallel bursts die on hostile networks, chunks survive
+  const cfg = GS_CFG[sp], s = gSlot(sp);
+  const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
+  const tms = Object.values(s.teams);
+  if (!tms.length || !(cfg.teamCap > 0) || tms.length > cfg.teamCap) return;
+  let failed = 0;
+  const CH = 6;
+  for (let i = 0; i < tms.length; i += CH) {
+    await Promise.all(tms.slice(i, i + CH).map(async tm => {
+      for (let att = 0; att < 2; att++) {
+        try {
+          const sc = await j(`${base}/teams/${tm.id}/schedule`);
+          tm.res = [];
+          for (const ev of sc?.events || []) {
+            const c = ev.competitions?.[0]; if (!c || !c.status?.type?.completed) continue;
+            const home = (c.competitors || []).find(x => x.homeAway === "home"), away = (c.competitors || []).find(x => x.homeAway === "away");
+            if (!home || !away || home.score?.value == null || away.score?.value == null) continue;
+            tm.res.push({ id: ev.id, d: (ev.date || "").slice(0, 10), hId: +home.id, aId: +away.id, hs: +home.score.value, as: +away.score.value });
+          }
+          return;
+        } catch (e) { if (att === 1) failed++; else await new Promise(r => setTimeout(r, 700)); }
+      }
+    }));
+    if (i + CH < tms.length) await new Promise(r => setTimeout(r, 220));
+  }
+  const seen = {}; s.results = [];
+  for (const tm of tms) for (const r of tm.res || []) if (!seen[r.id]) { seen[r.id] = 1; s.results.push(r); }
+  s.results.sort((a, b) => a.d < b.d ? -1 : 1);
+  if (failed) s.errors.push(`results: ${failed} schedule(s) failed`);
+  if (s.results.length >= 12) { if (hasLS) try { localStorage.setItem("kb_gres_" + sp, JSON.stringify({ d: S.date, res: s.results })); } catch (e) {} }
+  else if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null"); if (sv?.res?.length > s.results.length) { s.results = sv.res; s.errors.push(`results served from your saved copy (${sv.d})`); } } catch (e) {} }
+  try { s.bt = genFit(sp, s.results); } catch (e) { s.errors.push("models: " + e.message); }
+}
+async function socBoxEnsure(sub) { // real per-match player logs from game summaries (the W-BOX trick) → honest soccer prop backtests
+  const s = gSlot(sub);
+  if (s.boxReady || s.boxLoading) return;
+  s.boxLoading = true; s.boxStage = ""; s.boxErr = null;
+  try {
+    const cfg = GS_CFG[sub];
+    const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
+    let cached = null;
+    if (hasLS) try { cached = JSON.parse(localStorage.getItem("kb_gbox_" + sub) || "null"); } catch (e2) {}
+    const evs = (s.results || []).slice(-60);
+    if (!evs.length) {
+      if (cached?.logs) { s.boxLogs = cached.logs; s.boxNames = cached.names || {}; s.boxReady = true; }
+      s.boxLoading = false; renderGen(); return;
+    }
+    const key = evs[evs.length - 1].id + ":" + evs.length;
+    if (cached?.key === key && cached.logs) { s.boxLogs = cached.logs; s.boxNames = cached.names || {}; s.boxReady = true; s.boxLoading = false; renderGen(); return; }
+    const logs = {}, names = {};
+    let done = 0, failed = 0;
+    const CH = 6;
+    for (let i = 0; i < evs.length; i += CH) {
+      await Promise.all(evs.slice(i, i + CH).map(async ev => {
+        try {
+          const sm = await j(`${base}/summary?event=${ev.id}`);
+          for (const rs2 of sm?.rosters || []) for (const pl of rs2?.roster || []) {
+            const pid = +(pl.athlete?.id || 0); if (!pid || !pl.stats) continue;
+            const sv = {}; for (const x2 of pl.stats) sv[x2.name] = x2.value;
+            if (!(sv.appearances > 0)) continue;
+            (logs[pid] = logs[pid] || []).push({ d: ev.d, G: sv.totalGoals ?? 0, SH: sv.totalShots ?? 0, SOT: sv.shotsOnTarget ?? 0 });
+            names[pid] = pl.athlete?.displayName || names[pid] || "";
+          }
+        } catch (e2) { failed++; }
+        done++; s.boxStage = `${done}/${evs.length} matches`;
+      }));
+      if (i % 12 === 0) renderGen();
+      if (i + CH < evs.length) await new Promise(r => setTimeout(r, 200));
+    }
+    for (const pid in logs) logs[pid].sort((a2, b2) => a2.d < b2.d ? -1 : 1); // oldest → newest
+    s.boxLogs = logs; s.boxNames = names; s.boxReady = true; s.boxFailed = failed;
+    if (hasLS) try { localStorage.setItem("kb_gbox_" + sub, JSON.stringify({ key, d: S.date, logs, names })); } catch (e2) {}
+  } catch (e2) { s.boxErr = e2.message; }
+  s.boxLoading = false; renderGen();
+}
 async function genLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
   s.loading = true; s.errors = []; s.games = []; s.results = []; s.teams = {};
@@ -5040,28 +5389,17 @@ async function genLoad(sp) {
     const nT = Object.keys(s.teams).length;
     if (cfg.teamCap > 0 && nT > 0 && nT <= cfg.teamCap) { // full season results only for small leagues
       s.stage = "season results (every team's schedule)…"; renderGen();
+      await genFetchResults(sp);
+    }
+    // safety net: if the team list itself never arrived (hostile networks), a saved results copy still powers models & records
+    if (cfg.teamCap > 0 && (!s.bt || !s.bt.n) && hasLS) {
       try {
-        let failed = 0;
-        await Promise.all(Object.values(s.teams).map(async tm => {
-          try {
-            const sc = await j(`${base}/teams/${tm.id}/schedule`);
-            tm.res = [];
-            for (const ev of sc?.events || []) {
-              const c = ev.competitions?.[0]; if (!c || !c.status?.type?.completed) continue;
-              const home = (c.competitors || []).find(x => x.homeAway === "home"), away = (c.competitors || []).find(x => x.homeAway === "away");
-              if (!home || !away || home.score?.value == null || away.score?.value == null) continue;
-              tm.res.push({ id: ev.id, d: (ev.date || "").slice(0, 10), hId: +home.id, aId: +away.id, hs: +home.score.value, as: +away.score.value });
-            }
-          } catch (e) { failed++; }
-        }));
-        const seen = {};
-        for (const tm of Object.values(s.teams)) for (const r of tm.res || []) if (!seen[r.id]) { seen[r.id] = 1; s.results.push(r); }
-        s.results.sort((a, b) => a.d < b.d ? -1 : 1);
-        if (failed) s.errors.push(`results: ${failed} schedule(s) failed`);
-        if (s.results.length >= 30) { if (hasLS) try { localStorage.setItem("kb_gres_" + sp, JSON.stringify({ d: S.date, res: s.results })); } catch (e) {} }
-        else if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null"); if (sv?.res?.length > s.results.length) { s.results = sv.res; s.errors.push(`results served from your saved copy (${sv.d})`); } } catch (e) {} }
-      } catch (e) { s.errors.push("results: " + e.message); }
-      try { s.bt = genFit(sp, s.results); } catch (e) { s.errors.push("models: " + e.message); }
+        const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null");
+        if (sv?.res?.length >= 30) {
+          if (!s.results.length) { s.results = sv.res; if (!s.errors.some(x => /saved copy/.test(x))) s.errors.push(`results served from your saved copy (${sv.d})`); }
+          s.bt = genFit(sp, s.results);
+        }
+      } catch (e) {}
     }
   }
   s.stage = "today's games & odds…"; renderGen();
@@ -5146,8 +5484,19 @@ async function genLoad(sp) {
     s.errors.push(`network hiccup — auto-retrying in 12s (attempt ${s.autoRetry + 1} of 3, no button-pressing needed)`);
     setTimeout(() => { s.loaded = false; if (GX.cur === sp || (GS_CFG[GX.cur]?.combo || []).includes(sp)) genEnsure(sp); }, 12000);
   } else if (!noTeams) { s.autoRetry = 0; }
+  // records self-heal too: teams arrived but the season-results pass came up empty → one gentle re-run 14s later
+  if (!noTeams && cfg.teamCap > 0 && Object.keys(s.teams).length <= cfg.teamCap && (!s.bt || !s.bt.n) && (s.resRetry || 0) < 2) {
+    s.resRetry = (s.resRetry || 0) + 1;
+    setTimeout(async () => { if (s.bt?.n) return; await genFetchResults(sp); renderGen(); }, 14000);
+  }
   s.loaded = true; s.loading = false;
   renderGen();
+  // LOCKS/VALUE live on their own tabs — refresh them when a sport lands so its plays appear without a re-tap
+  try {
+    const lt = document.querySelector("#tab-locks"), vt = document.querySelector("#tab-value");
+    if (lt && lt.style.display !== "none") renderLocks();
+    if (vt && vt.style.display !== "none") renderValue();
+  } catch (e) {}
 }
 function genFit(sp, results) { // generic walk-forward: Elo + Pythag + Form-10 + consensus, spread & total sims, calibration
   const cfg = GS_CFG[sp];
@@ -5316,7 +5665,15 @@ function renderGen() {
     for (const sub of subsOf()) {
       const c3 = GS_CFG[sub], s3 = gSlot(sub), bt = s3.bt;
       if (combo) root.appendChild(el("div", "h1", `${c3.emoji} ${c3.name}`));
-      if (c3.teamCap === -1 || c3.teamCap === 0 || !bt || !bt.n) { root.appendChild(el("div", "nobets", c3.teamCap === -1 ? "UFC has no team models — nothing to backtest honestly." : !s3.results.length ? `No completed ${c3.name} games loaded yet — off-season or the season hasn't started. Models, records and truth checks light up automatically once real games exist.` : "Not enough completed games yet for a backtest.")); continue; }
+      if (c3.teamCap === -1 || c3.teamCap === 0 || !bt || !bt.n) {
+        root.appendChild(el("div", "nobets", c3.teamCap === -1 ? "UFC has no team models — nothing to backtest honestly." : !s3.results.length ? (c3.soccer ? `No completed ${c3.name} matches loaded. EPL &amp; UCL sit between seasons in summer (new seasons start Aug/Sep). MLS runs right now — its records usually just need the season-results fetch to land; use the button below.` : `No completed ${c3.name} games loaded yet — off-season or the season hasn't started. Models, records and truth checks light up automatically once real games exist.`) : "Not enough completed games yet for a backtest."));
+        if (c3.teamCap > 0 && Object.keys(s3.teams).length) {
+          const fb = el("button", null, `⟳ FETCH ${c3.name} RESULTS AGAIN`); fb.className = "btn ghost"; fb.style.margin = "0 0 14px";
+          fb.addEventListener("click", async () => { fb.disabled = true; fb.textContent = "⟳ fetching " + c3.name + " season results…"; await genFetchResults(sub); renderGen(); });
+          root.appendChild(fb);
+        }
+        continue;
+      }
       root.appendChild(el("div", "h1", `MODEL RECORDS <small>· ${bt.n} games, walk-forward${combo ? " · " + c3.name : ""}</small>`));
       const cards = [["ELO", bt.elo], ["PYTHAG", bt.pyth], ["FORM-10", bt.form], ["ALWAYS HOME", bt.home]].map(([n2, r2]) => `<div class="reccard"><div class="recname">${n2}</div><div class="recwl">${r2.w}-${r2.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(r2.w / Math.max(1, r2.w + r2.l) * 100).toFixed(1)}%</b></div></div>`);
       root.appendChild(el("div", "recgrid", cards.join("")));
@@ -5343,12 +5700,168 @@ function renderGen() {
       g2Box.innerHTML = calRowsHTML(calibrate(bt.st[g2Key].cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || "";
       root.appendChild(g2Box);
     }
+    if (cfg.soccer) {
+      // ---- PLAYER PROP MODELS on the records tab: SHOTS / SOT / GOALS backtests + truth checks in one place ----
+      const subs3 = subsOf();
+      for (const sub of subs3) { const ss = gSlot(sub); if (ss.results?.length && !ss.boxReady && !ss.boxLoading) socBoxEnsure(sub); }
+      const busy3 = subs3.some(sub => gSlot(sub).boxLoading);
+      const recStat = (hasLS && localStorage.getItem("kb_socrecstat")) || "SH";
+      const SOC_RS = [["SH", "SHOTS"], ["SOT", "SHOTS ON TARGET"], ["G", "GOALS"]];
+      root.appendChild(el("div", "h1", `PLAYER PROP MODELS <small>· engines replayed walk-forward on real match-by-match box scores — pick a prop</small>`));
+      const rsBar = el("div"); rsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+      rsBar.innerHTML = SOC_RS.map(([k2, n2]) => `<span class="fchip${recStat === k2 ? " on" : ""}" data-srs="${k2}">${n2}</span>`).join("");
+      rsBar.querySelectorAll("[data-srs]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_socrecstat", c2.dataset.srs); renderGen(); }));
+      root.appendChild(rsBar);
+      const btPlayers3 = [];
+      for (const sub of subs3) {
+        const bl = gSlot(sub).boxLogs || {};
+        for (const pid in bl) { const v2 = bl[pid].map(r2 => r2[recStat] ?? 0).reverse(); if (v2.length >= 8) btPlayers3.push({ vals: v2 }); }
+      }
+      if (busy3) {
+        const st3 = subs3.map(sub => gSlot(sub).boxLoading ? `${GS_CFG[sub].name} ${gSlot(sub).boxStage || "…"}` : null).filter(Boolean).join(" · ");
+        root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Building the match-by-match backtest — ${st3}</div>`));
+      }
+      if (btPlayers3.length >= 5) {
+        const pmKey3 = "socbox:" + recStat + ":" + btPlayers3.length;
+        GX._pmbt = GX._pmbt || {};
+        if (!GX._pmbt[pmKey3]) { try { GX._pmbt[pmKey3] = pmBacktest(btPlayers3, "count"); } catch (e2) { GX._pmbt[pmKey3] = {}; } }
+        const pmb3 = GX._pmbt[pmKey3];
+        const pmKeys3 = Object.keys(pmb3);
+        if (pmKeys3.length && pmKeys3.some(k2 => pmb3[k2].n > 0)) {
+          root.appendChild(el("div", "recgrid", pmKeys3.map(k2 => { const r2 = pmb3[k2]; const t2 = r2.w + r2.l; return `<div class="reccard"><div class="recname">${r2.name}</div><div class="recwl">${t2 ? r2.w + "-" + r2.l : "—"}</div><div class="recsub">${t2 ? `win% <b style="color:var(--txt)">${(r2.w / t2 * 100).toFixed(1)}%</b> at 60%+ calls` : "no 60%+ calls"} · ${r2.n} predictions</div></div>`; }).join("")));
+          const pmSel3 = (hasLS && localStorage.getItem("kb_pmcal_soc")) || pmKeys3[0];
+          const pmBar3 = el("div"); pmBar3.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px;";
+          pmBar3.innerHTML = pmKeys3.map(k2 => `<span class="fchip${pmSel3 === k2 ? " on" : ""}" data-pm3="${k2}">${pmb3[k2].name} (${pmb3[k2].cal.length})</span>`).join("");
+          pmBar3.querySelectorAll("[data-pm3]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_pmcal_soc", c2.dataset.pm3); renderGen(); }));
+          root.appendChild(pmBar3);
+          root.appendChild(el("div", "h1", `TRUTH CHECK <small>· ${SOC_RS.find(x => x[0] === recStat)[1].toLowerCase()} — when it says 60%, does it deliver 60%?</small>`));
+          const pmBox3 = el("div", "card");
+          const selDat3 = pmb3[pmSel3] || pmb3[pmKeys3[0]];
+          pmBox3.innerHTML = calRowsHTML(calibrate(selDat3.cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || '<div style="color:var(--dim);font-size:13px;">Not enough history yet.</div>';
+          root.appendChild(pmBox3);
+          root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">${btPlayers3.length} players' real box-score logs · reference lines = rolling median ± a step · same grading standard as every other sport. The prop tabs (SHOTS · SHOTS ON TARGET · GOALS) carry this too, next to the cards.</span>`));
+        }
+      } else if (!busy3) {
+        root.appendChild(el("div", "nobets", `No match-by-match box scores in hand yet — ${subs3.every(sub => !gSlot(sub).results?.length) ? "EPL &amp; UCL are between seasons; MLS needs its season results first (button above)" : "summaries may still be downloading or your network dropped them"}.`));
+        const rbx3 = el("button", null, "⟳ BUILD PROP BACKTEST FROM BOX SCORES"); rbx3.className = "btn ghost";
+        rbx3.addEventListener("click", () => { for (const sub of subs3) { const ss = gSlot(sub); if (ss.results?.length) { ss.boxReady = false; ss.boxLoading = false; socBoxEnsure(sub); } } renderGen(); });
+        root.appendChild(rbx3);
+      }
+    }
     return;
   }
   if (GX.view === "pstat") {
     const psList = GS_PSTATS[sp] || [];
     const ps = psList.find(p2 => p2.k === GX.pstat) || psList[0];
     if (!ps) { root.appendChild(el("div", "nobets", `${cfg.name} has no prop-model tabs.`)); return; }
+    if (cfg.soccer) {
+      root.appendChild(el("div", "h1", `${ps.n} <small>· Poisson props — the classic soccer-goals math (Maher 1982, Dixon–Coles 1997)</small>`));
+      root.appendChild(expBox("HOW THIS WORKS — 20 SECONDS", `Each card's rate comes from the player's <b>season totals ÷ appearances</b>, priced through a <b>Poisson curve</b> — the same math the original soccer-goals research used. That gives P(1+), P(2+) and over/under fair odds at every rung. And the models are held to the same standard as every other sport: the app pulls <b>real match-by-match box scores</b> from each completed game's summary and replays the engines walk-forward on them — records and a TRUTH CHECK at the bottom of this tab.`));
+      const pSubs2 = subsOf();
+      for (const sub of pSubs2) { const ss = gSlot(sub); if (!ss.pReady && !ss.pLoading && !ss.pErr) genPropsLoad(sub); if (ss.results?.length && !ss.boxReady && !ss.boxLoading) socBoxEnsure(sub); }
+      if (pSubs2.some(sub => gSlot(sub).pLoading)) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Pulling ${cfg.name} season leaders…</div>`)); return; }
+      const pErrs2 = pSubs2.map(sub => gSlot(sub).pErr ? GS_CFG[sub].name + ": " + gSlot(sub).pErr : null).filter(Boolean);
+      if (pErrs2.length === pSubs2.length && !pSubs2.some(sub => Object.keys(gSlot(sub).boxLogs || {}).length)) { root.appendChild(el("div", "nobets", `Season leaders unavailable — ${pErrs2.join(" · ")}. EPL &amp; UCL sit between seasons in summer; MLS fills in when its feed answers.`)); const rb4 = el("button", null, "RETRY"); rb4.className = "btn ghost"; rb4.addEventListener("click", () => { for (const sub of pSubs2) { const ss = gSlot(sub); ss.pReady = false; ss.pErr = null; } renderGen(); }); root.appendChild(rb4); return; }
+      if (pErrs2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Partial: ${pErrs2.join(" · ")}</span>`));
+      let arr2 = pSubs2.flatMap(sub => (gSlot(sub).pdata?.[ps.k] || []).map(x => {
+        const bl = gSlot(sub).boxLogs?.[x.id];
+        const vals = bl && bl.length >= 6 ? bl.slice(-18).map(r2 => r2[ps.k] ?? 0).reverse() : null; // most recent first
+        return { ...x, _sub: sub, vals, team: combo ? (x.team ? x.team + " · " : "") + GS_CFG[sub].name : x.team };
+      }));
+      if (!arr2.length) {
+        // no leaders answered — but box-score logs can still carry the cards (relay-proof fallback)
+        const byPid = {};
+        for (const sub of pSubs2) {
+          const ss = gSlot(sub);
+          for (const pid in ss.boxLogs || {}) {
+            const bl = ss.boxLogs[pid]; if (!bl || bl.length < 6 || byPid[pid]) continue;
+            const tot2 = bl.reduce((a2, r2) => a2 + (r2[ps.k] ?? 0), 0);
+            if (!(tot2 > 0)) continue;
+            byPid[pid] = { id: +pid, name: ss.boxNames?.[pid] || "#" + pid, team: combo ? GS_CFG[sub].name : "", hs: `https://a.espncdn.com/i/headshots/soccer/players/full/${pid}.png`,
+              lam: tot2 / bl.length, apps: bl.length, total: tot2, min: 0, rate: true, _sub: sub,
+              vals: bl.slice(-18).map(r2 => r2[ps.k] ?? 0).reverse(), grade: bl.length >= 12 ? "A" : bl.length >= 8 ? "B" : "C" };
+          }
+        }
+        arr2 = Object.values(byPid).sort((a2, b2) => b2.lam - a2.lam).slice(0, 15);
+        if (arr2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Season-leader feed didn't answer — cards below are built straight from the saved match-by-match box scores instead.</span>`));
+      }
+      if (!arr2.length) { root.appendChild(el("div", "nobets", `No ${ps.n} data with enough matches yet — check back once the season runs.`)); }
+      arr2.sort((a2, b2) => b2.lam - a2.lam);
+      if (arr2.length) root.appendChild(el("div", "subhead", `Ordered <b style="color:var(--txt)">best → worst</b> by per-match rate. P(1+) is the anytime chance — for goals that's the ANYTIME GOALSCORER market.`));
+      const sgrid = el("div", "grid wide");
+      let sRank = 0;
+      for (const p2 of arr2.slice(0, 15)) {
+        sRank++;
+        const p1 = 1 - Math.exp(-p2.lam);
+        const card = el("div", "card kcard");
+        card.innerHTML = `
+          <div class="ktop"><div class="hs big">${p2.hs ? `<img src="${p2.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
+            <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p2.name}</div>
+            <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.apps} matches</div></div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;"><div style="display:flex;gap:5px;align-items:center;"><span style="font-size:10px;font-weight:800;color:${sRank === 1 ? "var(--gold)" : "var(--dim3)"};">#${sRank}</span>${gBadge(p2.grade)}</div><div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">${p2.lam.toFixed(2)} / MATCH</div></div></div>
+          <div class="kmid">
+            <div class="kstat"><div class="v" style="color:var(--green);">${(p1 * 100).toFixed(1)}%</div><div class="l">P(1+ ${ps.k})</div></div>
+            <div class="vsep"></div>
+            <div class="kstat"><div class="v">${fmtML(probToAmerican(p1))}</div><div class="l">FAIR ${ps.k === "G" ? "ANYTIME" : "1+"}</div></div>
+            <div class="vsep"></div>
+            <div class="kstat"><div class="v" style="color:var(--dim);">${p2.total}</div><div class="l">SEASON ${ps.k}</div></div>
+            ${p2.vals ? `<div class="spacer"></div><div>${sparkSVG(p2.vals.slice(0, 10).reverse(), Math.max(0.5, Math.round(p2.lam - 0.5) + 0.5))}<div style="font-size:9px;color:var(--dim3);text-align:center;">${ps.k} BY MATCH — REAL BOX SCORES</div></div>` : ""}
+          </div>
+          ${p2.vals ? `<div class="chips" style="margin-top:6px;"><span class="chip">last 5: ${mean(p2.vals.slice(0, 5)).toFixed(2)}</span><span class="chip">${p2.vals.length} matches logged</span>${mean(p2.vals.slice(0, 5)) > p2.lam * 1.25 ? '<span class="chip green">heating up</span>' : mean(p2.vals.slice(0, 5)) < p2.lam * 0.75 ? '<span class="chip red">cooling off</span>' : ""}</div>` : ""}
+          ${whyBox([
+            ["Season production", `${p2.total} in ${p2.apps}`, "matches with an appearance"],
+            ["Per-match rate", p2.lam.toFixed(2), "the Poisson λ — everything flows from this"],
+            ["Minutes load", p2.min ? Math.round(p2.min / p2.apps) + " min/match" : "—", "low minutes = rate can mislead"],
+            ["→ P(at least one)", (p1 * 100).toFixed(1) + "%", "1 − e^(−λ), straight Poisson"],
+            ["Fair odds", fmtML(probToAmerican(p1)), "what that chance should pay"],
+          ], `Rate-based, not form-based: ESPN publishes no per-game soccer logs, so there's no last-5 trend and no honest backtest here. Compare the fair prices with your book and only take the better side of them.`)}
+          ${altBox(altRungs(L3 => 1 - poisCdf(Math.floor(L3), p2.lam), Math.max(0.5, Math.round(p2.lam - 0.5) + 0.5), 1, 3), null, `ALT ${ps.k} LINES — every rung priced`, `Poisson ladder on his ${p2.lam.toFixed(2)}-per-match rate. ${ps.k === "G" ? "2+ goals is the BRACE market — fair is usually big plus money." : "Compare with your book's " + ps.n.toLowerCase() + " menu."}`)}`;
+        sgrid.appendChild(card);
+      }
+      root.appendChild(sgrid);
+      // ---- REAL MODEL BACKTEST + TRUTH CHECK: engines replayed walk-forward on match-by-match box scores ----
+      const boxBusy = pSubs2.some(sub => gSlot(sub).boxLoading);
+      const btPlayers = [];
+      for (const sub of pSubs2) {
+        const bl = gSlot(sub).boxLogs || {};
+        for (const pid in bl) { const v2 = bl[pid].map(r2 => r2[ps.k] ?? 0).reverse(); if (v2.length >= 8) btPlayers.push({ vals: v2 }); }
+      }
+      if (boxBusy) {
+        const st2 = pSubs2.map(sub => gSlot(sub).boxLoading ? `${GS_CFG[sub].name} ${gSlot(sub).boxStage || "…"}` : null).filter(Boolean).join(" · ");
+        root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Building the real match-by-match backtest from game summaries — ${st2}</div>`));
+      }
+      if (btPlayers.length >= 5) {
+        const pmKey2 = "socbox:" + ps.k + ":" + btPlayers.length;
+        GX._pmbt = GX._pmbt || {};
+        if (!GX._pmbt[pmKey2]) { try { GX._pmbt[pmKey2] = pmBacktest(btPlayers, "count"); } catch (e2) { GX._pmbt[pmKey2] = {}; } }
+        const pmb2 = GX._pmbt[pmKey2];
+        const pmKeys2 = Object.keys(pmb2);
+        if (pmKeys2.length && pmKeys2.some(k2 => pmb2[k2].n > 0)) {
+          root.appendChild(el("div", "h1", `${ps.n} — MODEL BACKTEST <small>· engines replayed walk-forward on ${btPlayers.length} players' real match-by-match box scores</small>`));
+          root.appendChild(el("div", "recgrid", pmKeys2.map(k2 => { const r2 = pmb2[k2]; const t2 = r2.w + r2.l; return `<div class="reccard"><div class="recname">${r2.name}</div><div class="recwl">${t2 ? r2.w + "-" + r2.l : "—"}</div><div class="recsub">${t2 ? `win% <b style="color:var(--txt)">${(r2.w / t2 * 100).toFixed(1)}%</b> at 60%+ calls` : "no 60%+ calls"} · ${r2.n} predictions</div></div>`; }).join("")));
+          const pmSel2 = (hasLS && localStorage.getItem("kb_pmcal_soc")) || pmKeys2[0];
+          const pmBar2 = el("div"); pmBar2.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px;";
+          pmBar2.innerHTML = pmKeys2.map(k2 => `<span class="fchip${pmSel2 === k2 ? " on" : ""}" data-pm2="${k2}">${pmb2[k2].name} (${pmb2[k2].cal.length})</span>`).join("");
+          pmBar2.querySelectorAll("[data-pm2]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_pmcal_soc", c2.dataset.pm2); renderGen(); }));
+          root.appendChild(pmBar2);
+          root.appendChild(el("div", "h1", `TRUTH CHECK <small>· when an engine says 60% on a ${ps.n.toLowerCase()} line, does it deliver 60%?</small>`));
+          const pmBox2 = el("div", "card");
+          const selDat2 = pmb2[pmSel2] || pmb2[pmKeys2[0]];
+          pmBox2.innerHTML = calRowsHTML(calibrate(selDat2.cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || '<div style="color:var(--dim);font-size:13px;">Not enough history yet.</div>';
+          root.appendChild(pmBox2);
+          root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Reference lines = each player's rolling median ± a step (no historical book lines exist for these markets). Logs come straight from ESPN's per-game box scores — the same grading standard as every other sport in this app.</span>`));
+        }
+      } else if (!boxBusy) {
+        root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">No match-by-match box scores in hand yet ${pSubs2.every(sub => !gSlot(sub).results?.length) ? "— EPL &amp; UCL are between seasons; MLS fills in once its season results load (MODEL RECORDS tab has the fetch button)" : "— summaries may still be downloading or your network dropped them; revisit this tab to retry"}. Cards above stay honest season-rate Poisson in the meantime.</span>`));
+        const rbx = el("button", null, "⟳ BUILD BACKTEST FROM BOX SCORES"); rbx.className = "btn ghost";
+        rbx.addEventListener("click", () => { for (const sub of pSubs2) { const ss = gSlot(sub); if (ss.results?.length) { ss.boxReady = false; ss.boxLoading = false; socBoxEnsure(sub); } } renderGen(); });
+        root.appendChild(rbx);
+      }
+      const rb5 = el("button", null, "⟳ RELOAD SEASON LEADERS"); rb5.className = "btn ghost"; rb5.style.marginTop = "12px";
+      rb5.addEventListener("click", () => { for (const sub of pSubs2) { const ss = gSlot(sub); ss.pReady = false; ss.pErr = null; ss.pdata = null; } renderGen(); });
+      root.appendChild(rb5);
+      return;
+    }
     const cls = ps.cls || "big";
     const pmDefs = pmModels(cls);
     root.appendChild(el("div", "h1", `${ps.n} <small>· ${pmDefs.length} research-grounded models, backtested below</small>`));
@@ -5693,7 +6206,7 @@ if (typeof module !== "undefined" && module.exports) {
     wnbaKevRows, wnbaKevScore, evalWCore, wnbaAutoTune, WW_DEF, invPhi, coverProb, mlbTotalExp, wnbaTotalExp,
     loadPJ, savePJ, snapshotProps, gradeProps, snapshotWProps, gradeWProps, propRecAgg, propBacktest,
     wnbaBoxModel, snapshotWMl, gradeWMl, wmlRecords, loadWJ, wnbaBoxHist, wnbaBoxBacktest, wnbaKevSpread, wspkCached,
-    GS_CFG, GX, gSlot, genFit, genPredict, GS_PSTATS, genTabs, glParse, glIdx, glVals,
+    GS_CFG, GX, gSlot, genFit, genPredict, GS_PSTATS, genTabs, glParse, glIdx, glVals, genFetchResults, socBoxEnsure,
     poisCdf, ewmaMean, lognFit, median2, pmModels, pmBacktest };
 }
 </script>
