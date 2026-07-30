@@ -223,6 +223,10 @@
   .seg button{background:transparent;border:none;color:var(--dim);font-family:'Barlow';font-size:11.5px;font-weight:700;letter-spacing:.5px;padding:7px 13px;cursor:pointer;}
   .seg button.on{background:var(--blue);color:#07101f;}
   #sportSwitch{display:inline-flex;flex-wrap:wrap;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:3px;gap:3px;max-width:640px;}
+  @media (max-width: 700px){ /* phone: sports become one swipeable strip instead of a wrapping wall */
+    #sportSwitch{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;max-width:100%;}
+    #sportSwitch::-webkit-scrollbar{display:none;}
+  }
   #sportSwitch button{background:transparent;border:none;border-radius:10px;padding:7px 11px;font-family:var(--cond);font-weight:800;font-size:14px;letter-spacing:.6px;color:var(--dim);cursor:pointer;transition:all .15s;white-space:nowrap;}
   #sportSwitch button.on{background:linear-gradient(135deg,#5b9dff,#3f6fd6);color:#fff;box-shadow:0 3px 12px rgba(91,157,255,0.35);}
   @media(max-width:640px){#sportSwitch{max-width:100%;}#sportSwitch button{padding:6px 8px;font-size:12px;}}
@@ -299,6 +303,7 @@
     <div class="spacer"></div>
     <input type="date" id="datePick">
     <button class="btn" id="nextDayBtn" title="Jump to the next day the current sport plays">⏭ NEXT GAME DAY</button>
+    <button class="btn ghost" id="autoRefBtn" title="Auto-refresh every 10 minutes near first pitch and while games are live — lines move all day">⏱ AUTO</button>
     <button class="btn" id="refreshBtn">Refresh</button>
   </div>
   <div class="tabs">
@@ -334,7 +339,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v3.98";
+const BUILD = "v4.0";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -423,6 +428,37 @@ function coverProb(pHome, spread, sig) { // P(home covers "spread") from the mod
   return 1 - phi(((-spread) - mu) / sig);
 }
 function deVig(pA, pB) { if (pA == null || pB == null) return [pA, pB]; const s = pA + pB; if (s <= 0) return [pA, pB]; return [pA / s, pB / s]; }
+/* ---- TRUTH-CHECK CALIBRATION: each model's own walk-forward history teaches it how much it exaggerates.
+   Fit: the shrink k (log-loss best) so "says 60%" actually delivers ~60%. k<1 = model runs hot. ---- */
+const CALK = {}; // fitted shrink per source, refreshed whenever a backtest recomputes
+function calFitK(cal, key) {
+  const pts = [];
+  for (const c of cal || []) { const p = c[key]; if (p == null || !isFinite(p)) continue; pts.push([p, c.y ? 1 : 0]); }
+  if (pts.length < 40) return 1;
+  let best = 1, bestLL = Infinity;
+  for (let k = 0.55; k <= 1.1001; k += 0.05) {
+    let ll = 0;
+    for (const [p, y] of pts) { const q = clamp(0.5 + (p - 0.5) * k, 0.02, 0.98); ll -= y ? Math.log(q) : Math.log(1 - q); }
+    if (ll < bestLL - 1e-9) { bestLL = ll; best = k; }
+  }
+  return Math.round(best * 100) / 100;
+}
+function calApply(key, p) { const k = CALK[key]; return p == null || k == null || k === 1 ? p : clamp(0.5 + (p - 0.5) * k, 0.02, 0.98); }
+function calNote(keys) { // honest footer for modals: which shrinks are active
+  const on = keys.map(k2 => CALK[k2] != null && CALK[k2] !== 1 ? `${k2.replace(/^g:/, "").replace(/^mlb/, "")} ×${CALK[k2].toFixed(2)}` : null).filter(Boolean);
+  return on.length ? `<div style="margin-top:7px;font-size:10.5px;color:var(--dim3);">Truth-check calibration active — probabilities shrunk by each source's own history (${on.join(" · ")}).</div>` : "";
+}
+/* ---- BACKTEST-WEIGHTED CONSENSUS: models that have earned it count more ---- */
+function perfWeight(rec) {
+  const n = (rec?.w || 0) + (rec?.l || 0);
+  if (n < 40) return 1;
+  return clamp(1 + (rec.w / n - 0.5) * 6, 0.4, 1.8); // 50% season → ×1.0 · 55% → ×1.3 · 45% → ×0.7
+}
+function wMean(pairs) { // [[p, w], ...] → weighted mean
+  let s = 0, sw = 0;
+  for (const [p, w] of pairs) { if (p == null) continue; s += p * (w ?? 1); sw += (w ?? 1); }
+  return sw ? s / sw : null;
+}
 function logistic(x) { return 1 / (1 + Math.exp(-x)); }
 function phi(x) { const t = 1 / (1 + 0.2316419 * Math.abs(x)); const d = 0.3989422804 * Math.exp(-x * x / 2);
   let p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))); return x > 0 ? 1 - p : p; }
@@ -434,6 +470,18 @@ function zMap(items, getter) { const vals = items.map(getter); const m = mean(va
 function localISO(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0"); return `${y}-${m}-${dd}`; }
 function addDays(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return localISO(d); }
 const hasLS = typeof localStorage !== "undefined";
+// quota guard: when localStorage fills up, evict the biggest rebuildable caches instead of failing silently
+function kbSet(k2, v2) {
+  if (!hasLS) return false;
+  try { localStorage.setItem(k2, v2); return true; } catch (e) {
+    try {
+      const bigs = Object.keys(localStorage).filter(x => /^kb_(gbox_|gres_|hot$|wx$|ksplit$|wboxhist|gteams_)/.test(x) && x !== k2)
+        .sort((a, b) => (localStorage.getItem(b)?.length || 0) - (localStorage.getItem(a)?.length || 0));
+      for (const bk of bigs) { localStorage.removeItem(bk); try { localStorage.setItem(k2, v2); return true; } catch (e2) {} }
+    } catch (e3) {}
+    return false;
+  }
+}
 function loadWeights() {
   try { if (hasLS) { const w = JSON.parse(localStorage.getItem("kb_weights")); if (w && typeof w.wK === "number") return { ...CFG.defaultWeights, ...w }; } } catch (e) {}
   return { ...CFG.defaultWeights };
@@ -466,6 +514,10 @@ async function jFetch(url) {
   const c = new AbortController(); const t = setTimeout(() => c.abort(), 15000);
   try {
     const r = await fetch(url, { signal: c.signal });
+    if (url.includes("api.the-odds-api.com")) { // credit meter — the API reports your remaining quota on every call
+      const rem = r.headers?.get?.("x-requests-remaining");
+      if (rem != null) { S.oddsCredits = { remain: +rem, used: +(r.headers.get("x-requests-used") || 0) }; }
+    }
     if (!r.ok) throw new Error("HTTP " + r.status + " — " + url.split("?")[0].replace("https://", ""));
     return r.json();
   } catch (e) {
@@ -516,7 +568,7 @@ async function loadAll() {
   const seasonStart = `${season}-0${CFG.seasonStartMonth}-01`;
 
   const tasks = {
-    sched: j(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${S.date}&hydrate=probablePitcher,team,linescore`),
+    sched: j(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${S.date}&hydrate=probablePitcher,team,linescore,lineups`),
     hit: j(`https://statsapi.mlb.com/api/v1/teams/stats?season=${season}&group=hitting&stats=season&sportIds=1`),
     rp: j(`https://statsapi.mlb.com/api/v1/teams/stats?season=${season}&group=pitching&stats=statSplits&sitCodes=rp&sportIds=1`),
     sp: j(`https://statsapi.mlb.com/api/v1/teams/stats?season=${season}&group=pitching&stats=statSplits&sitCodes=sp&sportIds=1`),
@@ -564,6 +616,11 @@ async function loadAll() {
   if (getKey()) { await loadOddsApi().catch(e => S.errors.push("Odds API: " + e.message)); }
 
   computeAll();
+  // background signals: weather (HR carry), opponent K% splits (K props), last-7 hot form — each re-runs projections on arrival
+  S.wx = null; S.kSplits = null; S.hot = null;
+  fetchWeather().catch(() => {});
+  fetchKSplits().catch(() => {});
+  fetchHotForm().catch(() => {});
   snapshotPicks();
   snapshotProps();
   gradeProps().then(ch => { if (ch) renderRecords(); }).catch(() => {});
@@ -580,12 +637,19 @@ async function loadAll() {
 
 function parseSchedule(data) {
   const games = data?.dates?.[0]?.games || [];
-  S.games = games.map(g => ({
-    pk: g.gamePk, time: g.gameDate, state: g.status?.abstractGameState,
-    detailed: g.status?.detailedState,
-    inning: g.linescore?.currentInning ? `${g.linescore.inningState || ""} ${g.linescore.currentInning}`.trim() : null,
-    home: side(g.teams.home), away: side(g.teams.away)
-  }));
+  S.games = games.map(g => {
+    const gm = {
+      pk: g.gamePk, time: g.gameDate, state: g.status?.abstractGameState,
+      detailed: g.status?.detailedState,
+      inning: g.linescore?.currentInning ? `${g.linescore.inningState || ""} ${g.linescore.currentInning}`.trim() : null,
+      home: side(g.teams.home), away: side(g.teams.away)
+    };
+    // confirmed lineups (posted ~1-3h before first pitch) — a projection for a benched hitter is a wasted bet
+    const lu = g.lineups || {};
+    const luSet = arr => Array.isArray(arr) && arr.length >= 8 ? new Set(arr.map(x => x?.id).filter(Boolean)) : null;
+    gm.home.lineup = luSet(lu.homePlayers); gm.away.lineup = luSet(lu.awayPlayers);
+    return gm;
+  });
   function side(t) {
     return {
       id: t.team.id, name: t.team.name, abbr: t.team.abbreviation, nick: t.team.teamName || t.team.clubName,
@@ -724,7 +788,7 @@ function parseRoster(data) {
     if (!st) continue;
     const pa = num(st.plateAppearances);
     if (pa < CFG.minHitterPA) continue;
-    out.push({ id: p.id, name: p.fullName, pos: p.primaryPosition?.abbreviation || "", hr: num(st.homeRuns), pa, slg: num(st.slg), kPct: pa ? num(st.strikeOuts) / pa : 0, hits: num(st.hits), ab: num(st.atBats), avg: num(st.avg) });
+    out.push({ id: p.id, name: p.fullName, pos: p.primaryPosition?.abbreviation || "", bat: p.batSide?.code || null, hr: num(st.homeRuns), pa, slg: num(st.slg), kPct: pa ? num(st.strikeOuts) / pa : 0, hits: num(st.hits), ab: num(st.atBats), avg: num(st.avg) });
   }
   return out;
 }
@@ -1120,10 +1184,22 @@ function sharpModel(g) {
 }
 
 function computeAll() {
+  // refresh calibration shrinks + model weights from the season backtest (cached by season length + weights)
+  try {
+    const ckey = (S.seasonGames || []).length + "|" + JSON.stringify(S.weights);
+    if ((S.seasonGames || []).length && S._calc !== ckey) {
+      const bt = backtestModels();
+      CALK.mlbc = calFitK(bt.cal, "c"); CALK.mlbsp = calFitK(bt.st.sp.cal, "p"); CALK.mlbspk = calFitK(bt.st.spk.cal, "p"); CALK.mlbtot = calFitK(bt.st.tot.cal, "p");
+      S._cw = { kevin: perfWeight(bt.kevin), elo: perfWeight(bt.elo), pyth: perfWeight(bt.pyth), sharp: 1 };
+      S._calc = ckey;
+    }
+  } catch (e) {}
+  const cw = S._cw || { kevin: 1, elo: 1, pyth: 1, sharp: 1 };
   for (const g of S.games) {
     g.kevin = kevinModel(g); g.pyth = pythagModel(g); g.elo = eloModel(g); g.sharp = sharpModel(g);
-    const ps = [g.kevin.pHome, g.pyth.pHome, g.elo.pHome, g.sharp.pHome].filter(p => p != null);
-    g.consensus = ps.length ? mean(ps) : null;
+    const raw = wMean([[g.kevin.pHome, cw.kevin], [g.pyth.pHome, cw.pyth], [g.elo.pHome, cw.elo], [g.sharp.pHome, cw.sharp]]);
+    g.consensusRaw = raw;
+    g.consensus = calApply("mlbc", raw);
     const o = S.odds[g.pk];
     if (o?.mlHome != null && o?.mlAway != null) {
       const [ih] = deVig(americanToProb(o.mlHome), americanToProb(o.mlAway));
@@ -1167,7 +1243,12 @@ function projectKs(pid, oppTeamId) {
   const recentKperBF = recent.length && recent.every(l => l.bf > 0) ? mean(recent.map(l => l.k / l.bf)) : kPerBF;
   const blendK = 0.65 * kPerBF + 0.35 * recentKperBF;
   const opp = S.teams[oppTeamId]?.hit;
-  const oppMult = opp ? clamp(opp.kPct / (S.league.kPct || 0.22), 0.75, 1.3) : 1;
+  // opponent whiff rate vs THIS pitcher's handedness when the split is in (fetched daily) — else season K%
+  const hand = p.hand;
+  const splitK = hand && S.kSplits?.[oppTeamId]?.[hand];
+  const oppKPct = splitK != null ? splitK : opp?.kPct;
+  const oppMult = oppKPct != null ? clamp(oppKPct / (S.league.kPct || 0.22), 0.75, 1.3) : 1;
+  const usedSplit = splitK != null;
   let flags = [], profileBoost = 0;
   if (opp) {
     const lowOBP = opp.obp < (S.league.obp || 0.315) - 0.004;
@@ -1192,6 +1273,7 @@ function projectKs(pid, oppTeamId) {
   const cv = (kSd != null && kMean > 0) ? kSd / kMean : null;
   const grade = unpv ? "U" : cv == null ? "?" : cv <= 0.28 ? "A" : cv <= 0.4 ? "B" : cv <= 0.55 ? "C" : "D";
   const flags2 = unpv ? [`UNPROVEN (${gsN} start${gsN === 1 ? "" : "s"}) — shrunk to league rate`, ...flags] : flags;
+  if (usedSplit) flags2.push(`opp K% vs ${hand}HP`);
   const warns2 = pitcherWarnings(pid);
   if (unpv && !warns2.some(w => /UNPROVEN/.test(w))) warns2.unshift("UNPROVEN ARM — SMALL MLB SAMPLE");
   return { pid, projK, expIP: expOuts / 3, kMean, kSd, cv, grade, last: ks.slice(-10), flags: flags2, oppMult, sigma: unpv ? Math.max(kSd ?? 2.3, 2.3) : Math.max(kSd ?? 1.8, 1.5), warns: warns2, unproven: unpv };
@@ -1207,6 +1289,29 @@ function propLean(proj, line) {
 }
 
 /* ---------- HOME RUN MODEL ---------- */
+/* platoon: same-side matchups suppress hitters, opposite-side helps; switch hitters always get the good side */
+function platoonMult(bat, hand, same, opp) {
+  if (!bat || !hand) return { m: 1, tag: null };
+  if (bat === "S") return { m: opp * 0.85 + 0.15, tag: "switch" }; // most of the opposite-side edge
+  return bat === hand ? { m: same, tag: "same-side" } : { m: opp, tag: "opposite-side" };
+}
+/* hot form (last-7 real box scores) — small, capped, and graded live by the prop journal */
+function hotHitMult(id, seasonAvg) {
+  const h = hotOf(id);
+  if (!h || h.avg7 == null || h.ab7 < 15) return { m: 1, note: null };
+  return { m: clamp(1 + 0.35 * (h.avg7 - (seasonAvg || 0.25)), 0.95, 1.05), note: h.avg7 };
+}
+function hotHrMult(id) {
+  const h = hotOf(id);
+  if (!h) return { m: 1, note: null };
+  return { m: h.hr7 >= 3 ? 1.06 : h.hr7 === 2 ? 1.04 : h.hr7 === 1 ? 1.01 : 0.975, note: h.hr7 };
+}
+/* weather: temperature moves carry distance — ~+0.4% HR per °F above 70, capped, zero under a roof */
+function wxHrMult(parkTeamId) {
+  const w = S.wx?.[parkTeamId];
+  if (!w || w.dome || w.t == null) return { m: 1, t: w?.t ?? null, dome: !!w?.dome };
+  return { m: clamp(1 + 0.004 * (w.t - 70), 0.94, 1.08), t: w.t, dome: false };
+}
 function hrProject(batter, oppPitcherId, oppTeamId, parkTeamId) {
   const lgRate = S.league.hrPA || 0.031;
   const rate = (batter.hr + lgRate * CFG.hrPriorPA) / (batter.pa + CFG.hrPriorPA);
@@ -1223,9 +1328,12 @@ function hrProject(batter, oppPitcherId, oppTeamId, parkTeamId) {
   const pitchFactor = clamp((starterShare * starterHr9 + (1 - starterShare) * penHr9) / lgHr9, 0.65, 1.5);
   const pf = PARK_HR[parkTeamId] || 1.0;
   const parkAdj = 1 + (pf - 1) * 0.7;
-  const perPA = clamp(rate * pitchFactor * parkAdj, 0.001, 0.15);
+  const plat = platoonMult(batter.bat, sp?.hand, 0.92, 1.06);
+  const hot = hotHrMult(batter.id);
+  const wx = wxHrMult(parkTeamId);
+  const perPA = clamp(rate * pitchFactor * parkAdj * plat.m * hot.m * wx.m, 0.001, 0.15);
   const pHR = 1 - Math.pow(1 - perPA, CFG.hrExpPA);
-  return { pHR, fair: probToAmerican(pHR), rate, pitchFactor, parkAdj, starterHr9, starterName, perPA };
+  return { pHR, fair: probToAmerican(pHR), rate, pitchFactor, parkAdj, starterHr9, starterName, perPA, plat, hot, wx };
 }
 function computeHR() {
   const picks = [];
@@ -1234,7 +1342,8 @@ function computeHR() {
       const side = g[sideKey], opp = sideKey === "home" ? g.away : g.home;
       for (const b of (S.hitters[side.id] || [])) {
         const proj = hrProject(b, opp.pitcherId, opp.id, g.home.id);
-        picks.push({ ...b, teamId: side.id, teamAbbr: side.abbr, oppAbbr: opp.abbr, gamePk: g.pk, time: g.time, ...proj, lowPA: b.pa < 150 });
+        picks.push({ ...b, teamId: side.id, teamAbbr: side.abbr, oppAbbr: opp.abbr, gamePk: g.pk, time: g.time, ...proj, lowPA: b.pa < 150,
+          inLineup: side.lineup ? side.lineup.has(b.id) : null });
       }
     }
   }
@@ -1260,9 +1369,11 @@ function hitProject(batter, oppPitcherId, oppTeamId) {
   // strikeout interaction: a whiff-prone batter vs a high-K starter loses more hittable at-bats
   const bK = clamp(batter.kPct || 0.22, 0.05, 0.4);
   const kAdj = clamp((1 - bK * kMult) / (1 - bK), 0.85, 1.12);
-  const pAB = clamp(baseAvg * factor * kAdj, 0.12, 0.40);
+  const plat = platoonMult(batter.bat, sp?.hand, 0.965, 1.03);
+  const hot = hotHitMult(batter.id, batter.avg);
+  const pAB = clamp(baseAvg * factor * kAdj * plat.m * hot.m, 0.12, 0.40);
   const pHit = 1 - Math.pow(1 - pAB, CFG.hitExpAB);
-  return { pHit, fairHit: probToAmerican(pHit), adjAvg: pAB, starterBAA, kAdj };
+  return { pHit, fairHit: probToAmerican(pHit), adjAvg: pAB, starterBAA, kAdj, plat, hot };
 }
 function computeHits() {
   const picks = [];
@@ -1273,7 +1384,8 @@ function computeHits() {
         if (b.pa < CFG.minHitPA) continue; // regulars only — this prop is about reliability
         const proj = hitProject(b, opp.pitcherId, opp.id);
         if (!proj) continue;
-        picks.push({ ...b, teamId: side.id, teamAbbr: side.abbr, oppAbbr: opp.abbr, gamePk: g.pk, time: g.time, ...proj });
+        picks.push({ ...b, teamId: side.id, teamAbbr: side.abbr, oppAbbr: opp.abbr, gamePk: g.pk, time: g.time, ...proj,
+          inLineup: side.lineup ? side.lineup.has(b.id) : null });
       }
     }
   }
@@ -1377,9 +1489,11 @@ function snapshotPicks() {
       day[g.pk] = {
         pk: g.pk, date: S.date,
         h: { id: g.home.id, abbr: g.home.abbr }, a: { id: g.away.id, abbr: g.away.abbr },
-        mlH: S.odds[g.pk]?.mlHome ?? null, mlA: S.odds[g.pk]?.mlAway ?? null,
-        p: { kevin: g.kevin.pHome, pyth: g.pyth.pHome, elo: g.elo.pHome, sharp: g.sharp?.pHome ?? null, cons: g.consensus },
-        edgeH: g.edgeHome, edgeA: g.edgeAway, thresh: S.weights.edgeThresh,
+        // openH/A = FIRST odds ever seen (your price); mlH/A keep refreshing pre-game = last-seen ≈ closing line
+        openH: e?.openH ?? (S.odds[g.pk]?.mlHome ?? null), openA: e?.openA ?? (S.odds[g.pk]?.mlAway ?? null),
+        mlH: S.odds[g.pk]?.mlHome ?? e?.mlH ?? null, mlA: S.odds[g.pk]?.mlAway ?? e?.mlA ?? null,
+        p: e?.p ?? { kevin: g.kevin.pHome, pyth: g.pyth.pHome, elo: g.elo.pHome, sharp: g.sharp?.pHome ?? null, cons: g.consensus },
+        edgeH: e?.edgeH ?? g.edgeHome, edgeA: e?.edgeA ?? g.edgeAway, thresh: e?.thresh ?? S.weights.edgeThresh,
         locked: false, res: null
       };
     } else if (e && !e.locked) { e.locked = true; }
@@ -1422,6 +1536,20 @@ function modelRecords(jr) {
   }
   rec.firstDate = firstDate;
   return rec;
+}
+function clvReport(jr) { // Closing Line Value — the sharpest honesty metric there is: did picks beat where the market closed?
+  let n = 0, sum = 0, beat = 0;
+  for (const d of Object.keys(jr)) for (const pk of Object.keys(jr[d])) {
+    const e = jr[d][pk];
+    if (e.res == null || e.p?.cons == null) continue;
+    const pickH = e.p.cons >= 0.5;
+    const open = pickH ? (e.openH ?? e.mlH) : (e.openA ?? e.mlA);
+    const close = pickH ? e.mlH : e.mlA;
+    if (open == null || close == null || open === close) { if (open != null && close != null) { n++; } continue; }
+    const clv = (americanToProb(close) - americanToProb(open)) * 100; // + = market moved TOWARD the pick
+    n++; sum += clv; if (clv > 0) beat++;
+  }
+  return n >= 5 ? { n, avg: sum / n, beatPct: beat / n * 100 } : null;
 }
 
 /* ---------- PROP JOURNAL: every prop pick snapshotted pre-game, graded from real box scores ---------- */
@@ -1758,7 +1886,7 @@ function backtestModels() {
 /* ================================================================
    RENDER
    ================================================================ */
-function setStatus(msg, isErr) { const s = $("#status"); if (s) s.innerHTML = isErr ? `<span class="err">${msg}</span>` : msg; }
+function setStatus(msg, isErr) { const s = $("#status"); if (s) s.innerHTML = (isErr ? `<span class="err">${msg}</span>` : msg) + (S.oddsCredits?.remain != null ? ` <span style="color:var(--dim3)">· Odds API: ${S.oddsCredits.remain} credits left this month</span>` : ""); }
 function renderLoading() { $("#tab-board").innerHTML = `<div class="loadingBox"><div class="spinner"></div><div>Warming up in the bullpen — pulling games, stats &amp; DraftKings lines…</div></div>`; }
 function renderError(msg) { $("#tab-board").innerHTML = `<div style="max-width:560px;margin:60px auto;text-align:center;padding:26px;background:var(--panel2);border:1px solid #3a2530;border-radius:14px;"><div style="font-size:34px;">⚾</div><div style="font-size:16px;font-weight:700;margin:10px 0 6px;">Couldn't load the board</div><div style="font-size:13px;color:var(--dim);text-align:left;">${msg}</div></div>`; setStatus("", false); }
 function timeLabel(t) { return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
@@ -1811,7 +1939,7 @@ function bestBets() {
     }
   }
   // best home run candidates (pre-game only; by edge when book prices loaded, else by probability)
-  const hrCand = S.hrPicks.filter(p => { const g = S.games.find(x => x.pk === p.gamePk); return g && g.state === "Preview" && !p.lowPA; });
+  const hrCand = S.hrPicks.filter(p => { const g = S.games.find(x => x.pk === p.gamePk); return g && g.state === "Preview" && !p.lowPA && p.inLineup !== false; });
   hrCand.sort((a, b) => {
     const ea = S.hrOdds[a.id]?.price != null ? a.pHR - americanToProb(S.hrOdds[a.id].price) : null;
     const eb = S.hrOdds[b.id]?.price != null ? b.pHR - americanToProb(S.hrOdds[b.id].price) : null;
@@ -1829,10 +1957,10 @@ function bestBets() {
     if (!oddsOK(bo?.price ?? p.fair, stars)) continue; // HRs are big plus odds — only really good ones make the board
     hrs.push({ kind: "hr", batId: p.id, type: "HOME RUN", prob: p.pHR, sort: edge ?? p.pHR * 100, stars, edgeTxt: edge != null ? (edge >= 0 ? "+" : "") + edge.toFixed(1) + "%" : "TOP " + (p.pHR * 100).toFixed(0) + "%", teamId: p.teamId, abbr: (p.name || "").split(" ").slice(-1)[0].toUpperCase(), atVs: "vs", oppAbbr: p.oppAbbr, time: p.time, big: bo?.price != null ? fmtML(bo.price) : fmtML(p.fair), bigLbl: bo?.price != null ? "BOOK ODDS" : "FAIR ODDS", small: (p.pHR * 100).toFixed(1) + "%", smallLbl: "P(HR)" });
   }
-  // most likely to record a hit — the high-percentage play of the day
+  // most likely to record a hit — the high-percentage play of the day (confirmed-out hitters never qualify)
   const hits = [];
   const hitCap = 6;
-  const hitCand = S.hitPicks.filter(p => { const g = S.games.find(x => x.pk === p.gamePk); return g && g.state === "Preview"; });
+  const hitCand = S.hitPicks.filter(p => { const g = S.games.find(x => x.pk === p.gamePk); return g && g.state === "Preview" && p.inLineup !== false; });
   for (const p of hitCand) {
     if (hits.length >= hitCap) break;
     const bo = hitBookPrice(p.id);
@@ -1905,7 +2033,7 @@ function renderBoard() {
     if (o2.spread == null || g.consensus == null) return -1;
     const src2 = (hasLS && localStorage.getItem("kb_stsrc")) || "cons";
     const p = src2 === "kevin" ? (g.kevin?.pHome ?? g.consensus) : g.consensus;
-    const pc = coverProb(p, o2.spread, 3.9);
+    const pc = calApply(src2 === "kevin" ? "mlbspk" : "mlbsp", coverProb(p, o2.spread, 3.9));
     return pc == null ? -1 : Math.max(pc, 1 - pc);
   };
   const totConf = g => {
@@ -1913,7 +2041,7 @@ function renderBoard() {
     if (o2.total == null) return -1;
     const ex = mlbTotalExp(g);
     if (ex == null) return -1;
-    const pOv = 1 - phi((o2.total - ex) / 4.4);
+    const pOv = calApply("mlbtot", 1 - phi((o2.total - ex) / 4.4));
     return Math.max(pOv, 1 - pOv);
   };
   const sorted = [...S.games].sort((a, b) => rank(a) - rank(b) ||
@@ -2242,13 +2370,14 @@ function altBoxDiscrete(rows, title, note) { // for "k+" props (hits, HRs) — o
     ${rows.map(r => `<span class="altl">${r.lbl}</span><span class="${r.p >= 0.5 ? "fav" : "dim"}">${(r.p * 100).toFixed(1)}%</span><span class="${r.p >= 0.5 ? "fav" : "dim"}">${fmtML(probToAmerican(r.p))}</span>`).join("")}</div>
     <div class="wnote">${note}</div></div>`;
 }
-function altSpreadBox(pHome, spread, sig, hAbbr, aAbbr, step, title, note) { // alt spread ladder — each side labeled with ITS OWN number
+function altSpreadBox(pHome, spread, sig, hAbbr, aAbbr, step, title, note, calKey) { // alt spread ladder — each side labeled with ITS OWN number
   if (pHome == null || spread == null) return "";
   const rows = [];
   for (let k = -6; k <= 6; k++) {
     const s2 = Math.round((spread + k * step) * 2) / 2;
     if (rows.some(r => r.s === s2)) continue;
-    const pc = coverProb(pHome, s2, sig);
+    let pc = coverProb(pHome, s2, sig);
+    if (calKey) pc = calApply(calKey, pc);
     if (pc == null || !isFinite(pc)) continue;
     rows.push({ s: s2, pc: clamp(pc, 0.005, 0.995) });
   }
@@ -2311,14 +2440,15 @@ function stModalMLB(g, o) {
   let hSp = "", hTot = "";
   if (o.spread != null && pSrc != null) {
     const mu = invPhi(clamp(pSrc, 0.03, 0.97)) * 3.9;
-    const pc = coverProb(pSrc, o.spread, 3.9);
+    const spCalK = src === "kevin" ? "mlbspk" : "mlbsp";
+    const pc = calApply(spCalK, coverProb(pSrc, o.spread, 3.9));
     hSp = stHead("RUN LINE — how the call is made") + ST_SRC_TOGGLE(src) +
       stRow2(`${src === "kevin" ? "Kevin's Model" : "Models'"} win probability (${g.home.abbr})`, fmtPct(pSrc)) +
       stRow2("→ expected victory margin (bell curve, ±3.9 runs)", (mu >= 0 ? "+" : "") + mu.toFixed(2) + " runs") +
       stRow2("Book run line", `${g.home.abbr} ${o.spread > 0 ? "+" : ""}${o.spread}`) +
       stRow2(`P(${g.home.abbr} ${o.spread > 0 ? "+" : ""}${o.spread} covers)`, fmtPct(pc)) +
       stRow2(`P(${g.away.abbr} ${-o.spread > 0 ? "+" : ""}${-o.spread} covers)`, fmtPct(1 - pc)) +
-      altSpreadBox(pSrc, o.spread, 3.9, g.home.abbr, g.away.abbr, 1, "ALT RUN LINES — every rung priced");
+      altSpreadBox(pSrc, o.spread, 3.9, g.home.abbr, g.away.abbr, 1, "ALT RUN LINES — every rung priced", null, spCalK);
   }
   if (o.total != null && dh && da && dh.gp >= 15 && da.gp >= 15) {
     const rpgLive = id => { const t2 = S.teams[id]?.daily; return t2 && t2.gp >= 5 ? t2.rs / t2.gp : 4.5; };
@@ -2331,8 +2461,8 @@ function stModalMLB(g, o) {
       stRow2(`Starter nudges (grades ${qH.toFixed(2)} / ${qA.toFixed(2)})`, "each side ×(1 − 0.05·grade)") +
       stRow2("Model total", exp2 != null ? exp2.toFixed(2) + " runs" : "—") +
       stRow2("Book total", String(o.total)) +
-      (exp2 != null ? stRow2(`P(OVER ${o.total}) — totals swing ±4.4 runs`, fmtPct(1 - phi((o.total - exp2) / 4.4))) +
-        altBox(altRungs(L2 => 1 - phi((L2 - exp2) / 4.4), o.total, 1, 3), o.total, "ALT TOTALS — every rung priced", `Bell curve centered on the model's ${exp2.toFixed(2)}-run total, width ±4.4. Compare with your book's alternate totals menu — a rung is only a bet when the book beats fair.`) : "");
+      (exp2 != null ? stRow2(`P(OVER ${o.total}) — totals swing ±4.4 runs`, fmtPct(calApply("mlbtot", 1 - phi((o.total - exp2) / 4.4)))) +
+        altBox(altRungs(L2 => calApply("mlbtot", 1 - phi((L2 - exp2) / 4.4)), o.total, 1, 3), o.total, "ALT TOTALS — every rung priced", `Bell curve centered on the model's ${exp2.toFixed(2)}-run total, width ±4.4. Compare with your book's alternate totals menu — a rung is only a bet when the book beats fair.`) : "");
   } else if (o.total != null) {
     hTot = stHead("TOTAL") + `<div style="font-size:12px;color:var(--dim);">Needs 15+ games played by both teams.</div>`;
   }
@@ -2341,7 +2471,7 @@ function stModalMLB(g, o) {
     const b = backtestModels().st;
     rec = `<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line3);font-size:11.5px;color:var(--dim);line-height:1.6;">Season backtest (walk-forward, 57%+-confidence calls): <b style="color:var(--txt)">RUN LINE (consensus) ${b.sp.w}-${b.sp.l}</b> · <b style="color:var(--txt)">RUN LINE (Kevin's) ${b.spk.w}-${b.spk.l}</b> · <b style="color:var(--txt)">TOTALS ${b.tot.w}-${b.tot.l}</b>. Full records &amp; TRUTH CHECK live on the RECORDS tab.</div>`;
   } catch (e) {}
-  stModal(`SPREAD &amp; TOTAL — ${g.away.abbr} @ ${g.home.abbr}`, hSp + hTot + rec);
+  stModal(`SPREAD &amp; TOTAL — ${g.away.abbr} @ ${g.home.abbr}`, hSp + hTot + rec + calNote(["mlbsp", "mlbspk", "mlbtot", "mlbc"]));
 }
 function stModalW(g) {
   S._stReopen = () => stModalW(g);
@@ -2350,14 +2480,14 @@ function stModalW(g) {
   let hSp = "", hTot = "";
   if (g.spread != null && wpSrc != null) {
     const mu = invPhi(clamp(wpSrc, 0.03, 0.97)) * 11.5;
-    const pc = coverProb(wpSrc, g.spread, 11.5);
+    const pc = calApply("wsp", coverProb(wpSrc, g.spread, 11.5));
     hSp = stHead("SPREAD — how the call is made") + ST_SRC_TOGGLE(src) +
       stRow2(`${src === "kevin" ? "Kevin's W" : "Models'"} win probability (${g.home.abbr})`, fmtPct(wpSrc)) +
       stRow2("→ expected margin (bell curve, ±11.5 pts)", (mu >= 0 ? "+" : "") + mu.toFixed(1) + " pts") +
       stRow2("Book spread", `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}`) +
       stRow2(`P(${g.home.abbr} covers)`, fmtPct(pc)) +
       stRow2(`P(${g.away.abbr} covers)`, fmtPct(1 - pc)) +
-      altSpreadBox(wpSrc, g.spread, 11.5, g.home.abbr, g.away.abbr, 2, "ALT SPREADS — every rung priced");
+      altSpreadBox(wpSrc, g.spread, 11.5, g.home.abbr, g.away.abbr, 2, "ALT SPREADS — every rung priced", null, "wsp");
   }
   const c = WS.state?.cum, ch = c?.[g.home.id], ca = c?.[g.away.id];
   if (g.total != null && ch?.gp >= 8 && ca?.gp >= 8) {
@@ -2369,8 +2499,8 @@ function stModalW(g) {
       stRow2(`${g.away.abbr} offense vs ${g.home.abbr} defense`, "same formula") +
       stRow2("Model total", exp2 != null ? exp2.toFixed(1) + " pts" : "—") +
       stRow2("Book total", String(g.total)) +
-      (exp2 != null ? stRow2(`P(OVER ${g.total}) — totals swing ±14.5 pts`, fmtPct(1 - phi((g.total - exp2) / 14.5))) +
-        altBox(altRungs(L2 => 1 - phi((L2 - exp2) / 14.5), g.total, 2, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve centered on the model's ${exp2.toFixed(1)}-point total, width ±14.5. Compare with your book's alternate totals — bet a rung only when the book beats fair.`) : "");
+      (exp2 != null ? stRow2(`P(OVER ${g.total}) — totals swing ±14.5 pts`, fmtPct(calApply("wtot", 1 - phi((g.total - exp2) / 14.5)))) +
+        altBox(altRungs(L2 => calApply("wtot", 1 - phi((L2 - exp2) / 14.5)), g.total, 2, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve centered on the model's ${exp2.toFixed(1)}-point total, width ±14.5. Compare with your book's alternate totals — bet a rung only when the book beats fair.`) : "");
   } else if (g.total != null) {
     hTot = stHead("TOTAL") + `<div style="font-size:12px;color:var(--dim);">Needs 8+ games played by both teams.</div>`;
   }
@@ -2381,7 +2511,7 @@ function stModalW(g) {
     try { const ks = wspkCached(); if (ks.n) kevTxt = ` · <b style="color:var(--txt)">SPREAD (Kevin's W) ${ks.w}-${ks.l}</b>`; } catch (e) {}
     rec = `<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line3);font-size:11.5px;color:var(--dim);line-height:1.6;">Season backtest (walk-forward, 57%+-confidence calls): <b style="color:var(--txt)">SPREAD (consensus) ${b.sp.w}-${b.sp.l}</b>${kevTxt} · <b style="color:var(--txt)">TOTALS ${b.tot.w}-${b.tot.l}</b>. Full records &amp; TRUTH CHECK live on MODEL RECORDS.</div>`;
   }
-  stModal(`SPREAD &amp; TOTAL — ${g.away.abbr} @ ${g.home.abbr}`, hSp + hTot + rec);
+  stModal(`SPREAD &amp; TOTAL — ${g.away.abbr} @ ${g.home.abbr}`, hSp + hTot + rec + calNote(["wsp", "wtot", "wc"]));
 }
 
 /* ---------- STRIKEOUTS TAB ---------- */
@@ -2529,6 +2659,85 @@ function kCard(r, manual) {
   return card;
 }
 
+/* ---------- WEATHER: game-time temperature per open-air park (Open-Meteo, day-cached) ---------- */
+const PARK_GEO = { // [lat, lon, dome] — dome/retractable roofs zero the temperature effect (roof state unknowable)
+  108: [33.800, -117.883, 0], 109: [33.445, -112.067, 1], 110: [39.284, -76.622, 0], 111: [42.346, -71.097, 0],
+  112: [41.948, -87.655, 0], 113: [39.097, -84.507, 0], 114: [41.496, -81.685, 0], 115: [39.756, -104.994, 0],
+  116: [42.339, -83.049, 0], 117: [29.757, -95.356, 1], 118: [39.051, -94.480, 0], 119: [34.074, -118.240, 0],
+  120: [38.873, -77.007, 0], 121: [40.757, -73.846, 0], 133: [38.580, -121.513, 0], 134: [40.447, -80.006, 0],
+  135: [32.707, -117.157, 0], 136: [47.591, -122.332, 1], 137: [37.778, -122.389, 0], 138: [38.622, -90.193, 0],
+  139: [27.768, -82.653, 1], 140: [32.747, -97.081, 1], 141: [43.641, -79.389, 1], 142: [44.982, -93.278, 0],
+  143: [39.906, -75.166, 0], 144: [33.891, -84.468, 0], 145: [41.830, -87.634, 0], 146: [25.778, -80.220, 1],
+  147: [40.829, -73.926, 0], 158: [43.028, -87.971, 1]
+};
+async function fetchWeather() {
+  if (S._wxBusy || S.wx) return;
+  if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_wx") || "null"); if (sv?.d === S.date && sv.wx) { S.wx = sv.wx; wxRecompute(); return; } } catch (e) {} }
+  const parks = [...new Set((S.games || []).map(g => g.home.id))].filter(id => PARK_GEO[id]);
+  if (!parks.length) return;
+  S._wxBusy = true;
+  try {
+    const lats = parks.map(id => PARK_GEO[id][0]).join(","), lons = parks.map(id => PARK_GEO[id][1]).join(",");
+    const d2 = await j(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=3&timezone=UTC`);
+    const list = Array.isArray(d2) ? d2 : [d2];
+    const wx = {};
+    parks.forEach((id, i) => {
+      const h2 = list[i]?.hourly; if (!h2?.time) { wx[id] = { t: null, dome: !!PARK_GEO[id][2] }; return; }
+      const g = (S.games || []).find(x => x.home.id === id);
+      const iso = (g?.time || "").slice(0, 13); // match to the game's UTC hour
+      let idx = h2.time.findIndex(t2 => t2.slice(0, 13) === iso);
+      if (idx < 0) idx = Math.min(h2.time.length - 1, 20);
+      wx[id] = { t: h2.temperature_2m?.[idx] ?? null, wind: h2.wind_speed_10m?.[idx] ?? null, dome: !!PARK_GEO[id][2] };
+    });
+    S.wx = wx;
+    if (hasLS) try { kbSet("kb_wx", JSON.stringify({ d: S.date, wx })); } catch (e) {}
+  } catch (e) { S.wxErr = e.message; }
+  S._wxBusy = false;
+  wxRecompute();
+}
+/* ---------- OPPONENT K% SPLITS vs L/R pitching (statsapi statSplits, day-cached, chunked) ---------- */
+async function fetchKSplits() {
+  if (S._ksBusy || S.kSplits) return;
+  if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_ksplit") || "null"); if (sv?.d === S.date && sv.ks) { S.kSplits = sv.ks; wxRecompute(); return; } } catch (e) {} }
+  const ids = [...new Set((S.games || []).flatMap(g => [g.home.id, g.away.id]))];
+  if (!ids.length) return;
+  S._ksBusy = true;
+  const season = S.date.slice(0, 4);
+  const ks = {};
+  try {
+    for (let i = 0; i < ids.length; i += 6) {
+      await Promise.all(ids.slice(i, i + 6).map(async id => {
+        try {
+          const d2 = await j(`https://statsapi.mlb.com/api/v1/teams/${id}/stats?stats=statSplits&group=hitting&sitCodes=vl,vr&season=${season}`);
+          for (const sp2 of d2?.stats?.[0]?.splits || []) {
+            const code = sp2.split?.code, st2 = sp2.stat;
+            if (!code || !st2) continue;
+            const pa2 = num(st2.plateAppearances);
+            if (pa2 < 200) continue;
+            (ks[id] = ks[id] || {})[code === "vl" ? "L" : "R"] = num(st2.strikeOuts) / pa2;
+          }
+        } catch (e) {}
+      }));
+      if (i + 6 < ids.length) await new Promise(r => setTimeout(r, 150));
+    }
+    if (Object.keys(ks).length) {
+      S.kSplits = ks;
+      if (hasLS) try { kbSet("kb_ksplit", JSON.stringify({ d: S.date, ks })); } catch (e) {}
+    }
+  } catch (e) {}
+  S._ksBusy = false;
+  wxRecompute();
+}
+function wxRecompute() { // any late-arriving signal (weather, hot form, K splits) re-runs projections + visible tabs
+  try {
+    computeAll();
+    const vis = id => { const t2 = document.querySelector("#tab-" + id); return t2 && t2.style.display !== "none"; };
+    if (vis("board")) renderBoard();
+    if (vis("ks")) renderKs();
+    if (vis("hits")) renderHits();
+    if (vis("hr")) renderHR();
+  } catch (e) {}
+}
 /* ---------- HOT FORM: last-7-games log pull for every projected hitter (day-cached, chunked) ---------- */
 async function fetchHotForm() {
   if (S._hotBusy || S.hot) return;
@@ -2554,10 +2763,10 @@ async function fetchHotForm() {
       if (i + 40 < ids.length) await new Promise(r => setTimeout(r, 180));
     }
     S.hot = hot;
-    if (hasLS) try { localStorage.setItem("kb_hot", JSON.stringify({ d: S.date, hot })); } catch (e) {}
+    if (hasLS) try { kbSet("kb_hot", JSON.stringify({ d: S.date, hot })); } catch (e) {}
   } catch (e) { S.hotErr = e.message; }
   S._hotBusy = false;
-  try { renderHits(); renderHR(); } catch (e) {}
+  wxRecompute(); // hot form feeds the projections (capped ±5%) — re-run them
 }
 const hotOf = id => S.hot?.[id] || null;
 /* ---------- HOME RUNS TAB ---------- */
@@ -2568,7 +2777,9 @@ function renderHR() {
   const opts = [`<option value="all">All games</option>`].concat(S.games.map(g => `<option value="${g.pk}" ${String(S.hrFilter) === String(g.pk) ? "selected" : ""}>${g.away.abbr} @ ${g.home.abbr}</option>`)).join("");
   root.appendChild(el("div", "subhead", `Anytime-HR probability per hitter: shrunk HR-rate × opposing pitching (starter share by his real innings + bullpen) × park, over ~4 plate appearances. Compare FAIR ODDS to your book's anytime-HR price — value = book pays more than fair. <select id="hrFilter" style="margin-left:8px;">${opts}</select> <button class="btn ghost" id="fetchHrBtn" style="margin-left:6px;">Fetch book prices (Odds API)</button>`));
   const stMap = {}; for (const g of S.games) stMap[g.pk] = g.state !== "Preview";
-  const pool = S.hrPicks.filter(p => S.hrFilter === "all" || String(p.gamePk) === String(S.hrFilter));
+  const pool = S.hrPicks.filter(p => (S.hrFilter === "all" || String(p.gamePk) === String(S.hrFilter)) && p.inLineup !== false);
+  const luDropHR = S.hrPicks.filter(p => p.inLineup === false).length;
+  if (luDropHR) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">✓ Confirmed lineups in — ${luDropHR} hitters not in tonight's lineups were dropped (betting a benched bat is a donation).</span>`));
   const rSortK = (hasLS && localStorage.getItem("kb_hrsort")) || "likely";
   const rsBar = el("div");
   rsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
@@ -2631,7 +2842,9 @@ function renderHits() {
   const opts = [`<option value="all">All games</option>`].concat(S.games.map(g => `<option value="${g.pk}" ${String(S.hitFilter) === String(g.pk) ? "selected" : ""}>${g.away.abbr} @ ${g.home.abbr}</option>`)).join("");
   root.appendChild(el("div", "subhead", `Chance of at least one hit tonight — shrunk AVG × opposing pitching (starter's innings share + bullpen) × strikeout matchup, over ~${CFG.hitExpAB} ABs. Regulars (${CFG.minHitPA}+ PA) only. <b style="color:var(--txt)">BET only when the book pays lighter than fair</b> — type your book's "to record a hit" price into a card, or fetch prices with an Odds API key. <select id="hitFilter" style="margin-left:8px;">${opts}</select> <button class="btn ghost" id="fetchHitBtn" style="margin-left:6px;">Fetch book prices (Odds API)</button>`));
   const stMap = {}; for (const g of S.games) stMap[g.pk] = g.state !== "Preview";
-  const hpool = S.hitPicks.filter(p => S.hitFilter === "all" || String(p.gamePk) === String(S.hitFilter));
+  const hpool = S.hitPicks.filter(p => (S.hitFilter === "all" || String(p.gamePk) === String(S.hitFilter)) && p.inLineup !== false);
+  const luDropH = S.hitPicks.filter(p => p.inLineup === false).length;
+  if (luDropH) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">✓ Confirmed lineups in — ${luDropH} hitters not in tonight's lineups were dropped.</span>`));
   const hSortK = (hasLS && localStorage.getItem("kb_hitsort")) || "value";
   const hsBar = el("div");
   hsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
@@ -2725,6 +2938,8 @@ function hitCard(p) {
       <span class="chip ${p.starterBAA > (S.league.avg || 0.245) * 1.04 ? "green" : ""}">opp starter allows ${p.starterBAA ? p.starterBAA.toFixed(3).replace(/^0/, "") : "—"} AVG</span>
       <span class="chip ${p.kAdj != null && p.kAdj < 0.95 ? "red" : ""}">K matchup ×${p.kAdj != null ? p.kAdj.toFixed(2) : "1.00"}</span>
       ${(() => { const h2 = hotOf(p.id); if (!h2 || h2.avg7 == null || h2.ab7 < 8) return ""; return `<span class="chip ${h2.avg7 >= 0.35 ? "green" : h2.avg7 <= 0.18 ? "red" : ""}">${h2.avg7 >= 0.35 ? "🔥 " : ""}last 7: ${h2.avg7.toFixed(3).replace(/^0/, "")} (${h2.h7}-for-${h2.ab7})</span>${h2.streak >= 4 ? `<span class="chip green">${h2.streak}-game hit streak</span>` : ""}`; })()}
+      ${p.plat?.tag === "opposite-side" ? '<span class="chip green">platoon ✓</span>' : p.plat?.tag === "same-side" ? '<span class="chip red">platoon ✗</span>' : ""}
+      ${p.inLineup === true ? '<span class="chip green">✓ in lineup</span>' : ""}
       ${verdict}
       <span style="margin-left:auto;text-align:right;align-self:flex-end;">
         <span class="lbl" style="display:block;">BOOK</span>
@@ -2735,6 +2950,9 @@ function hitCard(p) {
       ["His real hitting", (p.avg ? p.avg.toFixed(3).replace(/^0/, "") : "—") + ` on ${p.ab} AB`, "steadied toward league avg so hot streaks don't fool it"],
       ["Opposing starter", (p.starterBAA ? p.starterBAA.toFixed(3).replace(/^0/, "") : "—") + " BAA", `hitters bat that vs him · league ${(S.league.avg || 0.245).toFixed(3).replace(/^0/, "")}`],
       ["Strikeout matchup", "×" + (p.kAdj != null ? p.kAdj.toFixed(2) : "1.00"), p.kAdj != null && p.kAdj < 0.97 ? "high-K arm eats hittable at-bats" : "no whiff problem tonight"],
+      p.plat?.tag ? ["Platoon", "×" + p.plat.m.toFixed(2), p.plat.tag + " matchup (bat vs pitcher hand)"] : null,
+      p.hot?.note != null ? ["Hot form (last 7)", "×" + p.hot.m.toFixed(2), `hitting ${p.hot.note.toFixed(3).replace(/^0/, "")} lately — capped ±5%, graded live by the journal`] : null,
+      p.inLineup === true ? ["Lineup", "✓ CONFIRMED", "he's in tonight's posted lineup"] : null,
       ["→ Per-at-bat hit chance", p.adjAvg.toFixed(3).replace(/^0/, ""), "his shrunk AVG × pitching × K matchup"],
       ["At-bats expected", "~" + CFG.hitExpAB, "a regular's typical night"],
       [`→ P(at least one hit)`, (p.pHit * 100).toFixed(1) + "%", `1 − (miss every AB) = 1 − (1−${p.adjAvg.toFixed(3).replace(/^0/, "")})^${CFG.hitExpAB}`],
@@ -2786,6 +3004,9 @@ function hrCard(p) {
       <span class="chip ${parkPct > 3 ? "gold" : parkPct < -3 ? "red" : ""}">park ${parkPct >= 0 ? "+" : ""}${parkPct}%</span>
       <span class="chip">pitch factor ×${p.pitchFactor.toFixed(2)}</span>
       ${(() => { const h2 = hotOf(p.id); if (!h2) return ""; return h2.hr7 >= 1 ? `<span class="chip ${h2.hr7 >= 2 ? "green" : ""}">${h2.hr7 >= 2 ? "🔥 " : ""}${h2.hr7} HR last 7</span>` : ""; })()}
+      ${p.plat?.tag === "opposite-side" ? '<span class="chip green">platoon ✓</span>' : p.plat?.tag === "same-side" ? '<span class="chip red">platoon ✗</span>' : ""}
+      ${p.wx && !p.wx.dome && p.wx.t != null && p.wx.t >= 82 ? `<span class="chip gold">${Math.round(p.wx.t)}°F — carries</span>` : ""}
+      ${p.inLineup === true ? '<span class="chip green">✓ in lineup</span>' : ""}
       ${edgeTxt}
       <span style="margin-left:auto;text-align:right;align-self:flex-end;">
         <span class="lbl" style="display:block;">BOOK</span>
@@ -2796,6 +3017,10 @@ function hrCard(p) {
       ["His raw power", `${p.hr} HR in ${p.pa} PA`, `shrunk to ${(p.rate * 100).toFixed(1)}% per PA so a hot week can't inflate it`],
       ["Tonight's pitching", "×" + p.pitchFactor.toFixed(2), `${p.starterName} allows ${p.starterHr9.toFixed(2)} HR/9 + the bullpen's share`],
       ["The ballpark", "×" + p.parkAdj.toFixed(2), (parkPct >= 0 ? "+" : "") + parkPct + "% homer-friendly vs neutral"],
+      p.plat?.tag ? ["Platoon", "×" + p.plat.m.toFixed(2), p.plat.tag + " — power swings hardest with the platoon edge"] : null,
+      p.hot?.note != null && p.hot.m !== 1 ? ["Hot form (last 7)", "×" + p.hot.m.toFixed(2), `${p.hot.note} HR this week — capped, graded live by the journal`] : null,
+      p.wx && !p.wx.dome && p.wx.t != null ? ["Weather", "×" + p.wx.m.toFixed(2), `${Math.round(p.wx.t)}°F at first pitch — warm air carries the ball (~+0.4%/°F over 70)`] : (p.wx?.dome ? ["Weather", "×1.00", "roof — temperature zeroed"] : null),
+      p.inLineup === true ? ["Lineup", "✓ CONFIRMED", "he's in tonight's posted lineup"] : null,
       ["→ Per-PA homer chance", (p.perPA * 100).toFixed(2) + "%", "power × pitching × park"],
       ["Plate appearances", "~" + CFG.hrExpPA, "his typical night"],
       ["→ P(home run tonight)", (p.pHR * 100).toFixed(1) + "%", `1 − (no HR all night) = 1 − (1−${(p.perPA * 100).toFixed(2)}%)^${CFG.hrExpPA}`],
@@ -2886,6 +3111,14 @@ function renderRecords() {
   const anyPending = ["kevin", "pyth", "elo", "cons", "best"].some(m => rec[m].pending > 0);
   root.appendChild(el("div", "subhead",
     `Every time you open the app before games start, it snapshots each model's pick and the odds. Once games go final, picks grade automatically${rec.firstDate ? ` — tracking since <b style="color:var(--txt)">${rec.firstDate}</b>` : ""}. Changing your weights only affects future snapshots, so this record is honest.`));
+  const clv = clvReport(jr);
+  if (clv) {
+    root.appendChild(el("div", "h1", `CLOSING LINE VALUE <small>· the sharpest test there is — do picks beat where the market closes?</small>`));
+    root.appendChild(el("div", "recgrid",
+      `<div class="reccard ${clv.avg > 0 ? "hero" : ""}"><div class="recname">AVG CLV</div><div class="recwl" style="color:${clv.avg > 0 ? "var(--green)" : "var(--red)"}">${clv.avg >= 0 ? "+" : ""}${clv.avg.toFixed(2)}%</div><div class="recsub">implied-probability move toward the pick, first-seen → last pre-game price</div></div>` +
+      `<div class="reccard"><div class="recname">BEAT THE CLOSE</div><div class="recwl">${clv.beatPct.toFixed(0)}%</div><div class="recsub">${clv.n} graded picks with tracked lines</div></div>`));
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Positive CLV means the market moved toward the consensus pick after snapshot — the one stat that stays meaningful even through short-term win/loss noise. ("Close" = the last price seen before first pitch on your refreshes.)</span>`));
+  }
   if (anyGraded || anyPending) {
     root.appendChild(el("div", "recgrid", [
       recCard("KEVIN'S MODEL", rec.kevin),
@@ -3682,6 +3915,10 @@ function wnbaFitModels() {
     sharp = best;
   }
   WS.sharp = sharp; WS.bt = bt; WS.state = { elo, cum, hist };
+  try { // truth-check calibration + earned model weights, from this very backtest
+    CALK.wc = calFitK(bt.cal, "c"); CALK.wsp = calFitK(bt.st.sp.cal, "p"); CALK.wtot = calFitK(bt.st.tot.cal, "p");
+    WS._cw = { e: perfWeight(bt.elo), py: perfWeight(bt.pyth), f: perfWeight(bt.form) };
+  } catch (e) {}
 }
 function wnbaPredict(g) {
   const st = WS.state; if (!st) return;
@@ -3714,8 +3951,10 @@ function wnbaPredict(g) {
   let pB = null;
   try { pB = wnbaBoxModel(g); } catch (e) {}
   g.mElo = pE; g.mPyth = pP; g.mForm = pF; g.mSharp = pS; g.mKev = pK; g.mBox = pB;
-  const ps = [pE, pP, pF, pS, pK, pB].filter(p => p != null);
-  g.cons = ps.length ? mean(ps) : null;
+  const wcw = WS._cw || {};
+  const raw = wMean([[pE, wcw.e], [pP, wcw.py], [pF, wcw.f], [pS, 1], [pK, 1], [pB, 1]]);
+  g.consRaw = raw;
+  g.cons = calApply("wc", raw);
   if (g.mlHome != null && g.mlAway != null && g.cons != null) {
     const [ih] = deVig(americanToProb(g.mlHome), americanToProb(g.mlAway));
     g.impl = ih; g.edgeH = (g.cons - ih) * 100; g.edgeA = -g.edgeH;
@@ -4304,7 +4543,7 @@ function collectValue() {
       const mp = sideKey === "home" ? g.consensus : 1 - g.consensus;
       const ip = sideKey === "home" ? g.implHome : 1 - g.implHome;
       const vsd = p => p == null ? null : (sideKey === "home" ? p : 1 - p);
-      out.push({ sport: "⚾ MLB", type: "MONEYLINE", edge, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (sideKey === "home" ? " vs " : " @ ") + opp.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${(ip * 100).toFixed(1)}%`, time: g.time, go: () => { setSport("mlb"); },
+      out.push({ sport: "⚾ MLB", type: "MONEYLINE", edge, prob: mp, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: side.abbr + (sideKey === "home" ? " vs " : " @ ") + opp.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${(ip * 100).toFixed(1)}%`, time: g.time, go: () => { setSport("mlb"); },
         info: [
           ["Kevin's Model", vsd(g.kevin?.pHome) != null ? fmtPct(vsd(g.kevin.pHome)) : "—"],
           ["Pythag + Log5", vsd(g.pyth?.pHome) != null ? fmtPct(vsd(g.pyth.pHome)) : "—"],
@@ -4327,7 +4566,7 @@ function collectValue() {
       const [io, iu] = deVig(americanToProb(pr.overPrice), americanToProb(pr.underPrice));
       const edge = (lean.lean === "UNDER" ? (1 - lean.pOver) - iu : lean.pOver - io) * 100;
       if (edge < 1) continue;
-      out.push({ sport: "⚾ MLB", type: "K PROP", edge, odds: lean.lean === "OVER" ? pr.overPrice : pr.underPrice, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); },
+      out.push({ sport: "⚾ MLB", type: "K PROP", edge, prob: lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver, odds: lean.lean === "OVER" ? pr.overPrice : pr.underPrice, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); },
         info: [
           ["Projected Ks", proj.projK.toFixed(1)],
           ["Line", String(pr.line)],
@@ -4344,7 +4583,7 @@ function collectValue() {
     const bo = hitBookPrice(p.id); if (!bo || !isFinite(bo.price)) continue;
     const edge = (p.pHit - americanToProb(bo.price)) * 100;
     if (edge < 1 || !oddsOK(bo.price, 2)) continue;
-    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); },
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, prob: p.pHit, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); },
       info: [
         ["Chance of 1+ hit", fmtPct(p.pHit), "var(--green)"],
         ["Fair odds", fmtML(p.fairHit)],
@@ -4360,7 +4599,7 @@ function collectValue() {
     const bo = S.hrOdds[p.id]; if (!bo || bo.price == null) continue;
     const edge = (p.pHR - americanToProb(bo.price)) * 100;
     if (edge < 2) continue;
-    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); },
+    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, prob: p.pHR, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); },
       info: [
         ["Chance to homer", fmtPct(p.pHR), "var(--green)"],
         ["Fair odds", fmtML(p.fair)],
@@ -4380,7 +4619,7 @@ function collectValue() {
       if (!oddsOK(ml, 2)) continue;
       const mp = homeSide ? g.cons : 1 - g.cons;
       const wv = p => p == null ? null : (homeSide ? p : 1 - p);
-      out.push({ sport: "🏀 WNBA", type: "MONEYLINE", edge, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${((homeSide ? g.impl : 1 - g.impl) * 100).toFixed(1)}%`, time: g.date, go: () => { setSport("wnba"); },
+      out.push({ sport: "🏀 WNBA", type: "MONEYLINE", edge, prob: mp, odds: ml, big: fmtML(ml), bigLbl: "MONEYLINE", label: homeSide ? g.home.abbr + " vs " + g.away.abbr : g.away.abbr + " @ " + g.home.abbr, sub: `model ${(mp * 100).toFixed(1)}% vs market ${((homeSide ? g.impl : 1 - g.impl) * 100).toFixed(1)}%`, time: g.date, go: () => { setSport("wnba"); },
         info: [
           ["Kevin's W", wv(g.mKev) != null ? fmtPct(wv(g.mKev)) : "—"],
           ["W-Elo", wv(g.mElo) != null ? fmtPct(wv(g.mElo)) : "—"],
@@ -4401,7 +4640,7 @@ function collectValue() {
       const pOver = 1 - phi((bo.line - pr.proj) / pr.sigma);
       const edge = (pOver - americanToProb(bo.over)) * 100;
       if (edge < 1 || !oddsOK(bo.over, 2)) continue;
-      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, odds: bo.over, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); },
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, prob: pOver, odds: bo.over, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); },
         info: [
           ["Projection", pr.proj.toFixed(1) + " " + st],
           ["Line", String(bo.line)],
@@ -4449,6 +4688,7 @@ function renderValue() {
         <div style="display:flex;gap:6px;align-items:center;"><span class="chip">${L.sport}</span><span class="typechip" style="background:transparent;border:1px solid ${col};color:${col};">${L.type}</span></div></div>
       <div class="bbmain"><div style="min-width:0;"><div class="bbabbr" style="font-size:22px;">${L.label}</div><div class="bbsub">${L.sub}${L.time ? " · " + timeLabel(L.time) : ""}</div></div></div>
       <div class="bbfoot"><div><div class="lbl">${L.bigLbl}</div><div class="bignum" style="color:var(--txt);">${L.big}</div></div>
+        ${(() => { if (L.prob == null || L.odds == null) return ""; const b2 = decOdds(L.odds) - 1; if (!(b2 > 0)) return ""; const f2 = (L.prob * b2 - (1 - L.prob)) / b2; const u2 = f2 > 0 ? Math.round(f2 * 0.25 * 100) / 100 : 0; return u2 > 0 ? `<div style="text-align:center;"><div class="lbl">¼-KELLY STAKE</div><div class="bignum" style="font-size:16px;color:var(--gold);">${u2.toFixed(2)}u</div></div>` : ""; })()}
         <div style="text-align:right;"><div class="lbl">EDGE VS MARKET</div><div class="bignum" style="color:${col};">+${L.edge.toFixed(1)}%</div></div></div>`);
     card.style.cursor = "pointer";
     card.addEventListener("click", () => {
@@ -4795,14 +5035,14 @@ function renderWnba() {
       if (g.spread == null || g.cons == null) return -1;
       const src2 = (hasLS && localStorage.getItem("kb_stsrc")) || "cons";
       const p2 = src2 === "kevin" ? (g.mKev ?? g.cons) : g.cons;
-      const pc = coverProb(p2, g.spread, 11.5);
+      const pc = calApply("wsp", coverProb(p2, g.spread, 11.5));
       return pc == null ? -1 : Math.max(pc, 1 - pc);
     }
     if (wSortK === "total") {
       if (g.total == null) return -1;
       const ex = wnbaTotalExp(g);
       if (ex == null) return -1;
-      const pOv = 1 - phi((g.total - ex) / 14.5);
+      const pOv = calApply("wtot", 1 - phi((g.total - ex) / 14.5));
       return Math.max(pOv, 1 - pOv);
     }
     const p = wSortK === "kev" ? g.mKev : wSortK === "box" ? g.mBox : wSortK === "elo" ? g.mElo : wSortK === "pyth" ? g.mPyth : wSortK === "form" ? g.mForm : wSortK === "sharp" ? g.mSharp : g.cons;
@@ -5311,9 +5551,23 @@ async function genFetchResults(sp) { // season results in gentle chunks — para
   for (const tm of tms) for (const r of tm.res || []) if (!seen[r.id]) { seen[r.id] = 1; s.results.push(r); }
   s.results.sort((a, b) => a.d < b.d ? -1 : 1);
   if (failed) s.errors.push(`results: ${failed} schedule(s) failed`);
-  if (s.results.length >= 12) { if (hasLS) try { localStorage.setItem("kb_gres_" + sp, JSON.stringify({ d: S.date, res: s.results })); } catch (e) {} }
+  if (s.results.length >= 12) { if (hasLS) try { kbSet("kb_gres_" + sp, JSON.stringify({ d: S.date, res: s.results })); } catch (e) {} }
   else if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null"); if (sv?.res?.length > s.results.length) { s.results = sv.res; s.errors.push(`results served from your saved copy (${sv.d})`); } } catch (e) {} }
-  try { s.bt = genFit(sp, s.results); } catch (e) { s.errors.push("models: " + e.message); }
+  // prior-season Elo seed: last season's final ratings, half-regressed, so early-season boards aren't blind
+  let seed = null;
+  const seasonYr = s.results.length ? +String(s.results[s.results.length - 1].d).slice(0, 4) : null;
+  if (hasLS && seasonYr) { try { const sv2 = JSON.parse(localStorage.getItem("kb_geloseed_" + sp) || "null"); if (sv2?.elo && sv2.yr < seasonYr) seed = sv2.elo; } catch (e) {} }
+  try { s.bt = genFit(sp, s.results, seed); } catch (e) { s.errors.push("models: " + e.message); }
+  if (hasLS && seasonYr && s.results.length >= 60 && s.bt?.state?.elo) { try { kbSet("kb_geloseed_" + sp, JSON.stringify({ yr: seasonYr, elo: s.bt.state.elo })); } catch (e) {} }
+  try { // calibration + earned weights from this backtest
+    if (s.bt?.n) {
+      CALK["g:" + sp + ":c"] = calFitK(s.bt.cal, "c");
+      CALK["g:" + sp + ":sp"] = calFitK(s.bt.st.sp.cal, "p");
+      CALK["g:" + sp + ":tot"] = calFitK(s.bt.st.tot.cal, "p");
+      s._cw = { e: perfWeight(s.bt.elo), py: perfWeight(s.bt.pyth), f: perfWeight(s.bt.form) };
+      if (s.bt.dc) { s._cw.dc = perfWeight(s.bt.dc); CALK["g:" + sp + ":dctot"] = calFitK(s.bt.dc.tot.cal, "p"); }
+    }
+  } catch (e) {}
 }
 async function socBoxEnsure(sub) { // real per-match player logs from game summaries (the W-BOX trick) → honest soccer prop backtests
   const s = gSlot(sub);
@@ -5353,7 +5607,7 @@ async function socBoxEnsure(sub) { // real per-match player logs from game summa
     }
     for (const pid in logs) logs[pid].sort((a2, b2) => a2.d < b2.d ? -1 : 1); // oldest → newest
     s.boxLogs = logs; s.boxNames = names; s.boxReady = true; s.boxFailed = failed;
-    if (hasLS) try { localStorage.setItem("kb_gbox_" + sub, JSON.stringify({ key, d: S.date, logs, names })); } catch (e2) {}
+    if (hasLS) try { kbSet("kb_gbox_" + sub, JSON.stringify({ key, d: S.date, logs, names })); } catch (e2) {}
   } catch (e2) { s.boxErr = e2.message; }
   s.boxLoading = false; renderGen();
 }
@@ -5498,15 +5752,46 @@ async function genLoad(sp) {
     if (vt && vt.style.display !== "none") renderValue();
   } catch (e) {}
 }
-function genFit(sp, results) { // generic walk-forward: Elo + Pythag + Form-10 + consensus, spread & total sims, calibration
+/* ---------- DIXON–COLES (soccer): full Poisson score matrix → real WIN/DRAW/LOSS + exact totals ----------
+   Maher (1982) attack×defense rates + the Dixon–Coles (1997) low-score correction (ρ = −0.13, per the paper). */
+function dcTau(x, y, lh, la, rho) {
+  if (x === 0 && y === 0) return 1 - lh * la * rho;
+  if (x === 0 && y === 1) return 1 + lh * rho;
+  if (x === 1 && y === 0) return 1 + la * rho;
+  if (x === 1 && y === 1) return 1 - rho;
+  return 1;
+}
+function dcMatrix(lh, la, rho = -0.13) {
+  const N = 9, ph = [], pa = [];
+  let th = Math.exp(-lh), ta = Math.exp(-la);
+  for (let i = 0; i < N; i++) { ph.push(th); th *= lh / (i + 1); }
+  for (let j2 = 0; j2 < N; j2++) { pa.push(ta); ta *= la / (j2 + 1); }
+  let s = 0; const P = [];
+  for (let i = 0; i < N; i++) { P.push([]); for (let j2 = 0; j2 < N; j2++) { const v = Math.max(0, ph[i] * pa[j2] * dcTau(i, j2, lh, la, rho)); P[i].push(v); s += v; } }
+  let w = 0, d2 = 0, l2 = 0; const totP = {};
+  for (let i = 0; i < N; i++) for (let j2 = 0; j2 < N; j2++) { const v = P[i][j2] / s; if (i > j2) w += v; else if (i === j2) d2 += v; else l2 += v; totP[i + j2] = (totP[i + j2] || 0) + v; }
+  const pOverT = L => { let acc = 0; for (const t2 in totP) if (+t2 > L) acc += totP[t2]; return clamp(acc, 0.005, 0.995); };
+  return { pW: w, pD: d2, pL: l2, pOverT };
+}
+function dcRates(cum, hId, aId, hfaGoals = 0.25) {
+  const ids = Object.keys(cum).filter(id => cum[id].gp >= 4);
+  if (ids.length < 6) return null;
+  const lg = mean(ids.map(id => cum[id].pf / cum[id].gp));
+  const ch = cum[hId], ca = cum[aId];
+  if (!ch || !ca || ch.gp < 4 || ca.gp < 4 || !(lg > 0)) return null;
+  const att = c2 => (c2.pf / c2.gp) / lg, def = c2 => (c2.pa / c2.gp) / lg;
+  return { lh: clamp(lg * att(ch) * def(ca) + hfaGoals / 2, 0.15, 4.5), la: clamp(lg * att(ca) * def(ch) - hfaGoals / 2, 0.1, 4.5) };
+}
+function genFit(sp, results, seed) { // generic walk-forward: Elo + Pythag + Form-10 + consensus, spread & total sims, calibration
   const cfg = GS_CFG[sp];
-  const elo = {}, cum = {}, hist = {};
-  const E = id => elo[id] ?? 1500;
+  const elo = {}, cum = {}, hist = {}, lastP = {};
+  const E = id => elo[id] ?? (seed?.[id] != null ? 1500 + (seed[id] - 1500) * 0.5 : 1500); // prior-season Elo, half-regressed
   const C = id => cum[id] = cum[id] || { pf: 0, pa: 0, gp: 0 };
   const H = id => hist[id] = hist[id] || [];
   const f10 = id => { const h = H(id).slice(-10); return h.length ? h.reduce((a, x) => a + x, 0) / h.length : 0; };
   const bt = { elo: { w: 0, l: 0 }, pyth: { w: 0, l: 0 }, form: { w: 0, l: 0 }, home: { w: 0, l: 0 }, n: 0, cal: [],
-    st: { sp: { w: 0, l: 0, n: 0, cal: [] }, tot: { w: 0, l: 0, n: 0, cal: [] } } };
+    st: { sp: { w: 0, l: 0, n: 0, cal: [] }, tot: { w: 0, l: 0, n: 0, cal: [] } },
+    dc: cfg.soccer ? { w: 0, l: 0, n: 0, cal: [], draw: [], tot: { w: 0, l: 0, n: 0, cal: [] } } : null };
   for (const r of results || []) {
     const ch = C(r.hId), ca = C(r.aId);
     const tie = r.hs === r.as, homeWon = r.hs > r.as;
@@ -5522,7 +5807,11 @@ function genFit(sp, results) { // generic walk-forward: Elo + Pythag + Form-10 +
       bt.form[(pF >= 0.5) === homeWon ? "w" : "l"]++;
       bt.home[homeWon ? "w" : "l"]++;
       bt.n++;
-      const pc3 = (pE + pP + pF) / 3;
+      let pc3 = (pE + pP + pF) / 3;
+      if (!cfg.soccer) { // back-to-back rest tax, matched in live genPredict
+        const b2bH = lastP[r.hId] === addDays(r.d, -1) ? 1 : 0, b2bA = lastP[r.aId] === addDays(r.d, -1) ? 1 : 0;
+        pc3 = clamp(pc3 + 0.025 * (b2bA - b2bH), 0.03, 0.97);
+      }
       bt.cal.push({ e: pE, py: pP, f: pF, c: pc3, y: homeWon });
       const m = r.hs - r.as, T = r.hs + r.as;
       const mu = invPhi(clamp(pc3, 0.03, 0.97)) * cfg.mSig;
@@ -5554,15 +5843,34 @@ function genFit(sp, results) { // generic walk-forward: Elo + Pythag + Form-10 +
         }
       }
     }
+    if (cfg.soccer && bt.dc) { // Dixon–Coles walk-forward: 3-way honesty, draws included
+      const rt = dcRates(cum, r.hId, r.aId);
+      if (rt) {
+        const m3 = dcMatrix(rt.lh, rt.la);
+        bt.dc.draw.push({ p: m3.pD, y: tie });
+        if (!tie) {
+          const p2w = m3.pW / (m3.pW + m3.pL);
+          bt.dc.n++; bt.dc.cal.push({ p: Math.max(p2w, 1 - p2w), y: (p2w >= 0.5) === homeWon });
+          bt.dc[(p2w >= 0.5) === homeWon ? "w" : "l"]++;
+        }
+        const T2 = r.hs + r.as; // matrix totals at the classic 2.5 goal line
+        const pOv25 = m3.pOverT(2.5);
+        const side25 = Math.max(pOv25, 1 - pOv25);
+        const won25 = (pOv25 >= 0.5) === (T2 > 2.5);
+        bt.dc.tot.n++; bt.dc.tot.cal.push({ p: side25, y: won25 });
+        if (side25 >= 0.57) { won25 ? bt.dc.tot.w++ : bt.dc.tot.l++; }
+      }
+    }
     const Rh = E(r.hId), Ra = E(r.aId);
     const Eh = 1 / (1 + Math.pow(10, (Ra - Rh - cfg.eloHFA) / 400));
     const sc3 = tie ? 0.5 : (homeWon ? 1 : 0);
     const delta = cfg.eloK * Math.log(Math.abs(r.hs - r.as) + 1 + (tie ? 0 : 0)) * (sc3 - Eh) || cfg.eloK * (sc3 - Eh) * 0.5;
     elo[r.hId] = Rh + delta; elo[r.aId] = Ra - delta;
+    lastP[r.hId] = r.d; lastP[r.aId] = r.d;
     ch.pf += r.hs; ch.pa += r.as; ch.gp++; ca.pf += r.as; ca.pa += r.hs; ca.gp++;
     H(r.hId).push(r.hs - r.as); H(r.aId).push(r.as - r.hs);
   }
-  bt.state = { elo, cum, hist };
+  bt.state = { elo, cum, hist, lastP };
   return bt;
 }
 function genPredict(sp, g) {
@@ -5580,8 +5888,23 @@ function genPredict(sp, g) {
   const f10v = id => { const h = (st.hist[id] || []).slice(-10); return h.length ? h.reduce((a, x) => a + x, 0) / h.length : 0; };
   const pF = logistic(((f10v(g.home.id) - f10v(g.away.id)) / (cfg.mSig / 4)) * 0.5 + cfg.hb * 3);
   g.mElo = pE; g.mPyth = pP; g.mForm = pF;
-  const ps = [pE, pP, pF].filter(p => p != null);
-  g.cons = ps.length ? mean(ps) : null;
+  g.dc = null;
+  if (cfg.soccer) { // Dixon–Coles live: real 3-way probabilities + matrix totals
+    try {
+      const rt = dcRates(st.cum, g.home.id, g.away.id);
+      if (rt) { const m3 = dcMatrix(rt.lh, rt.la); g.dc = { pW: m3.pW, pD: m3.pD, pL: m3.pL, pOverT: m3.pOverT, lh: rt.lh, la: rt.la }; g.mDC = m3.pW / (m3.pW + m3.pL); }
+    } catch (e) {}
+  }
+  const gcw = s._cw || {};
+  let raw = wMean([[pE, gcw.e], [pP, gcw.py], [pF, gcw.f], [g.mDC ?? null, gcw.dc ?? 1.2]]);
+  if (raw != null && !cfg.soccer && st.lastP) { // live back-to-back rest tax, mirrors the backtest
+    const today2 = (g.date || "").slice(0, 10);
+    const b2bH = st.lastP[g.home.id] === addDays(today2, -1) ? 1 : 0, b2bA = st.lastP[g.away.id] === addDays(today2, -1) ? 1 : 0;
+    raw = clamp(raw + 0.025 * (b2bA - b2bH), 0.03, 0.97);
+    if (b2bH || b2bA) g.b2b = { h: !!b2bH, a: !!b2bA };
+  }
+  g.consRaw = raw;
+  g.cons = calApply("g:" + sp + ":c", raw);
   if (ch?.gp && ca?.gp) {
     const ids = Object.keys(st.cum).filter(id => st.cum[id].gp >= Math.max(3, cfg.btMin));
     if (ids.length >= 6) {
@@ -5699,6 +6022,18 @@ function renderGen() {
       const g2Box = el("div", "card");
       g2Box.innerHTML = calRowsHTML(calibrate(bt.st[g2Key].cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || "";
       root.appendChild(g2Box);
+      if (bt.dc && (bt.dc.n || bt.dc.draw.length)) {
+        root.appendChild(el("div", "h1", `DIXON–COLES <small>· the real 3-way soccer model — walk-forward${combo ? " · " + c3.name : ""}</small>`));
+        root.appendChild(el("div", "recgrid",
+          `<div class="reccard"><div class="recname">DC WIN CALLS</div><div class="recwl">${bt.dc.w}-${bt.dc.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(bt.dc.w / Math.max(1, bt.dc.w + bt.dc.l) * 100).toFixed(1)}%</b> · draws excluded</div></div>` +
+          `<div class="reccard"><div class="recname">DC TOTALS (o/u 2.5)</div><div class="recwl">${bt.dc.tot.w}-${bt.dc.tot.l}</div><div class="recsub">${bt.dc.tot.n} matrix predictions · 57%+ calls</div></div>`));
+        const drRows = calRowsHTML(calibrate(bt.dc.draw, "p", [[0.10, 0.20], [0.20, 0.24], [0.24, 0.28], [0.28, 0.32], [0.32, 0.45]], true).filter(b2 => b2.n > 0), 4, 20);
+        if (drRows) {
+          root.appendChild(el("div", "h1", `DRAW TRUTH CHECK <small>· when Dixon–Coles says "26% draw", do 26% actually draw?</small>`));
+          const drBox = el("div", "card"); drBox.innerHTML = drRows; root.appendChild(drBox);
+          root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">This is the honesty test no 2-way model can even take — draws are priced, not dodged. Fair draw odds show on every match card.</span>`));
+        }
+      }
     }
     if (cfg.soccer) {
       // ---- PLAYER PROP MODELS on the records tab: SHOTS / SOT / GOALS backtests + truth checks in one place ----
@@ -6013,8 +6348,8 @@ function renderGen() {
     root.appendChild(gsBar);
     const gConf = ent => {
       const c3 = GS_CFG[ent.sub], g2 = ent.g;
-      if (gSortK === "spread") { if (g2.spread == null || g2.cons == null) return -1; const pc = coverProb(g2.cons, g2.spread, c3.mSig || 10); return pc == null ? -1 : Math.max(pc, 1 - pc); }
-      if (gSortK === "total") { if (g2.total == null || g2.expT == null) return -1; const pOv = 1 - phi((g2.total - g2.expT) / (c3.tSig || 10)); return Math.max(pOv, 1 - pOv); }
+      if (gSortK === "spread") { if (g2.spread == null || g2.cons == null) return -1; const pc = calApply("g:" + ent.sub + ":sp", coverProb(g2.cons, g2.spread, c3.mSig || 10)); return pc == null ? -1 : Math.max(pc, 1 - pc); }
+      if (gSortK === "total") { if (g2.total == null || g2.expT == null) return -1; const pOv = calApply("g:" + ent.sub + ":tot", 1 - phi((g2.total - g2.expT) / (c3.tSig || 10))); return Math.max(pOv, 1 - pOv); }
       return g2.cons == null ? -1 : Math.max(g2.cons, 1 - g2.cons);
     };
     boardGames.sort((a2, b2) => ((a2.g.completed || a2.g.live) ? 1 : 0) - ((b2.g.completed || b2.g.live) ? 1 : 0) ||
@@ -6029,13 +6364,16 @@ function renderGen() {
     let stp = "";
     if (!g.completed && !g.live && (g.spread != null || g.total != null)) {
       const rows2 = [];
-      if (g.spread != null && g.cons != null) { const pc2 = coverProb(g.cons, g.spread, cfgG.mSig); const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
-      if (g.total != null && g.expT != null) { const pOv2 = 1 - phi((g.total - g.expT) / cfgG.tSig); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${g.expT.toFixed(1)}</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
+      if (g.spread != null && g.cons != null) { const pc2 = calApply("g:" + sub + ":sp", coverProb(g.cons, g.spread, cfgG.mSig)); const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
+      if (g.total != null && cfgG.soccer && g.dc) { const pOv2 = calApply("g:" + sub + ":dctot", g.dc.pOverT(g.total)); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">Dixon–Coles matrix (${(g.dc.lh + g.dc.la).toFixed(2)} xG)</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
+      else if (g.total != null && g.expT != null) { const pOv2 = calApply("g:" + sub + ":tot", 1 - phi((g.total - g.expT) / cfgG.tSig)); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${g.expT.toFixed(1)}</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
       else if (g.total != null) rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL</span><b>${g.total}</b><span style="color:var(--dim3);font-size:11px;">book line (model needs season data)</span></div>`);
       const spStep = cfgG.mSig <= 3 ? 0.5 : cfgG.mSig <= 8 ? 1 : Math.max(2, Math.round(cfgG.mSig / 4));
       const totStep = cfgG.tSig <= 3 ? 0.5 : cfgG.tSig <= 8 ? 1 : Math.max(2, Math.round(cfgG.tSig / 4));
-      const altSp = g.spread != null && g.cons != null ? altSpreadBox(g.cons, g.spread, cfgG.mSig, g.home.abbr, g.away.abbr, spStep, "ALT SPREADS — every rung priced") : "";
-      const altTot = g.total != null && g.expT != null ? altBox(altRungs(L3 => 1 - phi((L3 - g.expT) / cfgG.tSig), g.total, totStep, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve on the model's ${g.expT.toFixed(1)} total, width ±${cfgG.tSig}. Bet a rung only when your book beats fair.`) : "";
+      const altSp = g.spread != null && g.cons != null ? altSpreadBox(g.cons, g.spread, cfgG.mSig, g.home.abbr, g.away.abbr, spStep, "ALT SPREADS — every rung priced", null, "g:" + sub + ":sp") : "";
+      const altTot = cfgG.soccer && g.dc && g.total != null
+        ? altBox(altRungs(L3 => calApply("g:" + sub + ":dctot", g.dc.pOverT(L3)), g.total, 1, 3), g.total, "ALT GOAL TOTALS — matrix-priced", `Every rung read straight off the Dixon–Coles score matrix (${(g.dc.lh + g.dc.la).toFixed(2)} expected goals) — the same math the goals research uses. Bet a rung only when your book beats fair.`)
+        : (g.total != null && g.expT != null ? altBox(altRungs(L3 => calApply("g:" + sub + ":tot", 1 - phi((L3 - g.expT) / cfgG.tSig)), g.total, totStep, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve on the model's ${g.expT.toFixed(1)} total, width ±${cfgG.tSig}. Bet a rung only when your book beats fair.`) : "");
       if (rows2.length) stp = `<div style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;"><div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--dim);margin-bottom:2px;">SPREAD &amp; TOTAL${sG.bt ? "" : " · book lines only"}</div>${rows2.join("")}${altSp}${altTot}</div>`;
     }
     card.innerHTML = `
@@ -6044,8 +6382,8 @@ function renderGen() {
         ${g.book && !g.completed ? `<span class="bookchip">${g.book}</span>` : ""}${combo ? `<span class="chip">${cfgG.emoji} ${cfgG.name}</span>` : ""}<div class="spacer"></div></div>
       <div class="trow" style="margin-top:3px;">${logo2(g.away)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${g.away.name.split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : `<div class="tml">${fmtML(g.mlAway)}</div>`}</div>
       <div class="trow" style="margin-top:3px;">${logo2(g.home)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${g.home.name.split(" ").slice(-1)[0]}</span></div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : `<div class="tml">${fmtML(g.mlHome)}</div>`}</div>
-      ${g.mlDraw != null && !g.completed ? `<div style="font-size:11px;color:var(--dim);margin-top:4px;">DRAW ${fmtML(g.mlDraw)} <span style="color:var(--dim3)">· 3-way market — model win probs don't include the draw</span></div>` : ""}
-      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10", g.mForm)}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
+      ${!g.completed && (g.dc || g.mlDraw != null) ? `<div style="font-size:11px;color:var(--dim);margin-top:4px;">${g.dc ? `<b style="color:var(--txt)">DIXON–COLES 3-WAY:</b> ${g.home.abbr} ${(g.dc.pW * 100).toFixed(0)}% · <b style="color:var(--gold)">DRAW ${(g.dc.pD * 100).toFixed(0)}% (fair ${fmtML(probToAmerican(g.dc.pD))})</b> · ${g.away.abbr} ${(g.dc.pL * 100).toFixed(0)}%` : ""}${g.mlDraw != null ? ` · book draw ${fmtML(g.mlDraw)}${g.dc && americanToProb(g.mlDraw) < g.dc.pD ? ' <span style="color:var(--green)">— pays better than fair</span>' : ""}` : ""}</div>` : ""}
+      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10", g.mForm)}${g.mDC != null ? mrow2("Dixon–Coles", g.mDC) : ""}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
       ${stp}`;
     grid.appendChild(card);
   }
@@ -6191,6 +6529,25 @@ function init() {
     if (APP_SPORT === "wnba") { WS.loaded = false; wnbaEnsure(); }
     else loadAll();
   });
+  // ⏱ AUTO: near first pitch and during live games the lines move — refresh every 10 min without being asked
+  const arBtn = $("#autoRefBtn");
+  const arSync = () => { const on = hasLS && localStorage.getItem("kb_autoref") === "1"; if (arBtn) { arBtn.classList.toggle("on", on); arBtn.style.background = on ? "linear-gradient(135deg,#34d399,#1f9f74)" : ""; arBtn.style.color = on ? "#07101f" : ""; } return on; };
+  arBtn?.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_autoref", localStorage.getItem("kb_autoref") === "1" ? "" : "1"); const on = arSync(); setStatus(on ? "⏱ Auto-refresh ON — re-pulls every 10 min when games are near or live." : "Auto-refresh off."); });
+  arSync();
+  setInterval(() => {
+    try {
+      if (!hasLS || localStorage.getItem("kb_autoref") !== "1") return;
+      if (APP_SPORT !== "mlb" && APP_SPORT !== "wnba") return;
+      const soonOrLive = gs2 => (gs2 || []).some(g => {
+        if (APP_SPORT === "mlb" ? g.state === "Live" : g.live) return true;
+        const t2 = new Date(APP_SPORT === "mlb" ? g.time : g.date) - Date.now();
+        const pre = APP_SPORT === "mlb" ? g.state === "Preview" : !(g.completed || g.live);
+        return pre && t2 > 0 && t2 < 40 * 60 * 1000;
+      });
+      if (APP_SPORT === "mlb" && soonOrLive(S.games)) loadAll();
+      else if (APP_SPORT === "wnba" && soonOrLive(WS.games)) { WS.loaded = false; wnbaEnsure(); }
+    } catch (e) {}
+  }, 10 * 60 * 1000);
   loadAll();
   setInterval(oddsTick, 20 * 60 * 1000); // auto-check for new book lines every 20 minutes while open
 }
@@ -6207,6 +6564,7 @@ if (typeof module !== "undefined" && module.exports) {
     loadPJ, savePJ, snapshotProps, gradeProps, snapshotWProps, gradeWProps, propRecAgg, propBacktest,
     wnbaBoxModel, snapshotWMl, gradeWMl, wmlRecords, loadWJ, wnbaBoxHist, wnbaBoxBacktest, wnbaKevSpread, wspkCached,
     GS_CFG, GX, gSlot, genFit, genPredict, GS_PSTATS, genTabs, glParse, glIdx, glVals, genFetchResults, socBoxEnsure,
+    CALK, calFitK, calApply, perfWeight, wMean, dcMatrix, dcRates, platoonMult, clvReport, hitProject, hrProject,
     poisCdf, ewmaMean, lognFit, median2, pmModels, pmBacktest };
 }
 </script>
