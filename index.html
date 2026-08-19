@@ -179,6 +179,25 @@
   .ember.e5{left:78%;background:#ff6a1c;animation-delay:.4s;animation-duration:1.75s;}
   @keyframes emberUp{0%{transform:translate(0,0) scale(1);opacity:0;}15%{opacity:.95;}55%{transform:translate(3px,-20px) scale(.7);}100%{transform:translate(-2px,-40px) scale(.3);opacity:0;}}
   .lavabox:hover{box-shadow:0 0 26px rgba(255,110,26,.5),inset 0 0 30px rgba(255,70,12,.3);}
+  .frostbox{position:relative;border:1.5px solid rgba(120,200,255,.55);background:linear-gradient(165deg,rgba(10,30,50,.85),rgba(12,13,22,.97) 62%);box-shadow:0 0 16px rgba(90,180,255,.22),inset 0 0 26px rgba(120,200,255,.10);animation:frostPulse 3s ease-in-out infinite;overflow:hidden;}
+  @keyframes frostPulse{0%,100%{box-shadow:0 0 13px rgba(90,180,255,.18),inset 0 0 22px rgba(120,200,255,.08);}50%{box-shadow:0 0 24px rgba(120,200,255,.4),inset 0 0 32px rgba(140,210,255,.16);}}
+  .frostbadge{font-family:var(--head);font-size:9px;letter-spacing:1px;color:#08131f;background:linear-gradient(90deg,#7cc9ff,#d5f1ff,#8fd6ff,#7cc9ff);background-size:250% 100%;animation:frostShift 2.6s linear infinite;border-radius:6px;padding:3px 8px;flex:0 0 auto;}
+  @keyframes frostShift{to{background-position:250% 0;}}
+  .flake{position:absolute;top:-6px;width:4px;height:4px;border-radius:50%;background:#cfeaff;opacity:0;pointer-events:none;animation:flakeFall 3.4s linear infinite;filter:drop-shadow(0 0 3px rgba(160,220,255,.9));z-index:1;}
+  .flake.f1{left:12%;animation-delay:.2s;}
+  .flake.f2{left:38%;animation-delay:1.5s;width:3px;height:3px;}
+  .flake.f3{left:64%;animation-delay:.8s;}
+  .flake.f4{left:86%;animation-delay:2.2s;width:3px;height:3px;}
+  @keyframes flakeFall{0%{transform:translate(0,0);opacity:0;}12%{opacity:.9;}60%{transform:translate(6px,60px);}100%{transform:translate(-4px,112px);opacity:0;}}
+  .heatbox{position:relative;border:1.5px solid rgba(255,122,46,.55);background:linear-gradient(165deg,rgba(60,18,4,.8),rgba(12,13,22,.97) 62%);box-shadow:0 0 16px rgba(255,110,26,.22),inset 0 0 26px rgba(255,120,40,.10);animation:heatPulse 3s ease-in-out infinite;overflow:hidden;}
+  @keyframes heatPulse{0%,100%{box-shadow:0 0 13px rgba(255,110,26,.18),inset 0 0 22px rgba(255,120,40,.08);}50%{box-shadow:0 0 24px rgba(255,140,50,.42),inset 0 0 30px rgba(255,120,40,.16);}}
+  .heatbadge{font-family:var(--head);font-size:9px;letter-spacing:1px;color:#1f0d02;background:linear-gradient(90deg,#ff8a3c,#ffd27a,#ff9a4d,#ff8a3c);background-size:250% 100%;animation:frostShift 2.6s linear infinite;border-radius:6px;padding:3px 8px;flex:0 0 auto;}
+  .hember{position:absolute;bottom:-6px;width:4px;height:4px;border-radius:50%;background:#ffb361;opacity:0;pointer-events:none;animation:hemberRise 2.7s ease-out infinite;filter:drop-shadow(0 0 3px rgba(255,150,60,.9));z-index:1;}
+  .hember.h1{left:14%;animation-delay:.2s;}
+  .hember.h2{left:42%;animation-delay:1.2s;width:3px;height:3px;}
+  .hember.h3{left:68%;animation-delay:.7s;}
+  .hember.h4{left:88%;animation-delay:1.9s;width:3px;height:3px;}
+  @keyframes hemberRise{0%{transform:translate(0,0);opacity:0;}12%{opacity:.9;}100%{transform:translate(4px,-112px);opacity:0;}}
   .hs img{width:100%;height:100%;object-fit:cover;object-position:top;}
   .pname{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .pline{font-size:10.5px;color:var(--dim);}
@@ -400,6 +419,7 @@
   <section id="tab-hits" style="display:none"></section>
   <section id="tab-tb" style="display:none"></section>
   <section id="tab-hrr" style="display:none"></section>
+  <section id="tab-nrfi" style="display:none"></section>
   <section id="tab-wnba" style="display:none"></section>
   <section id="tab-locks" style="display:none"></section>
   <section id="tab-value" style="display:none"></section>
@@ -418,7 +438,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v4.67 · 10a";
+const BUILD = "v4.90 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -729,6 +749,7 @@ async function loadAll() {
   const errTxt = S.errors.length ? ` <span class="err">(${S.errors.length} source(s) failed: ${S.errors.map(e => e.split(":")[0]).join(", ")})</span>` : "";
   const relayTxt = IS_LOCAL_SERVER ? " · via local helper" : (relayIdx > 0 ? " · MLB data via relay (direct connection blocked on this computer)" : "");
   setStatus(`Loaded ${S.games.length} games. Sources: MLB Stats API${res.espn ? " + ESPN/DraftKings" : ""}${getKey() ? " + The Odds API" : ""}${relayTxt}.` + errTxt);
+  setTimeout(() => { try { nrfiLoad(); } catch (e) {} }, 1200); // first-inning model rides in behind the main load
 }
 
 function parseSchedule(data) {
@@ -1114,6 +1135,115 @@ function pitcherAdjK9(pid, oppTeamId) {
   const oppK = S.teams[oppTeamId]?.hit?.kPct, lgK = S.league.kPct || 0.22;
   return k9 * (oppK ? (oppK / lgK) : 1);
 }
+/* ---------- NRFI / YRFI — first-inning model: real 1st-inning pitcher splits × top-of-order scoring, replayed on real linescores ---------- */
+const NRFI = { ready: false, busy: false, hist: [], sp: {}, lg: { yr: 0.5, lamH: 0.34, r1: 0.5 }, fitK: 1, rec: null, cal: [], p: {} };
+function nrfiSpMult(pid) {
+  const s2 = pid != null ? NRFI.sp[pid] : null;
+  if (!s2 || s2.ip < 3) { // thin 1st-inning sample — fall back to his overall run rate when we have it
+    const era = parseFloat(S.pitchers[pid]?.season?.era);
+    return isFinite(era) ? clamp((era / 9) / Math.max(0.2, NRFI.lg.r1), 0.6, 1.6) : 1;
+  }
+  const rate = (s2.r + 2 * NRFI.lg.r1) / (s2.ip + 2); // shrunk toward league
+  return clamp(rate / Math.max(0.2, NRFI.lg.r1), 0.55, 1.7);
+}
+function nrfiOffMult(teamId) {
+  if (NRFI._lgRg == null) { let s3 = 0, n3 = 0; for (const k2 in S.teams) { const v = S.teams[k2]?.hit?.rG; if (v) { s3 += v; n3++; } } NRFI._lgRg = n3 ? s3 / n3 : 4.5; }
+  const rg = S.teams[teamId]?.hit?.rG;
+  return rg ? clamp(rg / NRFI._lgRg, 0.75, 1.3) : 1;
+}
+function nrfiRaw(hSP, aSP, hId, aId) { // P(YRFI) raw: Poisson per half-inning, each starter vs the opposing offense
+  if (hSP == null && aSP == null) return null;
+  const lamTop = NRFI.lg.lamH * nrfiSpMult(hSP) * nrfiOffMult(aId);
+  const lamBot = NRFI.lg.lamH * nrfiSpMult(aSP) * nrfiOffMult(hId);
+  return clamp(1 - Math.exp(-(lamTop + lamBot)), 0.15, 0.85);
+}
+function nrfiFor(g) {
+  const raw = nrfiRaw(g.home.pitcherId, g.away.pitcherId, g.home.id, g.away.id);
+  return raw == null ? null : clamp(0.5 + (raw - 0.5) * (NRFI.fitK || 1), 0.15, 0.85);
+}
+const NJKEY = "kb_nrfijournal_v1";
+function loadNJ() { try { return hasLS ? (JSON.parse(localStorage.getItem(NJKEY)) || {}) : (NRFI._nj || {}); } catch (e) { return {}; } }
+function nrfiSnapshot() { // journal: today's calls locked pre-game, graded from the real linescores when they land — NEVER rewritten
+  try {
+    const nj = loadNJ();
+    const day = nj[S.date] = nj[S.date] || {};
+    for (const g of S.games || []) {
+      if (g.state !== "Preview") { if (day[g.pk]) day[g.pk].locked = true; continue; }
+      const p2 = NRFI.p[g.pk]; if (p2 == null || day[g.pk]?.locked) continue;
+      day[g.pk] = { pk: g.pk, d: S.date, a: g.away.abbr, h: g.home.abbr, p: p2, call: p2 >= 0.5 ? "YRFI" : "NRFI", res: null, locked: false };
+    }
+    const byPk = {}; for (const h2 of NRFI.hist || []) if (h2.pk) byPk[h2.pk] = h2;
+    for (const d2 in nj) for (const pk in nj[d2]) { const e2 = nj[d2][pk]; if (e2.res == null && byPk[pk]) { e2.res = byPk[pk].y; e2.locked = true; } }
+    NRFI._nj = nj; kbSet(NJKEY, JSON.stringify(nj));
+  } catch (e) {}
+}
+function nrfiJRec() { // the real record — graded snapshots only
+  const nj = loadNJ(); const R = () => ({ w: 0, l: 0 }); const rec = { n: R(), y: R(), pend: 0, since: null };
+  for (const d2 of Object.keys(nj).sort()) { if (!rec.since) rec.since = d2; for (const pk in nj[d2]) { const e2 = nj[d2][pk]; if (e2.res == null) { rec.pend++; continue; } const hit = (e2.call === "YRFI") === !!e2.res; (e2.call === "YRFI" ? rec.y : rec.n)[hit ? "w" : "l"]++; } }
+  return rec;
+}
+async function nrfiLoad() {
+  if (NRFI.busy) return; NRFI.busy = true;
+  try {
+    NRFI._lgRg = null;
+    const ck = "kb_nrfi2_" + S.date;
+    let hist = null;
+    if (hasLS) try { hist = JSON.parse(localStorage.getItem(ck) || "null"); } catch (e) {}
+    if (!hist) {
+      const js = await j(`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${addDays(S.date, -30)}&endDate=${addDays(S.date, -1)}&hydrate=linescore,probablePitcher&fields=dates,date,games,gamePk,officialDate,status,codedGameState,teams,home,away,team,id,probablePitcher,linescore,innings,num,runs`);
+      hist = [];
+      for (const dd of js?.dates || []) for (const g of dd.games || []) {
+        if (g.status?.codedGameState !== "F") continue;
+        const i1 = (g.linescore?.innings || [])[0]; if (!i1) continue;
+        hist.push({ pk: g.gamePk, d: g.officialDate, hId: g.teams?.home?.team?.id, aId: g.teams?.away?.team?.id, hSP: g.teams?.home?.probablePitcher?.id || null, aSP: g.teams?.away?.probablePitcher?.id || null, y: ((i1.home?.runs || 0) + (i1.away?.runs || 0)) > 0 ? 1 : 0 });
+      }
+      kbSet(ck, JSON.stringify(hist));
+    }
+    NRFI.hist = hist;
+    const ids = new Set();
+    for (const h of hist) { if (h.hSP) ids.add(h.hSP); if (h.aSP) ids.add(h.aSP); }
+    for (const g of S.games || []) { if (g.home.pitcherId) ids.add(g.home.pitcherId); if (g.away.pitcherId) ids.add(g.away.pitcherId); }
+    const ck2 = "kb_nrfisp_" + S.date;
+    let sp = null;
+    if (hasLS) try { sp = JSON.parse(localStorage.getItem(ck2) || "null"); } catch (e) {}
+    if (!sp) {
+      sp = {};
+      const list = [...ids];
+      for (let i = 0; i < list.length; i += 60) {
+        try {
+          const js2 = await j(`https://statsapi.mlb.com/api/v1/people?personIds=${list.slice(i, i + 60).join(",")}&hydrate=stats(group=[pitching],type=[statSplits],sitCodes=[i01])&fields=people,id,stats,splits,split,code,stat,inningsPitched,runs`);
+          for (const p2 of js2?.people || []) {
+            let best = null;
+            for (const st2 of p2.stats || []) for (const s2 of st2.splits || []) { const ip = ipToOuts(s2.stat?.inningsPitched) / 3; if (!best || ip > best.ip) best = { ip, r: s2.stat?.runs || 0 }; }
+            if (best) sp[p2.id] = best;
+          }
+        } catch (e) {}
+      }
+      kbSet(ck2, JSON.stringify(sp));
+    }
+    NRFI.sp = sp;
+    const yr = hist.length ? hist.filter(h => h.y).length / hist.length : 0.5;
+    let rSum = 0, ipSum = 0; for (const k2 in sp) { rSum += sp[k2].r; ipSum += sp[k2].ip; }
+    NRFI.lg = { yr, lamH: -Math.log(clamp(1 - yr, 0.3, 0.7)) / 2, r1: ipSum > 0 ? rSum / ipSum : 0.5 };
+    const cal = []; const rec = { n: { w: 0, l: 0 }, y: { w: 0, l: 0 } };
+    for (const h of hist) {
+      const p2 = nrfiRaw(h.hSP, h.aSP, h.hId, h.aId); if (p2 == null) continue;
+      cal.push({ p: p2, y: !!h.y });
+      const hit = (p2 >= 0.5) === !!h.y;
+      ((p2 >= 0.5) ? rec.y : rec.n)[hit ? "w" : "l"]++;
+    }
+    NRFI.cal = cal;
+    try { NRFI.fitK = calFitK(cal, "p") || 1; } catch (e) { NRFI.fitK = 1; }
+    NRFI.rec = rec;
+    NRFI.p = {};
+    for (const g of S.games || []) { const p3 = nrfiFor(g); if (p3 != null) NRFI.p[g.pk] = p3; }
+    NRFI.ready = true;
+    nrfiSnapshot();
+  } catch (e) {}
+  NRFI.busy = false;
+  try { if (!whyOpenNow() && document.querySelector("#tab-board")?.style.display !== "none") renderBoard(); } catch (e) {}
+  try { renderNrfi(); } catch (e) {}
+}
 function goldenSweep(g) { // ✨ the better team checks all four of Kevin's boxes:
   // ① its starter's K prop line is +1 or more OVER the opposing starter's  ② better offense  ③ lost yesterday (bounce-back)  ④ hotter 30-day form
   if (g.state !== "Preview") return null;
@@ -1130,6 +1260,10 @@ function goldenSweep(g) { // ✨ the better team checks all four of Kevin's boxe
     const th = S.teams[side.id] || {}, ta = S.teams[opp.id] || {};
     const my = kOf(side.pitcherId), op = kOf(opp.pitcherId);
     if (!my || !op || (my.v - op.v) < 1) continue;                            // ① K number ≥ opponent's + 1
+    { // ①b ERA sanity veto (the TRIPLE EDGE lesson): a higher K line can't crown a starter the ERA says is clearly WORSE
+      const eMy = parseFloat(S.pitchers[side.pitcherId]?.season?.era), eOp = parseFloat(S.pitchers[opp.pitcherId]?.season?.era);
+      if (isFinite(eMy) && isFinite(eOp) && eMy > eOp + 0.25) continue;
+    }
     if (!(th.offZ != null && ta.offZ != null && th.offZ > ta.offZ)) continue; // ②
     if (!th.daily?.lostY) continue;                                           // ③
     if (!((th.daily?.form30 ?? -1) > (ta.daily?.form30 ?? 2))) continue;      // ④
@@ -2037,7 +2171,7 @@ function edgeCls(e) { return e >= 0 ? "var(--green)" : "var(--red)"; }
 function renderAll() {
   const anyBook = Object.values(S.odds)[0]?.book || "DraftKings";
   $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`;
-  renderBoard(); renderKs(); renderHR(); renderHits(); renderBasesTab("tb"); renderBasesTab("hrr"); renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
+  renderBoard(); renderKs(); renderHR(); renderHits(); renderBasesTab("tb"); renderBasesTab("hrr"); try { renderNrfi(); } catch (e) {} renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
 }
 
 /* ---------- BEST BETS + SLATE ---------- */
@@ -2497,6 +2631,12 @@ function llgChip(info) { // losing streak ONLY — a quiet card means they won (
   const cold = info.streakL >= 3;
   return ` <span class="llg${cold ? " cold" : ""}" title="lost ${info.streakL === 1 ? "their last game" : info.streakL + " straight"} — most recent ${info.score}${info.d ? " · " + info.d : ""}">${cold ? "❄" : "▼"} L${info.streakL}${cold ? " COLD" : ""}</span>`;
 }
+function keepSpot(pk, fn) { // rebuild the board WITHOUT losing the card you're on — phones jump when everything above expands
+  let dy = null;
+  try { const el0 = document.querySelector(`[data-gpk="${pk}"]`); if (el0) dy = el0.getBoundingClientRect().top; } catch (e) {}
+  fn();
+  if (dy != null) requestAnimationFrame(() => { try { const el1 = document.querySelector(`[data-gpk="${pk}"]`); if (el1) window.scrollBy(0, el1.getBoundingClientRect().top - dy); } catch (e) {} });
+}
 function gameCard(g, vRank) {
   const o = S.odds[g.pk] || {};
   const th = S.weights.edgeThresh;
@@ -2508,7 +2648,7 @@ function gameCard(g, vRank) {
   const isValue = !played && ((g.edgeHome ?? -99) >= th || (g.edgeAway ?? -99) >= th);
   const pickHome = g.consensus != null && g.consensus >= 0.5;
   const gs = goldenSweep(g);
-  let rb = null; try { rb = rainbowPick(g); } catch (e) {}
+  let rb = null; try { rb = gs ? null : rainbowPick(g); } catch (e) {} // GOLDEN SWEEP outranks TRIPLE EDGE — never both on one card
   const card = el("div", "card" + (played ? " played" : "") + (gs ? " golden" : rb ? " rainbow" : ""));
   card.dataset.gpk = g.pk;
   if (!played && !gs && !rb && g.consensus != null) { // 10a team slip: the pick's color washes the card
@@ -2538,14 +2678,7 @@ function gameCard(g, vRank) {
       ${o.book && !played ? `<span class="bookchip">${o.book}</span>` : ""}
       <div class="spacer"></div>
       ${modelResult}
-      ${gs ? `<span class="goldbadge">✨ GOLDEN SWEEP ${g[gs.sk].abbr}</span>` : ""}
-      ${gs ? `<div class="swchecks" style="width:100%;">
-        <span class="swc">✓ K LINE +${(gs.myL - gs.opL).toFixed(1)} (${gs.myProj ? gs.myL.toFixed(1) + " proj" : gs.myL} vs ${gs.opProj ? gs.opL.toFixed(1) + " proj" : gs.opL})</span>
-        <span class="swc">✓ BETTER BATS</span>
-        <span class="swc">✓ LOST YESTERDAY</span>
-        <span class="swc">✓ HOTTER 30-DAY</span>
-        ${(() => { const r2 = sweepRec(); return r2.n ? `<span class="swc" style="margin-left:auto;background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.5);color:var(--green);">RECORD ${r2.w}-${r2.l}${r2.units ? " · " + (r2.units >= 0 ? "+" : "") + r2.units.toFixed(1) + "u" : ""}</span>` : ""; })()}
-      </div>` : ""}
+      ${gs ? `<span class="goldbadge">✨ GOLDEN SWEEP ${g[gs.sk].abbr}${(() => { const r2 = sweepRec(); return r2.n ? `<span style="font-size:9px;font-weight:800;opacity:.8;margin-left:6px;">${r2.w}-${r2.l}${r2.units ? " · " + (r2.units >= 0 ? "+" : "") + r2.units.toFixed(1) + "u" : ""}</span>` : ""; })()}</span>` : ""}
       ${rb ? `<span class="rbbadge" title="better starter — grade ${rb.q[0].toFixed(2)} vs ${rb.q[1].toFixed(2)} AND ERA ${rb.e[0].toFixed(2)} vs ${rb.e[1].toFixed(2)} agree · better season bats (${rb.o[0].toFixed(2)}z vs ${rb.o[1].toFixed(2)}z) · hotter 30-day opp-adjusted OFFENSE (${rb.t[0].toFixed(1)} vs ${rb.t[1].toFixed(1)} runs/gm — see TEAM COMPARISON)">TRIPLE EDGE ${g[rb.sk].abbr}</span>` : ""}
       ${rankChip}
       ${isValue ? `<span class="valchip">★ BET</span>` : ""}</div>
@@ -2574,11 +2707,11 @@ function gameCard(g, vRank) {
     </div>
     <button class="togglebtn" data-pk="${g.pk}">${S.open[g.pk] ? "HIDE STATS ▲" : "ALL STATS ▼"}</button>
     ${S.open[g.pk] ? expandedStats(g) : ""}`;
-  card.querySelector(".togglebtn").addEventListener("click", () => { const opening = !S.open[g.pk]; S.open = {}; if (opening) for (const g2 of S.games) S.open[g2.pk] = true; renderBoard(); }); // one tap = the whole board's stats together
+  card.querySelector(".togglebtn").addEventListener("click", () => keepSpot(g.pk, () => { const opening = !S.open[g.pk]; S.open = {}; if (opening) for (const g2 of S.games) S.open[g2.pk] = true; renderBoard(); })); // one tap = the whole board's stats — without losing your place
   card.addEventListener("click", ev => { // tap anywhere on a closed card to open the full stats
     if (S.open[g.pk]) return;
     if (ev.target.closest("[data-why],button,a,.warn,.stpanel,input,select,.whybox,.altbox,.xstats")) return; // .xstats has its own tap-to-close — never re-open on the same bubble
-    for (const g2 of S.games) S.open[g2.pk] = true; renderBoard(); // tap ANY card → every card pops its stats
+    keepSpot(g.pk, () => { for (const g2 of S.games) S.open[g2.pk] = true; renderBoard(); }); // tap ANY card → every card pops its stats, screen stays put
   });
   if (!S.open[g.pk]) card.style.cursor = "pointer";
   const xp = card.querySelector(".xstats"); // tap anywhere on the expanded stats to close them
@@ -2587,7 +2720,7 @@ function gameCard(g, vRank) {
     xp.style.cursor = "pointer";
     xp.addEventListener("click", ev => {
       if (ev.target.closest("[data-why],button,a,.warn,.stpanel,.fchip,[data-set],input,select")) return; // interactive bits keep working
-      S.open = {}; renderBoard(); // tap the stats → the whole board folds shut together
+      keepSpot(g.pk, () => { S.open = {}; renderBoard(); }); // tap the stats → the whole board folds, you stay on this game
     });
   }
   card.querySelector(".stpanel")?.addEventListener("click", ev => { ev.stopPropagation(); stModalMLB(g, o); });
@@ -2612,6 +2745,11 @@ function gameCard(g, vRank) {
         const pp = Math.max(pOv, 1 - pOv);
         rows.push(`<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 92px;">TOTAL ${o.total}</span><b style="color:${col(pp)};">${pOv >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${exp.toFixed(1)} runs</span><div class="spacer"></div><b style="color:${col(pp)};font-variant-numeric:tabular-nums;">${(pp * 100).toFixed(1)}%</b></div>`);
       }
+    }
+    if (typeof NRFI !== "undefined" && NRFI.ready && NRFI.p[g.pk] != null && !played) {
+      const py = NRFI.p[g.pk], pn = 1 - py;
+      const side2 = py >= 0.5 ? "YRFI" : "NRFI", pp = Math.max(py, pn);
+      rows.push(`<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2.5px 0;" title="first-inning model: each starter's REAL 1st-inning runs (shrunk) × the opposing offense, Poisson per half — calibrated on ${NRFI.cal.length} real first innings from the last two weeks (records in MODEL RECORDS)"><span style="color:var(--dim);flex:0 0 92px;">1ST INNING</span><b style="color:${col(pp)}">${side2}</b><span style="color:var(--dim3);font-size:11px;">NRFI ${(pn * 100).toFixed(0)}% · YRFI ${(py * 100).toFixed(0)}%</span><div class="spacer"></div><b style="color:${col(pp)}">${(pp * 100).toFixed(1)}%</b></div>`);
     }
     if (!rows.length) return "";
     return `<div class="stpanel" style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;cursor:pointer;">
@@ -3058,7 +3196,7 @@ function renderKs() {
   // ---- sorts: value · worst-hitting opponent (season K%) · cold last 30 · grade · consistency ----
   const kSortK = (hasLS && localStorage.getItem("kb_ksort")) || "value";
   const oppOf = r => r.sideKey === "home" ? r.g.away : r.g.home;
-  const K_SORTS = [["value", "BEST VALUE"], ["whiff", "WORST-HITTING OPPONENT"], ["cold30", "COLD LAST 30"], ["grade", "GRADE"], ["consist", "MOST CONSISTENT"]];
+  const K_SORTS = [["value", "BEST VALUE"], ["under", "BEST UNDER"], ["whiff", "WORST-HITTING OPPONENT"], ["cold30", "COLD LAST 30"], ["grade", "GRADE"], ["consist", "MOST CONSISTENT"]];
   const ksBar = el("div");
   ksBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   ksBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
@@ -3088,6 +3226,7 @@ function renderKs() {
     const sa = a.g.state !== "Preview" ? 1 : 0, sb = b.g.state !== "Preview" ? 1 : 0;
     if (sa !== sb) return sa - sb;
     if (kSortK === "grade") { const d2 = gnum(b) - gnum(a); if (d2) return d2; const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; }
+    if (kSortK === "under") { const uOf = r => { const line = lineFor(r.proj.pid, manual); const lean = propLean(r.proj, line); return lean && line != null ? 1 - lean.pOver : -1; }; const d2 = uOf(b) - uOf(a); if (d2) return d2; return gnum(b) - gnum(a); }
     if (kSortK === "consist") { const d2 = cvv(a) - cvv(b); if (d2) return d2; return gnum(b) - gnum(a); }
     if (kSortK === "whiff") { const d2 = oppK(b) - oppK(a); if (d2) return d2; const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; }
     if (kSortK === "cold30") { const d2 = oppC30(a) - oppC30(b); if (d2) return d2; const va = kVal(a), vb = kVal(b); return va[0] - vb[0] || vb[1] - va[1]; }
@@ -3095,6 +3234,7 @@ function renderKs() {
   });
   root.appendChild(el("div", "subhead", kSortK === "value"
     ? `Cards run <b style="color:var(--txt)">best value → worst</b>: real priced edges first, then the strongest leans, then the rest. Games that already started sink to the bottom, greyed.`
+    : kSortK === "under" ? `Cards run <b style="color:var(--txt)">strongest UNDER → weakest</b> by P(under) at each arm's real line — arms with no posted line sink. Started games sink, greyed.`
     : kSortK === "whiff" ? `Cards run <b style="color:var(--txt)">easiest strikeout matchup → toughest</b> by the opposing lineup's season K%. Started games sink, greyed.`
     : kSortK === "cold30" ? `Cards run <b style="color:var(--txt)">coldest opposing bats → hottest</b> on the 30-day opp-adjusted average. Cold lineups chase, whiff, and go quietly. Started games sink, greyed.`
     : kSortK === "grade" ? `Cards run <b style="color:var(--txt)">GRADE A → D</b> (UNPROVEN last) — the most repeatable arms first, value breaks ties. Started games sink, greyed.`
@@ -3250,16 +3390,16 @@ async function fetchKSplits() {
   wxRecompute();
 }
 function wxRecompute() { // any late-arriving signal (weather, hot form, K splits) re-runs projections + visible tabs
-  try {
-    computeAll();
-    const vis = id => { const t2 = document.querySelector("#tab-" + id); return t2 && t2.style.display !== "none"; };
-    if (vis("board")) renderBoard();
-    if (vis("ks")) renderKs();
-    if (vis("hits")) renderHits();
-    if (vis("hr")) renderHR();
-    if (vis("tb")) renderBasesTab("tb");
-    if (vis("hrr")) renderBasesTab("hrr");
-  } catch (e) {}
+  try { computeAll(); } catch (e) {} // partial data mid-pull must never take the renders down with it
+  try { computeTBP(); } catch (e) {}
+  const vis = id => { try { const t2 = document.querySelector("#tab-" + id); return t2 && t2.style.display !== "none"; } catch (e) { return false; } };
+  const rr = fn => { try { fn(); } catch (e) {} }; // one tab crashing must never block the others
+  if (vis("tb")) rr(() => renderBasesTab("tb"));
+  if (vis("hrr")) rr(() => renderBasesTab("hrr"));
+  if (vis("board")) rr(renderBoard);
+  if (vis("ks")) rr(renderKs);
+  if (vis("hits")) rr(renderHits);
+  if (vis("hr")) rr(renderHR);
 }
 /* ---------- TOTAL BASES + H+R+RBI: per-game-log models with the full honesty stack ---------- */
 const TBP_CFG = {
@@ -3311,21 +3451,28 @@ function renderBasesTab(kind) {
   root.innerHTML = "";
   root.appendChild(el("div", "h1", `${c.label} MODEL`));
   root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", c.how + ` Backtested walk-forward below on each hitter's own games — records and a TRUTH CHECK included, same standard as every other prop.`));
-  const picks0 = c.picks();
+  let picks0 = c.picks();
+  if (!picks0.length && S.hot) { try { computeTBP(); } catch (e) {} picks0 = c.picks(); } // data may already be here even if an upstream render path died
   if (!S.hot && !S._hotBusy) fetchHotForm();
-  if (!picks0.length) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>${S._hotBusy ? `Pulling per-game logs (${S.hotStage || "…"}) — cards appear when they land.` : "Waiting on game logs — hit Refresh if this hangs."}</div>`)); return; }
+  if (!picks0.length) { clearTimeout(S._tbpT); S._tbpT = setTimeout(() => { try { const t3 = document.querySelector("#tab-" + kind); if (t3 && t3.style.display !== "none") renderBasesTab(kind); } catch (e) {} }, 1200); root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>${S._hotBusy ? `Pulling per-game logs (${S.hotStage || "…"}) — cards appear when they land.` : "Waiting on game logs — hit Refresh if this hangs."}</div>`)); return; }
   root.appendChild(el("div", "subhead", `Chance of clearing the line from his own game-to-game ${c.short} swing. <button class="btn ghost" id="fetch${kind}Btn" style="margin-left:8px;">Fetch ${c.short} lines (Odds API)</button>`));
   const stMap = {}; for (const g of S.games) stMap[g.pk] = g.state !== "Preview";
   const luDrop = picks0.filter(p => p.inLineup === false).length;
   if (luDrop) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">✓ Confirmed lineups in — ${luDrop} hitters not in tonight's lineups were dropped.</span>`));
+  if (S._hotBusy) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still pulling logs (${S.hotStage || "…"}) — more cards drop in as they land.</span>`));
   const pool = picks0.filter(p => p.inLineup !== false);
   const book = c.book();
   for (const p of pool) { const bo = book[p.id]; const line = bo?.line ?? Math.max(0.5, Math.round(p.proj - 0.5) + 0.5); p._line = line; p._real = bo?.line != null; p._pOver = 1 - phi((line - p.proj) / p.sigma); }
+  if (kind === "hrr") for (const p of pool) { // Kevin's favorite bet: 1+ H+R+RBI — real cleared-count with a light model shrink
+    const n2 = (p.vals || []).length, c1 = (p.vals || []).filter(v => v >= 1).length;
+    const pM1 = clamp(1 - phi((0.5 - p.proj) / p.sigma), 0.02, 0.99);
+    p._n1 = n2; p._c1 = c1; p._p1 = n2 ? clamp((c1 + 2 * pM1) / (n2 + 2), 0.02, 0.99) : pM1;
+  }
   const tbSort = (hasLS && localStorage.getItem("kb_tbpsort_" + kind)) || "call";
   const tsBar = el("div");
   tsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   tsBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
-    [["call", "STRONGEST CALL"], ["consist", "MOST CONSISTENT"]].map(([k2, l2]) => `<span class="fchip${tbSort === k2 ? " on" : ""}" data-ts="${k2}">${l2}</span>`).join("") +
+    [["call", "STRONGEST CALL"], ["under", "BEST UNDER"], ["consist", "MOST CONSISTENT"]].concat(kind === "hrr" ? [["one", "BEST 1+ CHANCE"]] : []).map(([k2, l2]) => `<span class="fchip${tbSort === k2 ? " on" : ""}" data-ts="${k2}">${l2}</span>`).join("") +
     `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${tbSort === "consist" ? "smallest night-to-night " + c.short + " swing relative to his average first" : "real-line leans first by strength, the rest by projection"}</span>`;
   tsBar.querySelectorAll("[data-ts]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_tbpsort_" + kind, c2.dataset.ts); renderBasesTab(kind); }));
   root.appendChild(tsBar);
@@ -3333,6 +3480,8 @@ function renderBasesTab(kind) {
   pool.sort((a, b) => {
     const sa = stMap[a.gamePk] ? 1 : 0, sb = stMap[b.gamePk] ? 1 : 0;
     if (sa !== sb) return sa - sb;
+    if (tbSort === "under") { const uOf = p3 => p3._real ? 1 - p3._pOver : -1; const d2 = uOf(b) - uOf(a); if (d2) return d2; return b.proj - a.proj; }
+    if (tbSort === "one" && kind === "hrr") { const d2 = (b._p1 ?? 0) - (a._p1 ?? 0); if (d2) return d2; return b.proj - a.proj; }
     if (tbSort === "consist") { const d2 = cvOf(a) - cvOf(b); if (d2) return d2; return b.proj - a.proj; }
     const va = a._real ? Math.abs(a._pOver - 0.5) : -1, vb = b._real ? Math.abs(b._pOver - 0.5) : -1;
     if (va !== vb) return vb - va;
@@ -3356,9 +3505,9 @@ function renderBasesTab(kind) {
       <div class="kmid">
         <div class="kstat"><div class="v">${p.proj.toFixed(1)}</div><div class="l">PROJ ${c.short}</div></div>
         <div class="vsep"></div>
-        <div class="kstat"><div class="v" style="color:${p._real ? "var(--dim)" : "var(--blue)"};">${p._line}</div><div class="l">${p._real ? (bo.source || "BOOK").toUpperCase() : "MODEL LINE"}</div></div>
-        <div class="vsep"></div>
-        <div class="kstat"><div class="v" style="color:${lc};">${(p._pOver * 100).toFixed(0)}%</div><div class="l">P(OVER)</div></div>
+        <div class="kstat"><div class="v" style="color:${p._real ? "var(--dim)" : "var(--blue)"};">${p._line}</div><div class="l">${p._real ? (bo.source || "BOOK").toUpperCase() : "MODEL LINE ≈ EVEN"}</div></div>
+        ${p._real ? `<div class="vsep"></div><div class="kstat"><div class="v" style="color:${lc};">${(p._pOver * 100).toFixed(0)}%</div><div class="l">P(OVER)</div></div>` : ""}
+        ${kind === "hrr" && p._p1 != null ? `<div class="vsep"></div><div class="kstat"><div class="v" style="color:var(--green);">${(p._p1 * 100).toFixed(0)}%</div><div class="l">1+ ${c.short}</div></div>` : ""}
         <div class="spacer"></div>
         <div>${sparkSVG(p.vals.slice(0, 10).reverse(), p._line)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${c.short} BY GAME — LAST ${Math.min(10, p.vals.length)}</div></div>
       </div>
@@ -3378,6 +3527,7 @@ function renderBasesTab(kind) {
         ["→ Projection", p.proj.toFixed(1) + " " + c.short, "blend × matchup"],
         ["His swing", "±" + p.sigma.toFixed(1), p.grade <= "B" ? "steady enough to trust" : "volatile — calls stay humble"],
         [`P(OVER ${p._line})`, (p._pOver * 100).toFixed(0) + "%", "bell curve on the projection, width = his swing"],
+        kind === "hrr" && p._p1 != null ? ["1+ " + c.short, `${p._c1}/${p._n1} games · fair ${fmtML(probToAmerican(p._p1))}`, "cleared at least one in that many logged games, lightly model-shrunk — compare with your book's 1+ price"] : null,
       ], p._real ? `Real book line. 56%+ = lean; check the price against fair before betting.` : `No book line yet — blue MODEL LINE is the projection at even odds. Tap Fetch above for real lines.`)}
       ${altBox(altRungs(L3 => 1 - phi((L3 - p.proj) / p.sigma), p._line, 1, 3), p._line, `ALT ${c.short} LINES — every rung priced`, `Bell curve on his ${p.proj.toFixed(1)} projection. Compare with your book's alternate ${c.short.toLowerCase()} menu — bet a rung only when they beat fair.`)}`;
     grid.appendChild(card);
@@ -3410,13 +3560,16 @@ async function fetchHotForm() {
   if (S._hotBusy || S.hot) return;
   if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_hot4") || "null"); if (sv?.d === S.date && sv.hot) { S.hot = sv.hot; wxRecompute(); return; } } catch (e) {} }
   const rosterIds = Object.values(S.hitters || {}).flatMap(arr => (arr || []).map(b => b.id));
-  const ids = [...new Set([...(S.hitPicks || []).map(p => p.id), ...(S.hrPicks || []).filter(p => !p.lowPA).map(p => p.id), ...rosterIds])];
+  const lineupIds = (S.games || []).flatMap(g => ["home", "away"].flatMap(k2 => g[k2]?.lineup ? [...g[k2].lineup] : [])); // tonight's confirmed hitters first — their cards matter most
+  const ids = [...new Set([...lineupIds, ...(S.hitPicks || []).map(p => p.id), ...(S.hrPicks || []).filter(p => !p.lowPA).map(p => p.id), ...rosterIds])];
   if (!ids.length) return;
   S._hotBusy = true; S.hotStage = "0/" + ids.length;
   const hot = {};
   try {
-    for (let i = 0; i < ids.length; i += 40) {
-      const chunk = ids.slice(i, i + 40);
+    const chunks = [];
+    for (let i2 = 0; i2 < ids.length; i2 += 40) chunks.push(ids.slice(i2, i2 + 40));
+    let done = 0;
+    const pull = async chunk => {
       const d2 = await j(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[hitting],type=[gameLog])&fields=people,id,stats,splits,date,stat,hits,atBats,homeRuns,doubles,triples,rbi,runs`);
       for (const per of d2?.people || []) {
         const sp2 = per?.stats?.[0]?.splits || [];
@@ -3432,10 +3585,21 @@ async function fetchHotForm() {
           h10: l10.map(s2 => num(s2.stat?.hits)), hr10: l10.map(s2 => num(s2.stat?.homeRuns)),
           tbVals: sp2.slice(-18).map(tbOf).reverse(), hrrVals: sp2.slice(-18).map(hrrOf).reverse() };
       }
-      S.hotStage = Math.min(i + 40, ids.length) + "/" + ids.length;
-      if (i + 40 < ids.length) await new Promise(r => setTimeout(r, 180));
+      done += chunk.length;
+      S.hotStage = Math.min(done, ids.length) + "/" + ids.length;
+      pubSoon(); // publish per chunk — the first 40 hitters put cards on screen immediately
+    };
+    let pubT = 0;
+    const publish = () => {
+      S.hot = hot;
+      try { wxRecompute(); } catch (e) {}
+    };
+    const pubSoon = () => { const now = Date.now(); if (now - pubT > 400) { pubT = now; publish(); } };
+    for (let w = 0; w < chunks.length; w += 3) { // three chunks in flight at once
+      await Promise.all(chunks.slice(w, w + 3).map(c2 => pull(c2).catch(() => {})));
+      if (w + 3 < chunks.length) await new Promise(r => setTimeout(r, 150));
     }
-    S.hot = hot;
+    publish(); // final full publish
     if (hasLS) try { kbSet("kb_hot4", JSON.stringify({ d: S.date, hot })); } catch (e) {}
   } catch (e) { S.hotErr = e.message; }
   S._hotBusy = false;
@@ -3845,6 +4009,23 @@ function renderRecords() {
   }
   // backtest
   const bt = backtestModels();
+  if (typeof NRFI !== "undefined" && NRFI.ready && NRFI.rec && (NRFI.rec.n.w + NRFI.rec.n.l + NRFI.rec.y.w + NRFI.rec.y.l)) {
+    root.appendChild(el("div", "h1", `NRFI / YRFI <small>· first-inning model — replayed on ${NRFI.cal.length} real first innings (last 30 days)</small>`));
+    root.appendChild(el("div", "recgrid",
+      `<div class="reccard"><div class="recname">NRFI CALLS</div><div class="recwl">${NRFI.rec.n.w}-${NRFI.rec.n.l}</div><div class="recsub">model said no first-inning run</div></div>` +
+      `<div class="reccard"><div class="recname">YRFI CALLS</div><div class="recwl">${NRFI.rec.y.w}-${NRFI.rec.y.l}</div><div class="recsub">model said a run scores</div></div>`));
+    const nrfiBox = el("div", "card");
+    nrfiBox.innerHTML = calRowsHTML(calibrate(NRFI.cal.map(c2 => ({ p: Math.max(c2.p, 1 - c2.p), y: (c2.p >= 0.5) === !!c2.y })), "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 15) || '<div style="font-size:11px;color:var(--dim3);">sample still building</div>';
+    root.appendChild(nrfiBox);
+    try {
+      const jr = nrfiJRec();
+      const jn = jr.n.w + jr.n.l + jr.y.w + jr.y.l;
+      root.appendChild(el("div", "recgrid",
+        `<div class="reccard"><div class="recname">JOURNALED · NRFI</div><div class="recwl">${jn ? jr.n.w + "-" + jr.n.l : "—"}</div><div class="recsub">${jn || jr.pend ? `snapshotted pre-game, graded from finals${jr.pend ? " · " + jr.pend + " pending" : ""}` : "grades after tonight — never rewritten"}</div></div>` +
+        `<div class="reccard"><div class="recname">JOURNALED · YRFI</div><div class="recwl">${jn ? jr.y.w + "-" + jr.y.l : "—"}</div><div class="recsub">${jr.since ? "tracking since " + jr.since : "starts today"}</div></div>`));
+    } catch (e) {}
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Honesty notes: 30-day replay · pitcher 1st-inning splits are season-to-date (a small look-ahead inside the window) · offense uses current team R/gm · the JOURNALED cards are the real record — locked before first pitch, graded from real linescores, never rewritten.</span>`));
+  }
   root.appendChild(el("div", "h1", `SEASON BACKTEST <small>· ${bt.n} games, walk-forward</small>`));
   root.appendChild(el("div", "subhead",
     `Replays the whole season day by day: each model predicts every game using only results from <i>before</i> that game (teams need ${CFG.btMinGames}+ games played first), then gets graded against what actually happened. <b style="color:var(--txt)">KEVIN'S CORE</b> is your model at your <b style="color:var(--txt)">current slider weights</b>, using the factors that can be replayed from results — starting pitcher (who actually started that night, graded on runs allowed in his prior starts), offense (runs/game), 30-day form, bounce-back and home field; only bullpen isn't available historically so it sits at zero. <b>Move your sliders on MY MODEL and this backtest re-scores the whole season.</b> "Always pick home" is the baseline any model must beat.`));
@@ -4207,9 +4388,93 @@ const HELP_PAGES = {
   props: { label: "Strikeout Model", render: pageProps },
   hr: { label: "Home Run Model", render: pageHR },
   hits: { label: "Hits Model", render: pageHits },
+  nrfi: { label: "NRFI / YRFI", render: pageNrfi },
   rec: { label: "Records & Tracking", render: pageRecords },
   market: { label: "Market & Edge", render: pageMarket }
 };
+function pageNrfi() {
+  const rec = (typeof NRFI !== "undefined" && NRFI.rec) ? NRFI.rec : null;
+  return `
+    <h2>NRFI / YRFI — will a run score in the 1st inning?</h2>
+    <p><b>The bet:</b> NRFI = <b>N</b>o <b>R</b>un <b>F</b>irst <b>I</b>nning (both halves scoreless). YRFI = a run scores. Books post it on almost every game, usually around −110 each way, and it's decided in ~20 minutes.</p>
+    <p><b>The model, step by step:</b></p>
+    <p>① Each starter's <b>real first-inning runs allowed</b> come straight from MLB's inning splits — not his overall ERA. Some arms are slow starters (high 1st-inning rate, fine after), some are quick outs. Thin samples get shrunk toward league; a starter with under 3 first innings falls back to his overall run rate.</p>
+    <p>② That rate is multiplied by the <b>opposing offense's scoring rate</b> (their R/gm vs league) — the 1st inning is the one inning guaranteed to face the top of the order.</p>
+    <p>③ Each half-inning becomes a <b>Poisson</b> chance of at least one run; the two halves combine into P(YRFI), with P(NRFI) = the rest. Numbers are hard-capped 15-85% — first innings are coin-adjacent by nature.</p>
+    <p>④ <b>Honesty layer:</b> before showing you anything, the model replays the <b>last two weeks of real first innings</b> (inning-by-inning linescores + that day's probable starters). That replay produces the records${rec ? ` — currently NRFI calls <b>${rec.n.w}-${rec.n.l}</b>, YRFI calls <b>${rec.y.w}-${rec.y.l}</b>` : ""} and a truth-check table in MODEL RECORDS, and fits a shrink so today's numbers are worth what the replay says, not what the raw math brags. On top of that, every call is <b>journaled</b>: snapshotted before first pitch, graded from the real linescore, never rewritten — the JOURNALED cards in MODEL RECORDS are the record that counts.</p>
+    <p><b>Where it lives:</b> the <b>1ST INNING</b> row on every game card's SPREAD &amp; TOTAL box, and calls of 60%+ post to LOCKS under their own <b>1ST INNING</b> category with a fair price.</p>
+    <p><b>Read the fair price like everywhere else:</b> if the model says NRFI 62% (fair −163) and your book pays −120, that's value; if the book wants −180, pass.</p>
+    <p><b>Honest caveats:</b> the replay window is two weeks; pitcher splits are season-to-date (a small look-ahead inside that window); bullpen days and openers make first-inning history less predictive; weather isn't in this math yet.</p>`;
+}
+function renderNrfi() {
+  const root = $("#tab-nrfi"); if (!root) return;
+  root.innerHTML = "";
+  root.appendChild(el("div", "h1", `NRFI / YRFI <small>· will a run score in the 1st inning? — real first-inning splits, replayed &amp; journaled</small>`));
+  root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `① Each starter's <b>real first-inning runs allowed</b> (MLB's inning splits — not his overall ERA; shrunk toward league, ERA fallback under 3 first innings). ② × the <b>opposing offense's scoring rate</b> — the 1st inning is the one inning guaranteed to face the top of the order. ③ Each half becomes a <b>Poisson</b> chance of a run → P(YRFI), hard-capped 15-85% because first innings are coin-adjacent. ④ <b>Honesty layer:</b> replayed on the last 30 days of real first innings (records + TRUTH CHECK in MODEL RECORDS) and shrunk to match; every call is also <b>journaled pre-game</b> and graded from the real linescore — never rewritten. Full math: HOW IT WORKS → NRFI / YRFI.`));
+  if (typeof NRFI === "undefined" || !NRFI.ready) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>${typeof NRFI !== "undefined" && NRFI.busy ? "Replaying the last 30 days of first innings…" : "Waiting for the slate to load…"}</div>`)); try { if (typeof NRFI !== "undefined" && !NRFI.busy) nrfiLoad(); } catch (e) {} return; }
+  const rec = NRFI.rec || { n: { w: 0, l: 0 }, y: { w: 0, l: 0 } };
+  const jr = nrfiJRec(), jn = jr.n.w + jr.n.l + jr.y.w + jr.y.l;
+  const rb = el("div"); rb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+  rb.innerHTML = `<span class="fchip" style="cursor:default;">30-day replay — NRFI calls ${rec.n.w}-${rec.n.l} · YRFI calls ${rec.y.w}-${rec.y.l}</span>` +
+    `<span class="fchip" style="cursor:default;">journaled — ${jn ? `NRFI ${jr.n.w}-${jr.n.l} · YRFI ${jr.y.w}-${jr.y.l}` : "record starts tonight"}${jr.pend ? ` · ${jr.pend} pending` : ""}</span>`;
+  root.appendChild(rb);
+  const rows = (S.games || []).filter(g => g.state === "Preview" && NRFI.p[g.pk] != null).map(g => ({ g, p: NRFI.p[g.pk] })).sort((a, b) => Math.abs(b.p - 0.5) - Math.abs(a.p - 0.5));
+  root.appendChild(el("div", "subhead", `Cards run <b style="color:var(--txt)">strongest call → closest to a coin flip</b>. Started games drop off — this bet is decided in the 1st.`));
+  if (!rows.length) { root.appendChild(el("div", "nobets", "No upcoming games priced yet — cards appear once probables and the 30-day replay land.")); return; }
+  const grid = el("div", "grid wide");
+  for (const { g, p } of rows) {
+    const pn = 1 - p, side2 = p >= 0.5 ? "YRFI" : "NRFI", conf = Math.max(p, pn);
+    const frozen = (() => { // FROZEN FIRST: two bottom-half offenses vs two strikeout arms with clean 1st-inning form, on an NRFI lean
+      try {
+        if (pn < 0.55) return null;
+        const oA = S.teams[g.away.id]?.offZ, oH = S.teams[g.home.id]?.offZ;
+        if (!(oA != null && oH != null && oA < 0 && oH < 0)) return null;
+        const pjA = S.pitchers[g.away.pitcherId]?.proj, pjH = S.pitchers[g.home.pitcherId]?.proj;
+        if (!pjA || !pjH || pjA.grade === "U" || pjH.grade === "U") return null;
+        if (!((pjA.projK ?? 0) >= 5 && (pjH.projK ?? 0) >= 5)) return null;
+        if (nrfiSpMult(g.home.pitcherId) > 1.0 || nrfiSpMult(g.away.pitcherId) > 1.0) return null;
+        return { kA: pjA.projK, kH: pjH.projK, oA, oH };
+      } catch (e) { return null; }
+    })();
+    const molten = (() => { // HOT FIRST — the inverse: two top-half offenses vs two weak arms whose 1st-inning form leaks, on a YRFI lean
+      try {
+        if (frozen || p < 0.55) return null;
+        const oA = S.teams[g.away.id]?.offZ, oH = S.teams[g.home.id]?.offZ;
+        if (!(oA != null && oH != null && oA > 0 && oH > 0)) return null;
+        const pjA = S.pitchers[g.away.pitcherId]?.proj, pjH = S.pitchers[g.home.pitcherId]?.proj;
+        if (!pjA || !pjH || pjA.grade === "U" || pjH.grade === "U") return null; // unproven ≠ bad — the TRIPLE EDGE lesson
+        if (!((pjA.projK ?? 9) <= 4.5 && (pjH.projK ?? 9) <= 4.5)) return null;
+        if (nrfiSpMult(g.home.pitcherId) < 1.0 || nrfiSpMult(g.away.pitcherId) < 1.0) return null; // their real 1st-inning form must agree they leak
+        return { kA: pjA.projK, kH: pjH.projK, oA, oH };
+      } catch (e) { return null; }
+    })();
+    const spRow = side => { const s2 = NRFI.sp[side.pitcherId]; const mult = nrfiSpMult(side.pitcherId); return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:2px 0;"><span style="color:var(--dim);flex:0 0 128px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${side.pitcherName || side.abbr + " SP"}</span><span style="color:var(--dim2);">${s2 && s2.ip >= 3 ? `${s2.r} R in ${s2.ip.toFixed(0)} first innings` : "thin 1st-inning sample"}</span><div class="spacer"></div><b style="color:${mult > 1.05 ? "var(--red)" : mult < 0.95 ? "var(--green)" : "var(--dim)"};">×${mult.toFixed(2)}</b></div>`; };
+    const card = el("div", "card kcard" + (frozen ? " frostbox" : molten ? " heatbox" : ""));
+    card.dataset.nrfipk = g.pk;
+    card.innerHTML = `
+      ${frozen ? '<i class="flake f1"></i><i class="flake f2"></i><i class="flake f3"></i><i class="flake f4"></i>' : molten ? '<i class="hember h1"></i><i class="hember h2"></i><i class="hember h3"></i><i class="hember h4"></i>' : ""}
+      <div class="ktop">${medal(g.away.id, 30)}<span style="color:var(--dim3);">@</span>${medal(g.home.id, 30)}
+        <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;">${g.away.abbr} @ ${g.home.abbr}</div><div style="font-size:11px;color:var(--dim);">${timeLabel(g.time)}</div></div>
+        ${frozen ? `<span class="frostbadge" title="both lineups are bottom-half offenses (z ${frozen.oA.toFixed(2)} / ${frozen.oH.toFixed(2)}) AND both starters project ${frozen.kA.toFixed(1)} & ${frozen.kH.toFixed(1)} Ks with clean 1st-inning form — the classic NRFI setup">FROZEN FIRST</span>` : molten ? `<span class="heatbadge" title="both lineups are top-half offenses (z +${molten.oA.toFixed(2)} / +${molten.oH.toFixed(2)}) AND both starters project only ${molten.kA.toFixed(1)} & ${molten.kH.toFixed(1)} Ks with leaky 1st-inning form — the classic YRFI setup">HOT FIRST</span>` : ""}
+        <span class="leanchip" style="background:${p >= 0.5 ? "rgba(255,71,87,0.12)" : "rgba(52,211,153,0.13)"};color:${p >= 0.5 ? "var(--red)" : "var(--green)"};">${side2} ${(conf * 100).toFixed(0)}%</span></div>
+      <div class="kmid">
+        <div class="kstat"><div class="v" style="color:var(--green);">${(pn * 100).toFixed(0)}%</div><div class="l">NRFI</div></div>
+        <div class="vsep"></div>
+        <div class="kstat"><div class="v" style="color:var(--red);">${(p * 100).toFixed(0)}%</div><div class="l">YRFI</div></div>
+        <div class="vsep"></div>
+        <div class="kstat"><div class="v">${fmtML(probToAmerican(conf))}</div><div class="l">FAIR (${side2})</div></div>
+      </div>
+      ${spRow(g.home)}${spRow(g.away)}
+      ${whyBox([
+        ["Top 1st — " + g.away.abbr + " bat", "×" + (nrfiSpMult(g.home.pitcherId) * nrfiOffMult(g.away.id)).toFixed(2), "home starter's 1st-inning rate × away offense"],
+        ["Bottom 1st — " + g.home.abbr + " bat", "×" + (nrfiSpMult(g.away.pitcherId) * nrfiOffMult(g.home.id)).toFixed(2), "away starter's 1st-inning rate × home offense"],
+        ["League anchor", (NRFI.lg.yr * 100).toFixed(0) + "% YRFI", "the last 30 days of real first innings"],
+        ["→ P(YRFI)", (p * 100).toFixed(1) + "%", "Poisson per half, shrunk by the replay (k=" + (NRFI.fitK || 1).toFixed(2) + ")"],
+      ], `Compare the fair price with your book's NRFI/YRFI market — only bet the side that pays MORE than fair. Records above; truth check lives in MODEL RECORDS.`)}`;
+    grid.appendChild(card);
+  }
+  root.appendChild(grid);
+}
 function renderHow() {
   const root = $("#tab-how");
   const nav = Object.entries(HELP_PAGES).map(([k, p]) => `<span class="pill${k === helpPage ? " active" : ""}" data-page="${k}">${p.label}</span>`).join("");
@@ -4400,11 +4665,11 @@ async function wnbaLoad() {
   renderWnba();
   // each stage is independent: one failing source can't blank the whole tab
   let tl = null;
-  for (let attempt = 0; attempt < 3 && !tl; attempt++) { // the team list is the keystone — retry it
-    try { tl = await j(`${W_SITE}/teams?limit=40`); }
+  for (let attempt = 0; attempt < 4 && !tl; attempt++) { // the team list is the keystone — retry with growing waits (ESPN throttle pages clear in seconds)
+    try { tl = await j(`${W_SITE}/teams?limit=40${attempt ? "&r=" + attempt : ""}`); }
     catch (e) {
-      if (attempt === 2) WS.errors.push("team list: " + e.message + " (3 tries)");
-      else await new Promise(r => setTimeout(r, 1500));
+      if (attempt === 3) WS.errors.push("team list: " + e.message + " (4 tries — using the scoreboard's teams instead)");
+      else await new Promise(r => setTimeout(r, 1500 + attempt * 2000));
     }
   }
   if (tl) {
@@ -4495,6 +4760,10 @@ async function wnbaLoad() {
         if (it) { g.mlHome = parseAm(it.homeTeamOdds?.current?.moneyLine?.american ?? it.homeTeamOdds?.moneyLine); g.mlAway = parseAm(it.awayTeamOdds?.current?.moneyLine?.american ?? it.awayTeamOdds?.moneyLine); g.book = it.provider?.name || "book"; g.spread = it.spread != null && isFinite(num(it.spread)) ? num(it.spread) : null; g.total = it.overUnder != null && isFinite(num(it.overUnder)) ? num(it.overUnder) : null; }
       } catch (e) {}
     }));
+    if (!Object.keys(WS.teams).length) { // team list AND cache both failed — rebuild teams straight from the scoreboard so nothing else sits out
+      for (const g of WS.games) for (const s2 of [g.home, g.away]) if (s2?.id != null) WS.teams[+s2.id] = { id: +s2.id, abbr: s2.abbr, name: s2.name || s2.abbr, logo: s2.logo || "", color: s2.color || "", res: [] };
+      if (Object.keys(WS.teams).length) WS.errors = WS.errors.map(e2 => e2.startsWith("team list:") ? "ℹ team list feed hiccuped — teams rebuilt from today's scoreboard, everything still runs" : e2);
+    }
     for (const g of WS.games) { try { wnbaPredict(g); } catch (e) {} try { wnbaInjPrice(g); } catch (e2) {} }
   } catch (e) { WS.errors.push("scoreboard/odds: " + e.message); }
   {
@@ -5017,7 +5286,7 @@ async function fetchWnbaProps() {
 function capTypes(list, caps) { // keep any one bet type from flooding the board
   const cnt = {}; const res = [];
   for (const x of list) {
-    const key = /TOTAL/.test(x.type) ? "tot" : /HIT/.test(x.type) ? "hit" : /HOME RUN/.test(x.type) ? "hr" : x.type === "K PROP" ? "k" : /PROP/.test(x.type) ? "wprop" : "ml";
+    const key = /1ST INNING/.test(x.type) ? "nrfi" : /H\+R\+RBI/.test(x.type) ? "hrr" : /\bTB\b/.test(x.type) ? "tb" : /TOTAL/.test(x.type) ? "tot" : /HIT/.test(x.type) ? "hit" : /HOME RUN/.test(x.type) ? "hr" : x.type === "K PROP" ? "k" : /PROP/.test(x.type) ? "wprop" : "ml";
     cnt[key] = (cnt[key] || 0) + 1;
     if (cnt[key] <= (caps[key] ?? 99)) res.push(x);
   }
@@ -5045,11 +5314,17 @@ function lvPass(f, x) {
     if (key !== f.sport) return false;
   }
   if (f.noalt && /\bALT\b/.test(x.type || "")) return false;
+  if (f.side && f.side !== "ALL") {
+    const isU = /\bUNDER\b/i.test(x.big || ""), isO = /\bOVER\b|^1\+/i.test(x.big || "");
+    if (f.side === "under" && !isU) return false;
+    if (f.side === "over" && !isO) return false;
+  }
   if (f.cat && f.cat !== "ALL") {
-    const isTot = /TOTAL/.test(x.type), isML = x.type === "MONEYLINE";
+    const isTot = /TOTAL/.test(x.type) && !/1ST INNING/.test(x.type), isML = x.type === "MONEYLINE", isNr = /1ST INNING/.test(x.type);
+    if (f.cat === "nrfi" && !isNr) return false;
     if (f.cat === "tot" && !isTot) return false;
     if (f.cat === "ml" && !isML) return false;
-    if (f.cat === "prop" && (isTot || isML)) return false;
+    if (f.cat === "prop" && (isTot || isML || isNr)) return false;
   }
   if (f.lo === 0 && f.hi === LADDER.length - 1) return true;
   // filter on the bet's real price; if no book price yet, judge by the model's fair odds instead
@@ -5077,7 +5352,8 @@ function lvFilterBar(kind, rerender) {
   const SPORT_CHIPS = [["ALL", "ALL SPORTS"], ["MLB", "⚾ MLB"], ["WNBA", "🏀 WNBA"], ["nfl", "🏈 NFL"], ["nba", "🏀 NBA"], ["nhl", "🏒 NHL"], ["soc", "⚽ SOCCER"]];
   bar.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${lab("SPORT")}${SPORT_CHIPS.map(([k, l]) => `<span class="fchip${f.sport === k ? " on" : ""}" data-s="${k}">${l}</span>`).join("")}${lvActive(kind) ? `<span class="fchip reset" data-r="1" style="margin-left:auto;">✕ RESET</span>` : ""}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">${lab("BET TYPE")}${[["ALL", "ALL TYPES"], ["ml", "MONEYLINES"], ["prop", "PLAYER PROPS"], ["tot", "O/U TOTALS"]].map(([k, l]) => `<span class="fchip${(f.cat || "ALL") === k ? " on" : ""}" data-cat="${k}">${l}</span>`).join("")}<span class="fchip${f.noalt ? " on" : ""}" data-noalt="1" title="hide every alternate-line rung — straight lines only">🚫 NO ALTS</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">${lab("BET TYPE")}${[["ALL", "ALL TYPES"], ["ml", "MONEYLINES"], ["prop", "PLAYER PROPS"], ["tot", "O/U TOTALS"], ["nrfi", "1ST INNING"]].map(([k, l]) => `<span class="fchip${(f.cat || "ALL") === k ? " on" : ""}" data-cat="${k}">${l}</span>`).join("")}<span class="fchip${f.noalt ? " on" : ""}" data-noalt="1" title="hide every alternate-line rung — straight lines only">🚫 NO ALTS</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">${lab("SIDE")}${[["ALL", "BOTH SIDES"], ["over", "OVERS ONLY"], ["under", "UNDERS ONLY"]].map(([k, l]) => `<span class="fchip${(f.side || "ALL") === k ? " on" : ""}" data-side="${k}">${l}</span>`).join("")}<span style="font-size:10px;color:var(--dim3);font-weight:600;">UNDERS = every prop with an under call, best first</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;">
       ${lab("PRICE")}
       ${QUICK.map(([l], i) => `<span class="fchip${activeQuick === i ? " on" : ""}" data-q="${i}">${l}</span>`).join("")}
@@ -5098,10 +5374,11 @@ function lvFilterBar(kind, rerender) {
       mine.style.display = mine.style.display === "grid" ? "none" : "grid";
       return;
     }
-    if (c.dataset.r) { f.sport = "ALL"; f.cat = "ALL"; f.lo = 0; f.hi = max; f.noalt = false; }
+    if (c.dataset.r) { f.sport = "ALL"; f.cat = "ALL"; f.lo = 0; f.hi = max; f.noalt = false; f.side = "ALL"; }
     else if (c.dataset.q != null) { const [, lo2, hi2] = QUICK[+c.dataset.q]; f.lo = lo2; f.hi = hi2; }
     else if (c.dataset.cat) { f.cat = c.dataset.cat; }
     else if (c.dataset.noalt) { f.noalt = !f.noalt; }
+    else if (c.dataset.side) { f.side = c.dataset.side; }
     else { f.sport = c.dataset.s; if (GS_CFG[f.sport]) try { genEnsure(f.sport); } catch (e) {} } // picking a new sport loads it on the spot
     saveLV(); rerender();
   }));
@@ -5124,6 +5401,9 @@ function safeRung(pOverFn, start, step, thr = 0.72, maxDown = 4) { // walk DOWN 
   }
   return null;
 }
+const HUM_K = 0.85; // overconfidence haircut: alt rungs are raw model bells with no backtest behind them — shrink toward 50% before they can call themselves locks
+function hum(p) { return clamp(0.5 + (p - 0.5) * HUM_K, 0.02, 0.98); }
+const ALT_MAXP = 0.905; // ≈ fair −950: the juice ceiling — nothing heavier than about −1000 ever shows on the locks board
 const W_LOCK_MIN = { PTS: 12.5, REB: 6.5, AST: 4.5, "3PM": 1.5, PRA: 18.5, "P+R": 16.5, "P+A": 14.5, "R+A": 8.5 };
 function wLockable(p, st, lineOrRung) { // LOCKS/VALUE quality gate — bench-mystery low-line junk (o2.5 REB etc.) can't crowd out real props
   if (lineOrRung != null && lineOrRung < (W_LOCK_MIN[st] ?? 0)) return false;
@@ -5144,7 +5424,32 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
       if (!pr || !pr.playing || pr.warn || pr.n < 8) continue;
       const modelLine = Math.max(0.5, Math.round(pr.proj - 0.5) + 0.5);
       const rung = safeRung(L2 => 1 - phi((L2 - pr.proj) / pr.sigma), modelLine, WALT2[st] || 2);
-      if (!rung || rung.p > 0.94) continue;
+      // CONSISTENT RUNG — find where ≈−1000 lives for a steady player (never heavier), then demand her recent games back it up
+      try {
+        const vals10 = (p.logs || []).slice(0, 10).map(W_STATS[st]);
+        if (vals10.length >= 8) {
+          let L3 = Math.round((pr.proj - invPhi(ALT_MAXP) * pr.sigma) * 2) / 2; // the −1000 rung by her own bell curve
+          while (L3 < pr.proj && clamp(1 - phi((L3 - pr.proj) / pr.sigma), 0.02, 0.98) > ALT_MAXP) L3 += 0.5; // snap under the ceiling
+          {
+            const hits = vals10.filter(v => v > L3).length;
+            const pM = clamp(1 - phi((L3 - pr.proj) / pr.sigma), 0.02, 0.98);
+            if (hits < vals10.length - 2) throw 0; // her recent games don't back the rung — no pick
+            if (pM < 0.62) throw 0; // not confident enough to be a lock at all
+            if (!wLockable(p, st, L3)) throw 0;
+            if (rung && Math.abs(rung.L - L3) < 1e-9) throw 0; // the standard safe rung already owns this level
+            out.push({ sportKey: "WNBA", sport: "🏀 WNBA", type: st + " ALT PROP", prob: pM, odds: null, big: "OVER " + L3, bigLbl: "CONSISTENT RUNG · fair " + fmtML(probToAmerican(pM)), label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `cleared in ${hits}/${vals10.length} recent games · proj ${pr.proj.toFixed(1)}`, time: gm2.date, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
+              info: [
+                ["Cleared recently", hits + " of her last " + vals10.length + " games", "var(--green)"],
+                ["Projection", pr.proj.toFixed(1) + " " + st],
+                ["Model P(over " + L3 + ")", fmtPct(pM), "var(--green)"],
+                ["Fair price", fmtML(probToAmerican(pM)) + " — capped: nothing heavier than ~−1000 shows here", "var(--green)"],
+                ["Why this rung", "this is where ≈−1000 lives on her ladder — the model's best guess at the book's alt menu"],
+                ["⚠ No book line", "check this rung at your book — only bet if it pays MORE than fair (lighter than " + fmtML(probToAmerican(pM)) + ")", "var(--gold)"]
+              ] });
+          }
+        }
+      } catch (e) {}
+      if (!rung || rung.p > ALT_MAXP) continue;
       if (!wLockable(p, st, rung.L)) continue;
       const nx = rung.L + (WALT2[st] || 2), pNx = 1 - phi((nx - pr.proj) / pr.sigma);
       out.push({ sportKey: "WNBA", sport: "🏀 WNBA", type: st + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `proj ${pr.proj.toFixed(1)} · swing ±${pr.sigma.toFixed(1)} · vs ${pr.oppAbbr || "?"}`, time: gm2.date, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
@@ -5170,7 +5475,7 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
       const line = kman2[side.pitcherId] != null && kman2[side.pitcherId] !== "" ? parseFloat(kman2[side.pitcherId]) : S.props[side.pitcherId]?.line;
       if (line == null) continue;
       const rung = safeRung(L2 => 1 - phi((L2 - proj.projK) / proj.sigma), line, 1, 0.72, 3);
-      if (!rung || rung.p > 0.94) continue;
+      if (!rung || rung.p > ALT_MAXP) continue;
       out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "K ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " Ks (alt)", sub: `proj ${proj.projK.toFixed(1)} · posted line ${line}`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
         info: [["Projection", proj.projK.toFixed(1) + " Ks"], ["Posted line", String(line)], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["Fair price", fmtML(probToAmerican(rung.p))], ["Consistency", "grade " + proj.grade + " · swing ±" + proj.sigma.toFixed(1)], ["⚠ Alt price needed", "your book's alt-K menu must pay better than fair", "var(--gold)"]] });
     }
@@ -5212,6 +5517,27 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
           info: [["Consensus projection", consProj.toFixed(1)], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["All engines 60%+ here", "unanimous", "var(--green)"], ["Fair price", fmtML(probToAmerican(rung.p))], ["Grade", p2.grade + " · " + p2.vals.length + " games logged"], ["⚠ No book line", "compare with your book's alt menu — bet only above fair", "var(--gold)"]] });
       }
     }
+  }
+  try { // MLB TOTAL BASES + H+R+RBI alt rungs
+    for (const kind of ["tb", "hrr"]) {
+      const cT = TBP_CFG[kind];
+      for (const p of cT.picks()) {
+        const gT = (S.games || []).find(x => x.pk === p.gamePk);
+        if (!gT || gT.state !== "Preview" || p.inLineup === false) continue;
+        if (!["A", "B"].includes(p.grade) || (p.vals || []).length < 10) continue;
+        const mL = Math.max(0.5, Math.round(p.proj - 0.5) + 0.5);
+        const rung = safeRung(L2 => 1 - phi((L2 - p.proj) / p.sigma), mL, 1);
+        if (!rung || rung.p > ALT_MAXP) continue;
+        out.push({ sportKey: "MLB", sport: "⚾ MLB", type: cT.short + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (p.name || "").split(" ").slice(-1)[0] + " " + cT.short, sub: `proj ${p.proj.toFixed(1)} · swing ±${p.sigma.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab(kind); jumpToCard(`#tab-${kind} [data-${cT.anchor}="${p.id}"]`); },
+          info: [["Projection", p.proj.toFixed(1) + " " + cT.short], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["⚠ No book line", "find this rung on your book's ALT menu — only bet if it pays MORE than fair", "var(--gold)"]] });
+      }
+    }
+  } catch (e) {}
+  for (const x of out) if (x.odds == null) { // the overconfidence haircut — raw bells run hot, so every un-backtested rung gets humbled
+    x.probRaw = x.prob;
+    x.prob = hum(x.prob);
+    if (x.bigLbl) x.bigLbl = x.bigLbl.replace(/fair [+\u2212\-]?\d+/, "fair " + fmtML(probToAmerican(x.prob)));
+    x.info = (x.info || []).concat([["Overconfidence haircut", (x.probRaw * 100).toFixed(1) + "% raw \u2192 " + (x.prob * 100).toFixed(1) + "% shown", "raw model bells historically run hot \u2014 alt rungs are shrunk toward 50% before they can be locks"]]);
   }
   return out;
 }
@@ -5436,13 +5762,50 @@ function collectLocks() {
         ] });
     }
   }
+  // MLB TOTAL BASES + H+R+RBI — real-line leans, plus the 1+ H+R+RBI everyday play
+  try {
+    for (const kind of ["tb", "hrr"]) {
+      const cT = TBP_CFG[kind], bookT = cT.book();
+      for (const p of cT.picks()) {
+        const gT = (S.games || []).find(x => x.pk === p.gamePk);
+        if (!gT || gT.state !== "Preview" || p.inLineup === false) continue;
+        if (!["A", "B"].includes(p.grade) || (p.vals || []).length < 10) continue;
+        const bo = bookT[p.id];
+        if (bo?.line != null) {
+          const pOver = clamp(1 - phi((bo.line - p.proj) / p.sigma), 0.02, 0.98);
+          const prob = Math.max(pOver, 1 - pOver);
+          const px = pOver >= 0.5 ? (bo.over ?? null) : (bo.under ?? null);
+          if (prob >= th && oddsOK(px ?? probToAmerican(prob), 2)) out.push({ sportKey: "MLB", sport: "⚾ MLB", type: cT.short + " PROP", prob, odds: px, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + bo.line, bigLbl: bo.source || "LINE", label: (p.name || "").split(" ").slice(-1)[0] + " " + cT.short, sub: `proj ${p.proj.toFixed(1)} · swing ±${p.sigma.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab(kind); jumpToCard(`#tab-${kind} [data-${cT.anchor}="${p.id}"]`); },
+            info: [["Projection", p.proj.toFixed(1) + " " + cT.short], ["Line", String(bo.line)], ["P(" + (pOver >= 0.5 ? "OVER" : "UNDER") + ")", fmtPct(prob), "var(--green)"], ["Last 5 / log avg", p.last5.toFixed(1) + " / " + p.season.toFixed(1)], ["Opposing starter", "×" + p.fac.toFixed(2)]] });
+        }
+        if (kind === "hrr") { // 1+ H+R+RBI — cleared-count with the overconfidence haircut
+          const n2 = p.vals.length, c1 = p.vals.filter(v => v >= 1).length;
+          const pM1 = clamp(1 - phi((0.5 - p.proj) / p.sigma), 0.02, 0.99);
+          const p1 = Math.min(ALT_MAXP, hum(clamp((c1 + 2 * pM1) / (n2 + 2), 0.02, 0.99))); // haircut + the −1000 juice ceiling
+          if (c1 >= n2 - 2 && p1 >= 0.72) out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "1+ H+R+RBI PROP", prob: p1, odds: null, big: "1+ H+R+RBI", bigLbl: "fair " + fmtML(probToAmerican(p1)), label: (p.name || "").split(" ").slice(-1)[0], sub: `cleared 1+ in ${c1}/${n2} logged games · proj ${p.proj.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab("hrr"); jumpToCard(`#tab-hrr [data-hrrid="${p.id}"]`); },
+            info: [["Cleared 1+", c1 + " of " + n2 + " logged games", "var(--green)"], ["Projection", p.proj.toFixed(1) + " H+R+RBI"], ["Fair price", fmtML(probToAmerican(p1)) + " — after the overconfidence haircut"], ["⚠ Check your book", "only bet if the 1+ price pays MORE than fair", "var(--gold)"]] });
+        }
+      }
+    }
+  } catch (e) {}
+  try { // NRFI / YRFI — calibrated first-inning calls
+    if (typeof NRFI !== "undefined" && NRFI.ready) for (const g of S.games || []) {
+      if (g.state !== "Preview") continue;
+      const py = NRFI.p[g.pk]; if (py == null) continue;
+      const side2 = py >= 0.5 ? "YRFI" : "NRFI", prob = Math.min(Math.max(py, 1 - py), ALT_MAXP);
+      if (prob < 0.60) continue; // first innings are coin-adjacent — only real leans qualify
+      const r2 = py >= 0.5 ? NRFI.rec?.y : NRFI.rec?.n;
+      out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "1ST INNING " + side2, prob, odds: null, big: side2, bigLbl: "fair " + fmtML(probToAmerican(prob)), label: g.away.abbr + " @ " + g.home.abbr, sub: `NRFI ${((1 - py) * 100).toFixed(0)}% · YRFI ${(py * 100).toFixed(0)}% · calibrated on ${NRFI.cal.length} real first innings`, time: g.time, go: () => { setSport("mlb"); selectTab("nrfi"); jumpToCard(`#tab-nrfi [data-nrfipk="${g.pk}"]`); },
+        info: [["P(" + side2 + ")", fmtPct(prob), "var(--green)"], ["Replay record (" + side2 + " calls)", r2 ? r2.w + "-" + r2.l : "—"], (() => { try { const jr2 = nrfiJRec(); const s3 = py >= 0.5 ? jr2.y : jr2.n; return ["Journaled record", (s3.w + s3.l) ? s3.w + "-" + s3.l : "grades after tonight", "var(--green)"]; } catch (e) { return null; } })(), ["Starters' 1st-inning form", "on the game card's 1ST INNING row"], ["⚠ No book line", "check your book's NRFI market — only bet if it pays MORE than fair", "var(--gold)"]] });
+    }
+  } catch (e) {}
   out.push(...collectGenLV("locks"));
   try { out.push(...collectAltLocks()); } catch (e) {}
   try { out.push(...collectTotLocks()); } catch (e) {}
   S._lvPool = out.slice(); // pre-filter pool → "today's pool" note
   out.sort((a, b) => b.prob - a.prob);
   const flt = out.filter(x => lvPass(LV.locks, x));
-  const capped = capTypes(flt, { hit: 3, hr: 1, wprop: LV.locks.sport === "ALL" ? 8 : 12, tot: LV.locks.cat === "tot" ? 24 : 6 });
+  const capped = capTypes(flt, { hit: 3, hr: 1, tb: 3, hrr: 5, nrfi: 3, wprop: LV.locks.sport === "ALL" ? 8 : 12, tot: LV.locks.cat === "tot" ? 24 : 6 });
   const strong = capped.filter(l => l.prob >= 0.60);
   const fill = capped.filter(l => l.prob < 0.60);
   const res = [...strong];
@@ -5657,7 +6020,7 @@ function collectValue() {
   S._lvPoolV = out.slice();
   out.sort((a, b) => b.edge - a.edge);
   const flt = out.filter(x => lvPass(LV.value, x));
-  const capped = capTypes(flt, { hit: 3, hr: 2, wprop: LV.value.sport === "WNBA" ? 8 : 4 });
+  const capped = capTypes(flt, { hit: 3, hr: 2, tb: 3, hrr: 4, wprop: LV.value.sport === "WNBA" ? 8 : 4 });
   const strong = capped.filter(l => l.edge >= 3);
   const res = [...strong];
   for (const f of capped.filter(l => l.edge < 3)) { if (res.length >= 8) break; res.push(f); }
@@ -6153,20 +6516,39 @@ function renderWnba() {
   if (WS.view === "props") {
   const comboOpts = ["PRA", "P+R", "P+A", "R+A"];
   const isCombo = comboOpts.includes(WS.stat);
-  const statName = { PTS: "POINTS", REB: "REBOUNDS", AST: "ASSISTS", "3PM": "3-POINTERS MADE" }[WS.stat] || "COMBOS · " + WS.stat;
+  const bestMode = isCombo && (!hasLS || localStorage.getItem("kb_wcombo") !== "0");
+  const statName = { PTS: "POINTS", REB: "REBOUNDS", AST: "ASSISTS", "3PM": "3-POINTERS MADE" }[WS.stat] || (bestMode ? "COMBOS · BEST OF PRA / P+R / P+A / R+A" : "COMBOS · " + WS.stat);
   root.appendChild(el("div", "h1", `${statName} <small>· player prop model</small>`));
   root.appendChild(expBox("HOW THIS MODEL WORKS — 20 SECONDS", `Each player's projection = 60% her last 5 games + 40% season rate, nudged by how leaky the opponent's defense is — and trimmed when the game models as a <b>blowout</b> (lopsided margin = stars rest the 4th, on both sides). The bars are her actual last 10 games for this stat vs the line. <b>P(OVER)</b> comes from her own game-to-game swings — steady players get confident calls, boom-bust players don't. With a real book line in (auto from DraftKings or the Odds API), you get OVER/UNDER plus a quality badge: STRONG BET (62%+) · GOOD (56%+) · ALRIGHT (52%+). The blue MODEL LINE is just the projection at even odds — a reference point, not a bet.`));
-  const selBtns = isCombo ? `<br><span class="seg" style="margin-top:8px;display:inline-flex;">` + comboOpts.map(k => `<button data-wstat="${k}" class="${k === WS.stat ? "on" : ""}">${k}</button>`).join("") + `</span>` : "";
+  const selBtns = isCombo ? `<br><span class="seg" style="margin-top:8px;display:inline-flex;">` + [["BEST", "BEST OF 4"]].concat(comboOpts.map(k => [k, k])).map(([k, l]) => `<button data-wstat="${k}" class="${(bestMode ? k === "BEST" : k === WS.stat) ? "on" : ""}">${l}</button>`).join("") + `</span>` : "";
   root.appendChild(el("div", "subhead", `Projection = 60% last-5 / 40% season per-game rate × opponent defense factor. P(OVER) uses the player's own game-to-game spread. Bet quality once a real line is in: <b style="color:var(--green)">STRONG BET</b> = model gives its side 62%+ · <b style="color:var(--gold)">GOOD</b> = 56%+ · <b style="color:var(--blue)">ALRIGHT</b> = 52%+ · below that, pass. Type your book's line, or <button class="btn ghost" id="wPropBtn">Fetch ${WS.stat} lines (Odds API)</button>${selBtns}`));
   const manual = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
   const pgrid = el("div", "grid wide");
-  const rows = WS.players.map(p => ({ p, pr: wnbaProj(p, WS.stat) })).filter(x => x.pr && x.pr.playing);
+  const pickBest = p => { // judge all four combos: lined ones by strongest side, unlined by steadiness
+    let best = null;
+    for (const c of comboOpts) {
+      let prC = null; try { prC = wnbaProj(p, c); } catch (e) {}
+      if (!prC || !prC.playing) continue;
+      const boC = WS.propBook[c]?.[p.id];
+      let score;
+      if (boC?.line != null) { const pv = 1 - phi((boC.line - prC.proj) / prC.sigma); score = 2 + Math.abs(pv - 0.5); }
+      else { const vals = (p.logs || []).map(W_STATS[c]); const m2 = mean(vals); score = 1 - (m2 > 0 ? sd(vals) / m2 : 9); }
+      if (!best || score > best.score) best = { st: c, pr: prC, score };
+    }
+    return best;
+  };
+  const rows = bestMode
+    ? WS.players.map(p => { const b2 = pickBest(p); return b2 ? { p, pr: b2.pr, st: b2.st } : null; }).filter(Boolean)
+    : WS.players.map(p => ({ p, pr: wnbaProj(p, WS.stat) })).filter(x => x.pr && x.pr.playing);
   const rows2 = rows.length ? rows : WS.players.map(p => ({ p, pr: wnbaProj(p, WS.stat) })).filter(x => x.pr).slice(0, 12);
   // best value → worst: priced edges, then strongest leans, then steadiest projections; live games grey at the bottom
   for (const r of rows2) {
-    const bo0 = WS.propBook[WS.stat]?.[r.p.id];
-    const l0 = manual[r.p.id] != null && manual[r.p.id] !== "" ? parseFloat(manual[r.p.id]) : (bo0?.line ?? null);
+    const ST0 = r.st || WS.stat;
+    const man0 = ST0 === WS.stat ? manual : (hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + ST0 + "_" + S.date) || "{}") : {});
+    const bo0 = WS.propBook[ST0]?.[r.p.id];
+    const l0 = man0[r.p.id] != null && man0[r.p.id] !== "" ? parseFloat(man0[r.p.id]) : (bo0?.line ?? null);
     r.strength = l0 != null ? Math.abs(0.5 - (1 - phi((l0 - r.pr.proj) / r.pr.sigma))) : -1;
+    r.pUnder = l0 != null ? phi((l0 - r.pr.proj) / r.pr.sigma) : -1;
     r.snr = r.pr.sigma > 0 ? r.pr.proj / r.pr.sigma : 0;
     r.edge = (bo0?.over != null && l0 != null) ? (1 - phi((l0 - r.pr.proj) / r.pr.sigma)) - americanToProb(bo0.over) : null;
     r.live = !!(WS.games || []).find(g2 => g2.live && (g2.home.abbr === r.p.team || g2.away.abbr === r.p.team));
@@ -6175,25 +6557,28 @@ function renderWnba() {
   const wsBar2 = el("div");
   wsBar2.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   wsBar2.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
-    [["value", "BEST VALUE"], ["consist", "MOST CONSISTENT"]].map(([k2, l2]) => `<span class="fchip${wpSort === k2 ? " on" : ""}" data-wps="${k2}">${l2}</span>`).join("") +
+    [["value", "BEST VALUE"], ["under", "BEST UNDER"], ["consist", "MOST CONSISTENT"]].map(([k2, l2]) => `<span class="fchip${wpSort === k2 ? " on" : ""}" data-wps="${k2}">${l2}</span>`).join("") +
     `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${wpSort === "consist" ? "smallest night-to-night " + WS.stat + " swing relative to her average first" : "priced edges, then strongest leans, then steadiest projections"}</span>`;
   wsBar2.querySelectorAll("[data-wps]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_wpsort", c2.dataset.wps); renderWnba(); }));
   root.appendChild(wsBar2);
-  const wCvOf = r => { const vals = (r.p.logs || []).map(W_STATS[WS.stat]); if (vals.length < 8) return 9; const m2 = mean(vals); return m2 > 0 ? sd(vals) / m2 : 9; };
+  const wCvOf = r => { const vals = (r.p.logs || []).map(W_STATS[r.st || WS.stat]); if (vals.length < 8) return 9; const m2 = mean(vals); return m2 > 0 ? sd(vals) / m2 : 9; };
   const wTier = r => r.live ? 3 : r.edge != null ? 0 : r.strength >= 0 ? 1 : 2;
   const wScore = r => r.live ? 0 : r.edge != null ? r.edge : r.strength >= 0 ? r.strength : r.snr;
-  if (wpSort === "consist") rows2.sort((a, b) => (a.live ? 1 : 0) - (b.live ? 1 : 0) || wCvOf(a) - wCvOf(b) || wScore(b) - wScore(a));
+  if (wpSort === "under") rows2.sort((a, b) => (a.live ? 1 : 0) - (b.live ? 1 : 0) || (b.pUnder ?? -1) - (a.pUnder ?? -1) || wScore(b) - wScore(a));
+  else if (wpSort === "consist") rows2.sort((a, b) => (a.live ? 1 : 0) - (b.live ? 1 : 0) || wCvOf(a) - wCvOf(b) || wScore(b) - wScore(a));
   else rows2.sort((a, b) => wTier(a) - wTier(b) || wScore(b) - wScore(a));
   for (const r of rows2.slice(0, 15)) {
     const { p, pr } = r;
-    const bo = WS.propBook[WS.stat]?.[p.id];
+    const ST = r.st || WS.stat;
+    const manual2 = ST === WS.stat ? manual : (hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + ST + "_" + S.date) || "{}") : {});
+    const bo = WS.propBook[ST]?.[p.id];
     const modelLine = Math.max(0.5, Math.round(pr.proj - 0.5) + 0.5); // nearest .5 to the projection ⇒ over/under lands near even (-100) odds
-    const hasRealLine = (manual[p.id] != null && manual[p.id] !== "") || bo?.line != null;
-    const line = manual[p.id] != null && manual[p.id] !== "" ? parseFloat(manual[p.id]) : (bo?.line ?? modelLine);
+    const hasRealLine = (manual2[p.id] != null && manual2[p.id] !== "") || bo?.line != null;
+    const line = manual2[p.id] != null && manual2[p.id] !== "" ? parseFloat(manual2[p.id]) : (bo?.line ?? modelLine);
     const pOver = line != null ? 1 - phi((line - pr.proj) / pr.sigma) : null;
     const lean = pOver == null ? null : !hasRealLine ? "MODEL" : pOver >= 0.56 ? "OVER" : pOver <= 0.44 ? "UNDER" : "PASS";
     const lc = lean === "OVER" ? "var(--green)" : lean === "UNDER" ? "var(--red)" : lean === "MODEL" ? "var(--blue)" : "var(--dim)";
-    const chartVals = (p.logs || []).slice(0, 10).map(W_STATS[WS.stat]).reverse(); // oldest → newest
+    const chartVals = (p.logs || []).slice(0, 10).map(W_STATS[ST]).reverse(); // oldest → newest
     const card = el("div", "card kcard" + (r.live ? " started" : ""));
     card.dataset.wpid = p.id;
     card.innerHTML = `
@@ -6201,15 +6586,15 @@ function renderWnba() {
         <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
         <div style="font-size:11px;color:var(--dim);">${p.team}${pr.oppAbbr ? " vs " + pr.oppAbbr : ""} · ${pr.n} games logged</div>
         ${pr.warn ? `<span class="warn">⚠ ${pr.warn}</span>` : ""}</div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">${gBadge(wGradeU(pr, p, WS.stat, hasRealLine, pOver))}${lean ? `<div class="leanchip" style="background:${lean === "OVER" ? "rgba(52,211,153,0.13)" : lean === "UNDER" ? "rgba(248,113,113,0.12)" : lean === "MODEL" ? "rgba(91,157,255,0.12)" : "var(--panel3)"};color:${lc};">${lean}${lean !== "PASS" ? " " + line : ""}</div>` : ""}</div></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;">${bestMode && r.st ? `<span class="typechip" style="background:rgba(255,107,214,0.12);color:var(--pink);font-size:9px;">BEST: ${r.st}</span>` : ""}${gBadge(wGradeU(pr, p, ST, hasRealLine, pOver))}${lean ? `<div class="leanchip" style="background:${lean === "OVER" ? "rgba(52,211,153,0.13)" : lean === "UNDER" ? "rgba(248,113,113,0.12)" : lean === "MODEL" ? "rgba(91,157,255,0.12)" : "var(--panel3)"};color:${lc};">${lean}${lean !== "PASS" ? " " + line : ""}</div>` : ""}</div></div>
       <div class="kmid">
-        <div class="kstat"><div class="v">${pr.proj.toFixed(1)}</div><div class="l">PROJ ${WS.stat}</div></div>
+        <div class="kstat"><div class="v">${pr.proj.toFixed(1)}</div><div class="l">PROJ ${ST}</div></div>
         <div class="vsep"></div>
         <div class="kstat"><div class="v" style="color:${hasRealLine ? "var(--dim)" : "var(--blue)"};">${line ?? "—"}</div><div class="l">${bo ? bo.source.toUpperCase() : hasRealLine ? "YOUR LINE" : "MODEL LINE ≈ −100"}</div></div>
         <div class="vsep"></div>
         <div class="kstat"><div class="v" style="color:${lc};">${pOver != null ? (pOver * 100).toFixed(0) + "%" : "—"}</div><div class="l">P(OVER)</div></div>
         <div class="spacer"></div>
-        <div>${sparkSVG(chartVals, line)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${WS.stat} — LAST ${chartVals.length} GAMES</div></div>
+        <div>${sparkSVG(chartVals, line)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${ST} — LAST ${chartVals.length} GAMES</div></div>
       </div>
       <div class="chips">
         ${r.live ? '<span class="chip">LIVE — line frozen</span>' : ""}
@@ -6220,22 +6605,22 @@ function renderWnba() {
         ${(() => { if (!hasRealLine || pOver == null) return ""; const s = Math.max(pOver, 1 - pOver); const t = s >= 0.62 ? ["STRONG BET", "var(--green)", "rgba(52,211,153,0.14)"] : s >= 0.56 ? ["GOOD", "var(--gold)", "rgba(245,185,62,0.13)"] : s >= 0.52 ? ["ALRIGHT", "var(--blue)", "rgba(91,157,255,0.12)"] : ["PASS", "var(--dim)", "var(--panel3)"]; return `<span class="tier" style="color:${t[1]};background:${t[2]};">${t[0]}</span>`; })()}
       </div>
       ${whyBox([
-        ["Her last 5 games", pr.last5.toFixed(1) + " " + WS.stat, "60% of the projection — form matters most"],
-        ["Her season rate", pr.avg.toFixed(1) + " " + WS.stat, `40% of the projection · ${pr.n} games`],
+        ["Her last 5 games", pr.last5.toFixed(1) + " " + ST, "60% of the projection — form matters most"],
+        ["Her season rate", pr.avg.toFixed(1) + " " + ST, `40% of the projection · ${pr.n} games`],
         ["Blend", (pr.mult !== 0 ? (pr.proj / pr.mult) : pr.proj).toFixed(1), "0.6 × last-5 + 0.4 × season"],
         pr.oppAbbr ? ["Tonight's defense", "×" + pr.mult.toFixed(2), `${pr.oppAbbr} ${pr.mult > 1.02 ? "leak more than average" : pr.mult < 0.98 ? "clamp down" : "are about average"} for this stat`] : null,
         pr.blow ? ["Blowout check", "×" + pr.blow.m.toFixed(2), `model margin ~${pr.blow.mu.toFixed(0)} pts — lopsided games rest the stars, so the projection trims`] :
         pr.blowMu != null ? ["Blowout check", "×1.00", `model margin ~${pr.blowMu.toFixed(0)} pts — close enough that stars keep full minutes, no trim`] : null,
-        ["→ Projection", pr.proj.toFixed(1) + " " + WS.stat, "blend × defense factor"],
-        ["Her night-to-night swing", "±" + pr.sigma.toFixed(1), pr.sigma <= (WCFG.statFloors[WS.stat] || 3) * 1.15 ? "steady — calls get confidence" : "boom-bust — calls stay humble"],
+        ["→ Projection", pr.proj.toFixed(1) + " " + ST, "blend × defense factor"],
+        ["Her night-to-night swing", "±" + pr.sigma.toFixed(1), pr.sigma <= (WCFG.statFloors[ST] || 3) * 1.15 ? "steady — calls get confidence" : "boom-bust — calls stay humble"],
         pOver != null && line != null ? [`P(OVER ${line})`, (pOver * 100).toFixed(0) + "%", "bell curve centered on her projection, width = her swing"] : null,
         pr.warn ? ["⚠ Heads up", pr.warn, "recent minutes tell the truth before box scores do"] : null,
       ], hasRealLine ? `The call: projection ${pr.proj.toFixed(1)} vs line ${line} — a ${(pr.proj - line >= 0 ? "+" : "") + (pr.proj - line).toFixed(1)} gap against her ±${pr.sigma.toFixed(1)} swing. 62%+ = STRONG BET, 56%+ = GOOD, below 52% = pass.` : `Blue MODEL LINE = her projection rounded to the nearest half — a reference at even odds, not a bet, until a real book line posts.`)}
-      ${altBox(altRungs(L3 => 1 - phi((L3 - pr.proj) / pr.sigma), line ?? modelLine, { PTS: 2, REB: 1, AST: 1, "3PM": 1, PRA: 2.5, "P+R": 2, "P+A": 2, "R+A": 1.5 }[WS.stat] || 2, 3), hasRealLine ? line : modelLine, `ALT ${WS.stat} LINES — every rung priced`, `Bell curve centered on her ${pr.proj.toFixed(1)} projection, width = her ±${pr.sigma.toFixed(1)} swing. Compare with your book's alternate ${WS.stat} menu — a rung is only a bet when the book pays more than fair.`)}`;
+      ${altBox(altRungs(L3 => 1 - phi((L3 - pr.proj) / pr.sigma), line ?? modelLine, { PTS: 2, REB: 1, AST: 1, "3PM": 1, PRA: 2.5, "P+R": 2, "P+A": 2, "R+A": 1.5 }[ST] || 2, 3), hasRealLine ? line : modelLine, `ALT ${ST} LINES — every rung priced`, `Bell curve centered on her ${pr.proj.toFixed(1)} projection, width = her ±${pr.sigma.toFixed(1)} swing. Compare with your book's alternate ${ST} menu — a rung is only a bet when the book pays more than fair.`)}`;
     card.querySelector(".manline")?.addEventListener("change", ev => {
-      const m = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + WS.stat + "_" + S.date) || "{}") : {};
+      const m = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + ST + "_" + S.date) || "{}") : {};
       m[ev.target.dataset.wpid] = ev.target.value;
-      if (hasLS) localStorage.setItem("kb_wline_" + WS.stat + "_" + S.date, JSON.stringify(m));
+      if (hasLS) localStorage.setItem("kb_wline_" + ST + "_" + S.date, JSON.stringify(m));
       renderWnba();
     });
     pgrid.appendChild(card);
@@ -6246,7 +6631,7 @@ function renderWnba() {
   const rl = el("button", null, "RELOAD WNBA DATA"); rl.className = "btn ghost"; rl.style.marginTop = "14px";
   rl.addEventListener("click", () => { WS.loaded = false; wnbaEnsure(); });
   root.appendChild(rl);
-  root.querySelectorAll("[data-wstat]").forEach(b => b.addEventListener("click", () => { WS.stat = b.dataset.wstat; renderWnba(); }));
+  root.querySelectorAll("[data-wstat]").forEach(b => b.addEventListener("click", () => { if (b.dataset.wstat === "BEST") { if (hasLS) localStorage.setItem("kb_wcombo", "1"); WS.stat = "PRA"; } else { if (hasLS) localStorage.setItem("kb_wcombo", "0"); WS.stat = b.dataset.wstat; } renderWnba(); }));
   $("#wPropBtn")?.addEventListener("click", fetchWnbaProps);
 }
 
@@ -7718,14 +8103,14 @@ function renderTennis() {
 }
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
-  for (const id of ["board", "ks", "hr", "hits", "tb", "hrr", "wnba", "locks", "value", "rec", "model", "how", "gen", "ten"]) $("#tab-" + id).style.display = id === name ? "" : "none";
+  for (const id of ["board", "ks", "hr", "hits", "tb", "hrr", "nrfi", "wnba", "locks", "value", "rec", "model", "how", "gen", "ten"]) $("#tab-" + id).style.display = id === name ? "" : "none";
   if (name === "wnba") wnbaEnsure();
   if (name === "locks") { renderLocks(); wnbaEnsure(); } // pull in both sports
   if (name === "value") { renderValue(); wnbaEnsure(); }
 }
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
-const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
+const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["nrfi", "NRFI/YRFI"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
 const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
