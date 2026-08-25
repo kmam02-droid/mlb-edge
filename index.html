@@ -438,7 +438,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v4.90 · 10a";
+const BUILD = "v5.01 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -750,6 +750,7 @@ async function loadAll() {
   const relayTxt = IS_LOCAL_SERVER ? " · via local helper" : (relayIdx > 0 ? " · MLB data via relay (direct connection blocked on this computer)" : "");
   setStatus(`Loaded ${S.games.length} games. Sources: MLB Stats API${res.espn ? " + ESPN/DraftKings" : ""}${getKey() ? " + The Odds API" : ""}${relayTxt}.` + errTxt);
   setTimeout(() => { try { nrfiLoad(); } catch (e) {} }, 1200); // first-inning model rides in behind the main load
+  setTimeout(() => { try { spWarLoad(); } catch (e) {} }, 2200); // starter WAR too
 }
 
 function parseSchedule(data) {
@@ -836,8 +837,8 @@ function parseResults(data) {
     S.seasonGames.push({ d: g.officialDate, pk: g.gamePk, hId: h.team.id, aId: a.team.id, hs: h.score, as: a.score, hSp: h.probablePitcher?.id || null, aSp: a.probablePitcher?.id || null });
     if (h.probablePitcher?.id) (S.spLog[h.probablePitcher.id] = S.spLog[h.probablePitcher.id] || []).push({ d: g.officialDate, ra: a.score, opp: a.team.id });
     if (a.probablePitcher?.id) (S.spLog[a.probablePitcher.id] = S.spLog[a.probablePitcher.id] || []).push({ d: g.officialDate, ra: h.score, opp: h.team.id });
-    rec(h.team.id).games.push({ d: g.officialDate, w: !!h.isWinner, rf: h.score, ra: a.score, opp: a.team.id });
-    rec(a.team.id).games.push({ d: g.officialDate, w: !!a.isWinner, rf: a.score, ra: h.score, opp: h.team.id });
+    rec(h.team.id).games.push({ d: g.officialDate, w: !!h.isWinner, rf: h.score, ra: a.score, opp: a.team.id, oppSp: a.probablePitcher?.id || null });
+    rec(a.team.id).games.push({ d: g.officialDate, w: !!a.isWinner, rf: a.score, ra: h.score, opp: h.team.id, oppSp: h.probablePitcher?.id || null });
     rec(h.team.id).rs += h.score; rec(h.team.id).ra += a.score;
     rec(a.team.id).rs += a.score; rec(a.team.id).ra += h.score;
     const Rh = getElo(h.team.id), Ra = getElo(a.team.id);
@@ -865,7 +866,13 @@ function parseResults(data) {
     let off30adj = null;
     if (last30.length) {
       const oppRApg = opp => { const o2 = byTeam[opp]; return o2 && o2.games.length >= 5 ? o2.ra / o2.games.length : 4.5; };
-      off30adj = mean(last30.map(g => g.rf * (4.5 / clamp(oppRApg(g.opp), 3, 6.5))));
+      const spRA = sp => { const lg2 = S.spLog[sp]; return lg2 && lg2.length >= 3 ? mean(lg2.map(e2 => e2.ra)) : null; }; // that starter's whole season of run prevention
+      off30adj = mean(last30.map(g => {
+        const teamMult = 4.5 / clamp(oppRApg(g.opp), 3, 6.5);
+        const sRA = g.oppSp != null ? spRA(g.oppSp) : null;
+        const spMult = sRA != null ? 4.5 / clamp(sRA, 3, 6.5) : null;
+        return g.rf * (spMult != null ? 0.6 * spMult + 0.4 * teamMult : teamMult); // 5 runs off an ace ≫ 5 off a sieve — the actual arm faced weighs most
+      }));
     }
     S.teams[id] = S.teams[id] || {};
     S.teams[id].daily = {
@@ -1181,6 +1188,26 @@ function nrfiJRec() { // the real record — graded snapshots only
   const nj = loadNJ(); const R = () => ({ w: 0, l: 0 }); const rec = { n: R(), y: R(), pend: 0, since: null };
   for (const d2 of Object.keys(nj).sort()) { if (!rec.since) rec.since = d2; for (const pk in nj[d2]) { const e2 = nj[d2][pk]; if (e2.res == null) { rec.pend++; continue; } const hit = (e2.call === "YRFI") === !!e2.res; (e2.call === "YRFI" ? rec.y : rec.n)[hit ? "w" : "l"]++; } }
   return rec;
+}
+async function spWarLoad() { // starting-pitcher WAR (statsapi sabermetrics) — day-cached, one bulk call
+  if (S._warBusy || S.spWar) return; S._warBusy = true;
+  try {
+    const ck = "kb_spwar_" + S.date;
+    let w2 = null;
+    if (hasLS) try { w2 = JSON.parse(localStorage.getItem(ck) || "null"); } catch (e) {}
+    if (!w2) {
+      const pids = [...new Set((S.games || []).flatMap(g => [g.home.pitcherId, g.away.pitcherId]).filter(Boolean))];
+      if (pids.length) {
+        const js = await j(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.join(",")}&hydrate=stats(group=[pitching],type=[sabermetrics])&fields=people,id,stats,splits,stat,war,fip`);
+        w2 = {};
+        for (const p2 of js?.people || []) { const s2 = p2?.stats?.[0]?.splits?.[0]?.stat; if (s2 && s2.war != null) w2[p2.id] = { war: s2.war, fip: s2.fip ?? null }; }
+        kbSet(ck, JSON.stringify(w2));
+      }
+    }
+    if (w2) S.spWar = w2;
+  } catch (e) {}
+  S._warBusy = false;
+  try { if (!whyOpenNow() && document.querySelector("#tab-board")?.style.display !== "none") renderBoard(); } catch (e) {}
 }
 async function nrfiLoad() {
   if (NRFI.busy) return; NRFI.busy = true;
@@ -2543,13 +2570,13 @@ function renderBoard() {
     root.appendChild(el("div", "nobets", `No plays fit your filters right now (edge ≥ ${S.weights.edgeThresh}%, odds ${fmtML(CFG.plusOddsMax)} to ${CFG.oddsFloor}). Hit Refresh near first pitch — lines move all day.`));
   }
   const mSort = (hasLS && localStorage.getItem("kb_sortmlb")) || "cons";
-  const M_SORTS = [["cons", "CONSENSUS EDGE"], ["prob", "WIN PROB"], ["kevin", "KEVIN'S MODEL"], ["sharp", "SHARP"], ["pyth", "PYTHAG"], ["elo", "ELO"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["time", "GAME TIME"]];
+  const M_SORTS = [["cons", "CONSENSUS EDGE"], ["prob", "WIN PROB"], ["kevin", "KEVIN'S MODEL"], ["sharp", "SHARP"], ["pyth", "PYTHAG"], ["elo", "ELO"], ["spread", "BEST SPREAD"], ["total", "BEST TOTAL"], ["war", "SP WAR GAP"], ["bats30", "30-DAY BATS GAP"], ["time", "GAME TIME"]];
   root.appendChild(el("div", "h1 grad", `FULL SLATE <small>· ${S.games.length} games — finished &amp; live drop to the bottom</small>`));
   const sortBar = el("div");
   sortBar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 12px;";
   sortBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
     M_SORTS.map(([k, l]) => `<span class="fchip${mSort === k ? " on" : ""}" data-msort="${k}">${l}</span>`).join("") +
-    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "prob" ? "the biggest consensus favorites first — most likely ML winners" : mSort === "time" ? "chronological" : mSort === "spread" ? "strongest run-line lean first" : mSort === "total" ? "strongest over/under lean first" : "that model's most confident picks first"}</span>`;
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${mSort === "cons" ? "best edge vs the market first" : mSort === "prob" ? "the biggest consensus favorites first — most likely ML winners" : mSort === "time" ? "chronological" : mSort === "spread" ? "strongest run-line lean first" : mSort === "total" ? "strongest over/under lean first" : mSort === "war" ? "biggest starting-pitcher WAR mismatch first — games with no WAR yet sink" : mSort === "bats30" ? "biggest 30-day (opp-adjusted R/gm) offense mismatch first — one hot lineup vs one cold one" : "that model's most confident picks first"}</span>`;
   sortBar.querySelectorAll("[data-msort]").forEach(c => c.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_sortmlb", c.dataset.msort); renderBoard(); }));
   root.appendChild(sortBar);
   const rbs = S.games.filter(g => { try { return !!rainbowPick(g); } catch (e) { return false; } });
@@ -2559,6 +2586,8 @@ function renderBoard() {
   const grid = el("div", "grid");
   const rank = g => g.state === "Preview" ? 0 : g.state === "Live" ? 1 : 2;
   const bestEdge = g => Math.max(g.edgeHome ?? -99, g.edgeAway ?? -99);
+  const warGap = g => { const wh = S.spWar?.[g.home.pitcherId]?.war, wa = S.spWar?.[g.away.pitcherId]?.war; return wh != null && wa != null ? Math.abs(wh - wa) : -1; };
+  const batGap30 = g => { const oh = S.teams[g.home.id]?.daily?.off30adj, oa = S.teams[g.away.id]?.daily?.off30adj; return oh != null && oa != null ? Math.abs(oh - oa) : -1; };
   const mConf = g => {
     const p = mSort === "kevin" ? g.kevin?.pHome : mSort === "pyth" ? g.pyth?.pHome : mSort === "elo" ? g.elo?.pHome : mSort === "sharp" ? g.sharp?.pHome : g.consensus;
     return p == null ? -1 : Math.max(p, 1 - p);
@@ -2584,6 +2613,8 @@ function renderBoard() {
       : mSort === "cons" ? bestEdge(b) - bestEdge(a)
       : mSort === "spread" ? spConf(b) - spConf(a)
       : mSort === "total" ? totConf(b) - totConf(a)
+      : mSort === "war" ? warGap(b) - warGap(a)
+      : mSort === "bats30" ? batGap30(b) - batGap30(a)
       : mConf(b) - mConf(a))); // "prob" and per-model sorts share mConf: the favorite's win probability, biggest first
   let vRank = 0;
   for (const g of sorted) {
@@ -2594,7 +2625,8 @@ function renderBoard() {
 }
 function pitcherLineTxt(pid) {
   const s = S.pitchers[pid]?.season; if (!s) return "no season data";
-  return `${s.era} ERA · ${s.strikeoutsPer9Inn} K/9 · ${s.inningsPitched} IP`;
+  const w2 = S.spWar?.[pid]?.war;
+  return `${s.era} ERA · ${s.strikeoutsPer9Inn} K/9 · ${s.inningsPitched} IP${w2 != null ? ` · <b style="color:${w2 >= 2.5 ? "var(--green)" : w2 <= 0.5 ? "var(--red)" : "var(--dim)"}">${w2.toFixed(1)} WAR</b>` : ""}`;
 }
 function rainbowPick(g) { // TRIPLE EDGE — one team better in ALL THREE: starting pitcher, season bats, 30-day (opp-adj) bats
   if (g.state !== "Preview") return null; // pre-game only — claims freeze wrong once play starts
@@ -2851,7 +2883,7 @@ function expandedStats(g) {
   const cmp = [
     ["Record", g.away.rec, g.home.rec, null],
     ["30-day form (SOS-adj)", pct(ta.daily?.form30), pct(thm.daily?.form30), (a, h) => h - a, 15],
-    ["30-day offense (opp-adj R/gm)", ta.daily?.off30adj != null ? ta.daily.off30adj.toFixed(2) : "—", thm.daily?.off30adj != null ? thm.daily.off30adj.toFixed(2) : "—", (a, h) => h - a, 1],
+    ["30-day offense (arms-faced-adj R/gm)", ta.daily?.off30adj != null ? ta.daily.off30adj.toFixed(2) : "—", thm.daily?.off30adj != null ? thm.daily.off30adj.toFixed(2) : "—", (a, h) => h - a, 1],
     ["Lost yesterday", ta.daily?.lostY ? "yes" : "no", thm.daily?.lostY ? "yes" : "no", null],
     ["OPS", f3(ta.hit?.ops), f3(thm.hit?.ops), (a, h) => h - a, 0.1],
     ["AVG", f3(ta.hit?.avg), f3(thm.hit?.avg), (a, h) => h - a, 0.04],
@@ -2898,7 +2930,17 @@ function expandedStats(g) {
       ${cmpRows}</div></div>
     <div><div class="xh">STARTING PITCHERS</div><div class="cmp">
       <span class="ha" style="font-size:12px;">${g.away.pitcherName}</span><span class="hl" style="font-size:9px;color:var(--dim3);">VS</span><span class="hh" style="font-size:12px;">${g.home.pitcherName}</span>
-      ${pitRows}</div></div>
+      ${pitRows}${(() => { // WAR row — season value from MLB's sabermetrics feed; 1.5+ gap paints the weaker arm red
+        const wa = S.spWar?.[g.away.pitcherId]?.war, wh = S.spWar?.[g.home.pitcherId]?.war;
+        if (wa == null && wh == null) return "";
+        let ca = "var(--txt)", ch = "var(--txt)";
+        if (wa != null && wh != null && wa !== wh) {
+          const hb = wh > wa;
+          ch = hb ? "var(--green)" : "var(--dim)"; ca = hb ? "var(--dim)" : "var(--green)";
+          if (Math.abs(wh - wa) >= 1.5) { if (hb) ca = "var(--red)"; else ch = "var(--red)"; }
+        }
+        return `<span class="ha" style="color:${ca}">${wa != null ? wa.toFixed(1) : "—"}</span><span class="hl">WAR</span><span class="hh" style="color:${ch}">${wh != null ? wh.toFixed(1) : "—"}</span>`;
+      })()}</div></div>
     <div><div class="xh">KEVIN'S FACTOR CONTRIBUTIONS</div>${facRows}
       <div class="fnote">Positive (green) favors ${g.home.abbr} · negative favors ${g.away.abbr}. Tune these on the MY MODEL tab.</div></div>
   </div>`;
@@ -3288,6 +3330,7 @@ function kCard(r, manual) {
       ${proj.flags.map(f => `<span class="chip ${f.includes("✓") ? "green" : f.includes("✗") ? "red" : ""}">${f}</span>`).join("")}
       <span class="chip">exp ${proj.expIP.toFixed(1)} IP</span>
       <span class="chip">${opp.abbr} K% ${(100 * (S.teams[opp.id]?.hit?.kPct ?? 0)).toFixed(1)}</span>
+      ${(() => { const o30 = S.teams[opp.id]?.daily?.off30adj; if (o30 == null) return ""; const cold = o30 <= 3.9, hot = o30 >= 5.0; return `<span class="chip ${cold ? "green" : hot ? "red" : ""}" title="${opp.abbr}'s last 30 days of scoring, weighted by the actual arms they faced (5 runs off an ace counts more than 5 off a sieve) — cold bats chase and whiff, hot bats spoil K overs">${opp.abbr} 30d bats ${o30.toFixed(2)}${cold ? " · COLD" : hot ? " · HOT" : ""}</span>`; })()}
       ${edgeTxt}
       ${lean && lean.lean !== "PASS" && line != null ? (() => { const s = Math.max(lean.pOver, 1 - lean.pOver); const t = s >= 0.62 ? ["STRONG BET", "var(--green)", "rgba(52,211,153,0.14)"] : s >= 0.56 ? ["GOOD", "var(--gold)", "rgba(245,185,62,0.13)"] : ["ALRIGHT", "var(--blue)", "rgba(91,157,255,0.12)"]; return `<span class="tier" style="color:${t[1]};background:${t[2]};">${t[0]}</span>`; })() : ""}
       <span style="margin-left:auto;text-align:right;align-self:flex-end;">
@@ -4687,6 +4730,16 @@ async function wnbaLoad() {
       }
     } catch (e) {}
   }
+  if (!Object.keys(WS.teams).length) { // team list AND cache both gone — seed teams from today's scoreboard BEFORE the per-team stages, so results & W-BOX still run
+    try {
+      const sb0 = await j(`${W_SITE}/scoreboard?dates=${S.date.replace(/-/g, "")}`);
+      for (const ev of sb0?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) {
+        const t = cp.team; if (!t?.id) continue;
+        WS.teams[+t.id] = { id: +t.id, abbr: t.abbreviation, name: t.displayName, logo: t.logo || t.logos?.[0]?.href || "", color: t.color ? "#" + String(t.color).replace("#", "") : "", res: [] };
+      }
+      if (Object.keys(WS.teams).length) WS.errors = WS.errors.map(e2 => /^team list:/.test(e2) ? "ℹ team list feed hiccuped — teams seeded from today's scoreboard, all stages running" : e2);
+    } catch (e) {}
+  }
   try {
     WS.stage = "season results (every team's schedule)…"; renderWnba();
     let failed = 0;
@@ -5404,6 +5457,12 @@ function safeRung(pOverFn, start, step, thr = 0.72, maxDown = 4) { // walk DOWN 
 const HUM_K = 0.85; // overconfidence haircut: alt rungs are raw model bells with no backtest behind them — shrink toward 50% before they can call themselves locks
 function hum(p) { return clamp(0.5 + (p - 0.5) * HUM_K, 0.02, 0.98); }
 const ALT_MAXP = 0.905; // ≈ fair −950: the juice ceiling — nothing heavier than about −1000 ever shows on the locks board
+function pnm(nm) { // full names on lock cards — small first name, the surname still carries the card
+  const parts = String(nm || "").trim().split(/\s+/);
+  if (parts.length < 2) return parts[0] || "?";
+  const last = parts.pop();
+  return `<span style="display:block;font-size:0.55em;font-weight:600;color:var(--dim);letter-spacing:.5px;line-height:1;margin-bottom:2px;">${parts.join(" ")}</span>${last}`; // first name sits small on top
+}
 const W_LOCK_MIN = { PTS: 12.5, REB: 6.5, AST: 4.5, "3PM": 1.5, PRA: 18.5, "P+R": 16.5, "P+A": 14.5, "R+A": 8.5 };
 function wLockable(p, st, lineOrRung) { // LOCKS/VALUE quality gate — bench-mystery low-line junk (o2.5 REB etc.) can't crowd out real props
   if (lineOrRung != null && lineOrRung < (W_LOCK_MIN[st] ?? 0)) return false;
@@ -5437,7 +5496,7 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
             if (pM < 0.62) throw 0; // not confident enough to be a lock at all
             if (!wLockable(p, st, L3)) throw 0;
             if (rung && Math.abs(rung.L - L3) < 1e-9) throw 0; // the standard safe rung already owns this level
-            out.push({ sportKey: "WNBA", sport: "🏀 WNBA", type: st + " ALT PROP", prob: pM, odds: null, big: "OVER " + L3, bigLbl: "CONSISTENT RUNG · fair " + fmtML(probToAmerican(pM)), label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `cleared in ${hits}/${vals10.length} recent games · proj ${pr.proj.toFixed(1)}`, time: gm2.date, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
+            out.push({ sportKey: "WNBA", sport: "🏀 WNBA", type: st + " ALT PROP", prob: pM, odds: null, big: "OVER " + L3, bigLbl: "CONSISTENT RUNG · fair " + fmtML(probToAmerican(pM)), label: pnm(p.name) + " " + st, sub: `cleared in ${hits}/${vals10.length} recent games · proj ${pr.proj.toFixed(1)}`, time: gm2.date, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
               info: [
                 ["Cleared recently", hits + " of her last " + vals10.length + " games", "var(--green)"],
                 ["Projection", pr.proj.toFixed(1) + " " + st],
@@ -5452,7 +5511,7 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
       if (!rung || rung.p > ALT_MAXP) continue;
       if (!wLockable(p, st, rung.L)) continue;
       const nx = rung.L + (WALT2[st] || 2), pNx = 1 - phi((nx - pr.proj) / pr.sigma);
-      out.push({ sportKey: "WNBA", sport: "🏀 WNBA", type: st + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `proj ${pr.proj.toFixed(1)} · swing ±${pr.sigma.toFixed(1)} · vs ${pr.oppAbbr || "?"}`, time: gm2.date, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
+      out.push({ sportKey: "WNBA", sport: "🏀 WNBA", type: st + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: pnm(p.name) + " " + st, sub: `proj ${pr.proj.toFixed(1)} · swing ±${pr.sigma.toFixed(1)} · vs ${pr.oppAbbr || "?"}`, time: gm2.date, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
         info: [
           ["Projection", pr.proj.toFixed(1) + " " + st],
           ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"],
@@ -5476,7 +5535,7 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
       if (line == null) continue;
       const rung = safeRung(L2 => 1 - phi((L2 - proj.projK) / proj.sigma), line, 1, 0.72, 3);
       if (!rung || rung.p > ALT_MAXP) continue;
-      out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "K ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " Ks (alt)", sub: `proj ${proj.projK.toFixed(1)} · posted line ${line}`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
+      out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "K ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: pnm(S.pitchers[side.pitcherId].name) + " Ks (alt)", sub: `proj ${proj.projK.toFixed(1)} · posted line ${line}`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
         info: [["Projection", proj.projK.toFixed(1) + " Ks"], ["Posted line", String(line)], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["Fair price", fmtML(probToAmerican(rung.p))], ["Consistency", "grade " + proj.grade + " · swing ±" + proj.sigma.toFixed(1)], ["⚠ Alt price needed", "your book's alt-K menu must pay better than fair", "var(--gold)"]] });
     }
   }
@@ -5493,7 +5552,7 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
         const p1 = 1 - Math.exp(-p2.lam);
         if (p1 < 0.72 || p1 > 0.93) continue;
         const p2plus = 1 - poisCdf(1, p2.lam);
-        out.push({ sportKey: "soc", sport: "⚽ " + GS_CFG[sub].name, type: ps2.k + " ALT PROP", prob: p1, odds: null, big: "1+ " + ps2.k, bigLbl: "fair " + fmtML(probToAmerican(p1)), label: (p2.name || "").split(" ").slice(-1)[0] + " " + ps2.n.toLowerCase(), sub: `${p2.lam.toFixed(2)}/match · ${p2.apps} apps`, time: null, go: () => { setSport("soc"); selectTab("gen:pstat:" + ps2.k); jumpToCard(`#tab-gen [data-gpid="${p2.id}"]`); },
+        out.push({ sportKey: "soc", sport: "⚽ " + GS_CFG[sub].name, type: ps2.k + " ALT PROP", prob: p1, odds: null, big: "1+ " + ps2.k, bigLbl: "fair " + fmtML(probToAmerican(p1)), label: pnm(p2.name) + " " + ps2.n.toLowerCase(), sub: `${p2.lam.toFixed(2)}/match · ${p2.apps} apps`, time: null, go: () => { setSport("soc"); selectTab("gen:pstat:" + ps2.k); jumpToCard(`#tab-gen [data-gpid="${p2.id}"]`); },
           info: [["Per-match rate", p2.lam.toFixed(2) + " (Poisson λ)"], ["P(1+)", fmtPct(p1), "var(--green)"], ["Fair price", fmtML(probToAmerican(p1))], ["2+ rung", fmtPct(p2plus) + " · fair " + fmtML(probToAmerican(p2plus))], ["Sample", p2.apps + " matches"], ["⚠ Rate-based", "no per-game logs in the feed — check your book's price vs fair", "var(--gold)"]] });
       }
     }
@@ -5513,7 +5572,7 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
         const step = ps2.cls === "yds" ? Math.max(5, Math.round(consProj * 0.12 / 5) * 5) : ps2.cls === "count" ? 1 : 2;
         const rung = safeRung(L2 => mean(fits.map(f2 => clamp(f2.pOver(L2), 0.01, 0.99))), Math.max(0.5, Math.round(consProj - 0.5) + 0.5), step, 0.72, 4);
         if (!rung || rung.p > 0.92 || !fits.every(f2 => f2.pOver(rung.L) >= 0.6)) continue;
-        out.push({ sportKey: sp2, sport: GS_CFG[sp2].emoji + " " + GS_CFG[sp2].name, type: ps2.k + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (p2.name || "").split(" ").slice(-1)[0] + " " + ps2.n.toLowerCase(), sub: `consensus proj ${consProj.toFixed(1)} · ${p2.vals.length} games`, time: null, go: () => { setSport(sp2); selectTab("gen:pstat:" + ps2.k); jumpToCard(`#tab-gen [data-gpid="${p2.id}"]`); },
+        out.push({ sportKey: sp2, sport: GS_CFG[sp2].emoji + " " + GS_CFG[sp2].name, type: ps2.k + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: pnm(p2.name) + " " + ps2.n.toLowerCase(), sub: `consensus proj ${consProj.toFixed(1)} · ${p2.vals.length} games`, time: null, go: () => { setSport(sp2); selectTab("gen:pstat:" + ps2.k); jumpToCard(`#tab-gen [data-gpid="${p2.id}"]`); },
           info: [["Consensus projection", consProj.toFixed(1)], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["All engines 60%+ here", "unanimous", "var(--green)"], ["Fair price", fmtML(probToAmerican(rung.p))], ["Grade", p2.grade + " · " + p2.vals.length + " games logged"], ["⚠ No book line", "compare with your book's alt menu — bet only above fair", "var(--gold)"]] });
       }
     }
@@ -5525,10 +5584,10 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
         const gT = (S.games || []).find(x => x.pk === p.gamePk);
         if (!gT || gT.state !== "Preview" || p.inLineup === false) continue;
         if (!["A", "B"].includes(p.grade) || (p.vals || []).length < 10) continue;
-        const mL = Math.max(0.5, Math.round(p.proj - 0.5) + 0.5);
+        const mL = Math.max(1.5, Math.round(p.proj - 0.5) + 0.5); // books don't post 0.5 TB/combo lines — 1.5 ("2+") is the floor
         const rung = safeRung(L2 => 1 - phi((L2 - p.proj) / p.sigma), mL, 1);
-        if (!rung || rung.p > ALT_MAXP) continue;
-        out.push({ sportKey: "MLB", sport: "⚾ MLB", type: cT.short + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: (p.name || "").split(" ").slice(-1)[0] + " " + cT.short, sub: `proj ${p.proj.toFixed(1)} · swing ±${p.sigma.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab(kind); jumpToCard(`#tab-${kind} [data-${cT.anchor}="${p.id}"]`); },
+        if (!rung || rung.p > ALT_MAXP || rung.L < 1.5) continue;
+        out.push({ sportKey: "MLB", sport: "⚾ MLB", type: cT.short + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: pnm(p.name) + " " + cT.short, sub: `proj ${p.proj.toFixed(1)} · swing ±${p.sigma.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab(kind); jumpToCard(`#tab-${kind} [data-${cT.anchor}="${p.id}"]`); },
           info: [["Projection", p.proj.toFixed(1) + " " + cT.short], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["⚠ No book line", "find this rung on your book's ALT menu — only bet if it pays MORE than fair", "var(--gold)"]] });
       }
     }
@@ -5680,7 +5739,7 @@ function collectLocks() {
     const bo = hitBookPrice(p.id);
     const price = bo?.price ?? p.fairHit;
     if (p.pHit < 0.68 || !oddsOK(price, 2)) continue;
-    out.push({ sport: "⚾ MLB", type: "SAFE HIT", prob: p.pHit, odds: isFinite(price) ? price : null, big: fmtML(price), bigLbl: bo ? "BOOK ODDS" : "FAIR ODDS", label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: p.teamAbbr + " vs " + p.oppAbbr, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); jumpToCard(`#tab-hits [data-hid="${p.id}"]`); },
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", prob: p.pHit, odds: isFinite(price) ? price : null, big: fmtML(price), bigLbl: bo ? "BOOK ODDS" : "FAIR ODDS", label: pnm(p.name) + " records a hit", sub: p.teamAbbr + " vs " + p.oppAbbr, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); jumpToCard(`#tab-hits [data-hid="${p.id}"]`); },
       info: [
         ["Chance of 1+ hit", fmtPct(p.pHit), "var(--green)"],
         ["Fair odds", fmtML(p.fairHit)],
@@ -5705,7 +5764,7 @@ function collectLocks() {
       if (prob < th) continue;
       const kpr = S.props[side.pitcherId];
       const kPrice = kpr && kpr.line === line ? (lean.lean === "OVER" ? kpr.overPrice : kpr.underPrice) : null;
-      out.push({ sport: "⚾ MLB", type: "K PROP", prob, odds: kPrice ?? null, big: lean.lean + " " + line, bigLbl: "K LINE", label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: side.abbr + " vs " + (sk === "home" ? g.away : g.home).abbr, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
+      out.push({ sport: "⚾ MLB", type: "K PROP", prob, odds: kPrice ?? null, big: lean.lean + " " + line, bigLbl: "K LINE", label: pnm(S.pitchers[side.pitcherId].name) + " strikeouts", sub: side.abbr + " vs " + (sk === "home" ? g.away : g.home).abbr, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
         info: [
           ["Projected Ks", proj.projK.toFixed(1)],
           ["Line", String(line)],
@@ -5750,7 +5809,7 @@ function collectLocks() {
       const prob = Math.max(pOver, 1 - pOver);
       if (prob < th) continue;
       if (!wLockable(p, st, line)) continue;
-      out.push({ sport: "🏀 WNBA", type: st + " PROP", prob, odds: pOver >= 0.5 ? (bo?.over ?? null) : null, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + line, bigLbl: bo?.source || "LINE", label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: p.team + " vs " + (pr.oppAbbr || "?"), time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", prob, odds: pOver >= 0.5 ? (bo?.over ?? null) : null, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + line, bigLbl: bo?.source || "LINE", label: pnm(p.name) + " " + st, sub: p.team + " vs " + (pr.oppAbbr || "?"), time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
         info: [
           ["Projection", pr.proj.toFixed(1) + " " + st],
           ["Line", String(line)],
@@ -5775,14 +5834,14 @@ function collectLocks() {
           const pOver = clamp(1 - phi((bo.line - p.proj) / p.sigma), 0.02, 0.98);
           const prob = Math.max(pOver, 1 - pOver);
           const px = pOver >= 0.5 ? (bo.over ?? null) : (bo.under ?? null);
-          if (prob >= th && oddsOK(px ?? probToAmerican(prob), 2)) out.push({ sportKey: "MLB", sport: "⚾ MLB", type: cT.short + " PROP", prob, odds: px, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + bo.line, bigLbl: bo.source || "LINE", label: (p.name || "").split(" ").slice(-1)[0] + " " + cT.short, sub: `proj ${p.proj.toFixed(1)} · swing ±${p.sigma.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab(kind); jumpToCard(`#tab-${kind} [data-${cT.anchor}="${p.id}"]`); },
+          if (prob >= th && oddsOK(px ?? probToAmerican(prob), 2)) out.push({ sportKey: "MLB", sport: "⚾ MLB", type: cT.short + " PROP", prob, odds: px, big: (pOver >= 0.5 ? "OVER " : "UNDER ") + bo.line, bigLbl: bo.source || "LINE", label: pnm(p.name) + " " + cT.short, sub: `proj ${p.proj.toFixed(1)} · swing ±${p.sigma.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab(kind); jumpToCard(`#tab-${kind} [data-${cT.anchor}="${p.id}"]`); },
             info: [["Projection", p.proj.toFixed(1) + " " + cT.short], ["Line", String(bo.line)], ["P(" + (pOver >= 0.5 ? "OVER" : "UNDER") + ")", fmtPct(prob), "var(--green)"], ["Last 5 / log avg", p.last5.toFixed(1) + " / " + p.season.toFixed(1)], ["Opposing starter", "×" + p.fac.toFixed(2)]] });
         }
         if (kind === "hrr") { // 1+ H+R+RBI — cleared-count with the overconfidence haircut
           const n2 = p.vals.length, c1 = p.vals.filter(v => v >= 1).length;
           const pM1 = clamp(1 - phi((0.5 - p.proj) / p.sigma), 0.02, 0.99);
           const p1 = Math.min(ALT_MAXP, hum(clamp((c1 + 2 * pM1) / (n2 + 2), 0.02, 0.99))); // haircut + the −1000 juice ceiling
-          if (c1 >= n2 - 2 && p1 >= 0.72) out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "1+ H+R+RBI PROP", prob: p1, odds: null, big: "1+ H+R+RBI", bigLbl: "fair " + fmtML(probToAmerican(p1)), label: (p.name || "").split(" ").slice(-1)[0], sub: `cleared 1+ in ${c1}/${n2} logged games · proj ${p.proj.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab("hrr"); jumpToCard(`#tab-hrr [data-hrrid="${p.id}"]`); },
+          if (c1 >= n2 - 2 && p1 >= 0.72) out.push({ sportKey: "MLB", sport: "⚾ MLB", type: "1+ H+R+RBI PROP", prob: p1, odds: null, big: "1+ H+R+RBI", bigLbl: "fair " + fmtML(probToAmerican(p1)), label: pnm(p.name), sub: `cleared 1+ in ${c1}/${n2} logged games · proj ${p.proj.toFixed(1)}`, time: p.time, go: () => { setSport("mlb"); selectTab("hrr"); jumpToCard(`#tab-hrr [data-hrrid="${p.id}"]`); },
             info: [["Cleared 1+", c1 + " of " + n2 + " logged games", "var(--green)"], ["Projection", p.proj.toFixed(1) + " H+R+RBI"], ["Fair price", fmtML(probToAmerican(p1)) + " — after the overconfidence haircut"], ["⚠ Check your book", "only bet if the 1+ price pays MORE than fair", "var(--gold)"]] });
         }
       }
@@ -5926,7 +5985,7 @@ function collectValue() {
       const [io, iu] = deVig(americanToProb(pr.overPrice), americanToProb(pr.underPrice));
       const edge = (lean.lean === "UNDER" ? (1 - lean.pOver) - iu : lean.pOver - io) * 100;
       if (edge < 1) continue;
-      out.push({ sport: "⚾ MLB", type: "K PROP", edge, prob: lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver, odds: lean.lean === "OVER" ? pr.overPrice : pr.underPrice, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: (S.pitchers[side.pitcherId].name || "").split(" ").slice(-1)[0] + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
+      out.push({ sport: "⚾ MLB", type: "K PROP", edge, prob: lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver, odds: lean.lean === "OVER" ? pr.overPrice : pr.underPrice, big: lean.lean + " " + pr.line, bigLbl: lean.lean === "OVER" ? "o" + fmtML(pr.overPrice) : "u" + fmtML(pr.underPrice), label: pnm(S.pitchers[side.pitcherId].name) + " strikeouts", sub: `model ${((lean.lean === "UNDER" ? 1 - lean.pOver : lean.pOver) * 100).toFixed(0)}% vs book`, time: g.time, go: () => { setSport("mlb"); selectTab("ks"); jumpToCard(`#tab-ks [data-pid="${side.pitcherId}"]`); },
         info: [
           ["Projected Ks", proj.projK.toFixed(1)],
           ["Line", String(pr.line)],
@@ -5943,7 +6002,7 @@ function collectValue() {
     const bo = hitBookPrice(p.id); if (!bo || !isFinite(bo.price)) continue;
     const edge = (p.pHit - americanToProb(bo.price)) * 100;
     if (edge < 1 || !oddsOK(bo.price, 2)) continue;
-    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, prob: p.pHit, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); jumpToCard(`#tab-hits [data-hid="${p.id}"]`); },
+    out.push({ sport: "⚾ MLB", type: "SAFE HIT", edge, prob: p.pHit, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: pnm(p.name) + " records a hit", sub: `model ${(p.pHit * 100).toFixed(0)}% vs book ${(americanToProb(bo.price) * 100).toFixed(0)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hits"); jumpToCard(`#tab-hits [data-hid="${p.id}"]`); },
       info: [
         ["Chance of 1+ hit", fmtPct(p.pHit), "var(--green)"],
         ["Fair odds", fmtML(p.fairHit)],
@@ -5959,7 +6018,7 @@ function collectValue() {
     const bo = S.hrOdds[p.id]; if (!bo || bo.price == null) continue;
     const edge = (p.pHR - americanToProb(bo.price)) * 100;
     if (edge < 2) continue;
-    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, prob: p.pHR, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: (p.name || "").split(" ").slice(-1)[0] + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); jumpToCard(`#tab-hr [data-rid="${p.id}"]`); },
+    out.push({ sport: "⚾ MLB", type: "HOME RUN", edge, prob: p.pHR, odds: bo.price, big: fmtML(bo.price), bigLbl: bo.source.toUpperCase(), label: pnm(p.name) + " homers", sub: `model ${(p.pHR * 100).toFixed(1)}% vs book ${(americanToProb(bo.price) * 100).toFixed(1)}%`, time: p.time, go: () => { setSport("mlb"); selectTab("hr"); jumpToCard(`#tab-hr [data-rid="${p.id}"]`); },
       info: [
         ["Chance to homer", fmtPct(p.pHR), "var(--green)"],
         ["Fair odds", fmtML(p.fair)],
@@ -6003,7 +6062,7 @@ function collectValue() {
       const edge = (pOver - americanToProb(bo.over)) * 100;
       if (edge < 1 || !oddsOK(bo.over, 2)) continue;
       if (!wLockable(p, st, bo.line)) continue;
-      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, prob: pOver, odds: bo.over, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: (p.name || "").split(" ").slice(-1)[0] + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
+      out.push({ sport: "🏀 WNBA", type: st + " PROP", edge, prob: pOver, odds: bo.over, big: "OVER " + bo.line, bigLbl: fmtML(bo.over) + " · " + bo.source, label: pnm(p.name) + " " + st, sub: `model ${(pOver * 100).toFixed(0)}% vs book ${(americanToProb(bo.over) * 100).toFixed(0)}%`, time: null, go: () => { setSport("wnba"); selectTab(st === "PRA" ? "wnba:props:PRA" : "wnba:props:" + st); jumpToCard(`#tab-wnba [data-wpid="${p.id}"]`); },
         info: [
           ["Projection", pr.proj.toFixed(1) + " " + st],
           ["Line", String(bo.line)],
@@ -6201,6 +6260,7 @@ function renderWnbaHow(root) {
     WNBA moneylines and props feed the cross-sport 🔒 LOCKS (most likely to cash) and 💎 VALUE (biggest edge vs the book) pages. Use the filter bar there — sport chips (🏀 WNBA ONLY) and the odds window sliders — to see just basketball or to clear out heavy MLB favorites.`);
 }
 function renderWnba() {
+  renderWnba._er = null; // edge ranks rebuild per render
   const root = $("#tab-wnba"); if (!root) return;
   root.innerHTML = "";
   root.appendChild(el("div", "h1", `WNBA <small>· 6 moneyline models (incl. yours + a research-paper model) + player props</small>`));
@@ -6419,6 +6479,12 @@ function renderWnba() {
   const grid = el("div", "grid");
   for (const g of wSorted) {
     const th = WS.teams[g.home.id] || {}, ta = WS.teams[g.away.id] || {};
+    if (!renderWnba._er) { // #N EDGE chips, MLB-style — ranked across today's upcoming slate, best calibrated edge first
+      renderWnba._er = {};
+      (WS.games || []).filter(g2 => !g2.completed && !g2.live && ((g2.edgeHI ?? g2.edgeH) != null || (g2.edgeAI ?? g2.edgeA) != null))
+        .map(g2 => ({ id: g2.id, e: Math.max((g2.edgeHI ?? g2.edgeH) ?? -99, (g2.edgeAI ?? g2.edgeA) ?? -99) }))
+        .sort((a2, b2) => b2.e - a2.e).forEach((x2, i2) => renderWnba._er[x2.id] = { n: i2 + 1, e: x2.e });
+    }
     const gI = g.consInj ?? g.cons;
     const pickHome = gI != null && gI >= 0.5;
     const card = el("div", "card" + (g.completed || g.live ? " played" : ""));
@@ -6453,6 +6519,7 @@ function renderWnba() {
         ${g.completed ? '<span class="finchip">FINAL</span>' : g.live ? '<span class="livechip">● LIVE</span>' : ""}
         ${g.book && !g.completed ? `<span class="bookchip">${g.book}</span>` : ""}
         <div class="spacer"></div>
+        ${(() => { const er = renderWnba._er[g.id]; return !g.completed && !g.live && er && er.e > 0 ? `<span style="font-size:10px;font-weight:800;letter-spacing:.4px;color:var(--gold);border:1px solid rgba(255,160,46,.5);border-radius:7px;padding:2px 8px;" title="best calibrated edge vs the de-vigged market (injury-priced) — ranked across today's slate">#${er.n} EDGE +${er.e.toFixed(1)}%</span>` : ""; })()}
         ${!g.completed && !g.live && ((g.edgeHI ?? g.edgeH) ?? -99) >= S.weights.edgeThresh ? '<span class="valchip">★ VALUE ' + g.home.abbr + "</span>" : ""}
         ${!g.completed && !g.live && ((g.edgeAI ?? g.edgeA) ?? -99) >= S.weights.edgeThresh ? '<span class="valchip">★ VALUE ' + g.away.abbr + "</span>" : ""}</div>
       <div class="trow ${!g.completed && !pickHome && g.cons != null ? "pick" : ""} ${g.completed && g.away.winner ? "pick" : ""}">${wLogo(ta, 30)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${(ta.name || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(WS.results, +g.away.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : `<div class="tml" style="color:${!pickHome && g.cons != null ? "var(--green)" : "var(--txt)"}">${fmtML(g.mlAway)}</div>`}</div>
@@ -7072,6 +7139,16 @@ async function genLoad(sp) {
       if (hadCache) { if (!s.errors.some(x => /saved copy/.test(x))) s.errors.push("team list served from your saved copy (nothing is affected)"); }
       else s.errors.push("team list: " + e.message + " — auto-retry will handle it");
     }
+    if (!Object.keys(s.teams).length) { // team list AND cache both gone — seed from the scoreboard BEFORE the per-team stages so results & models still run
+      try {
+        const sb0 = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=300&groups=50" : ""}`);
+        for (const ev of sb0?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) {
+          const t = cp.team; if (!t?.id) continue;
+          s.teams[+t.id] = { id: +t.id, abbr: t.abbreviation || (t.shortDisplayName || "").slice(0, 4).toUpperCase(), name: t.displayName, logo: t.logo || t.logos?.[0]?.href || "", color: t.color ? "#" + String(t.color).replace("#", "") : "" };
+        }
+        if (Object.keys(s.teams).length) s.errors = s.errors.map(e2 => /^team list:/.test(e2) ? "ℹ team list feed hiccuped — teams seeded from today's scoreboard, models still run" : e2);
+      } catch (e) {}
+    }
     const nT = Object.keys(s.teams).length;
     if (cfg.teamCap > 0 && nT > 0 && nT <= cfg.teamCap) { // full season results only for small leagues
       s.stage = "season results (every team's schedule)…"; genRenderIf(sp);
@@ -7115,9 +7192,9 @@ async function genLoad(sp) {
       const od = (c.odds || [])[0];
       if (od) {
         g.book = od.provider?.name || "book";
-        g.mlHome = parseAm(od.homeTeamOdds?.current?.moneyLine?.american ?? od.homeTeamOdds?.moneyLine);
-        g.mlAway = parseAm(od.awayTeamOdds?.current?.moneyLine?.american ?? od.awayTeamOdds?.moneyLine);
-        g.mlDraw = parseAm(od.drawOdds?.moneyLine ?? od.drawOdds?.current?.moneyLine?.american);
+        g.mlHome = parseAm(od.homeTeamOdds?.current?.moneyLine?.american ?? od.homeTeamOdds?.moneyLine ?? od.moneyline?.home?.close?.odds ?? od.moneyline?.home?.open?.odds); // ESPN's newer odds shape (soccer moved first)
+        g.mlAway = parseAm(od.awayTeamOdds?.current?.moneyLine?.american ?? od.awayTeamOdds?.moneyLine ?? od.moneyline?.away?.close?.odds ?? od.moneyline?.away?.open?.odds);
+        g.mlDraw = parseAm(od.drawOdds?.moneyLine ?? od.drawOdds?.current?.moneyLine?.american ?? od.moneyline?.draw?.close?.odds ?? od.moneyline?.draw?.open?.odds);
         g.spread = od.spread != null && isFinite(num(od.spread)) ? num(od.spread) : null;
         g.total = od.overUnder != null && isFinite(num(od.overUnder)) ? num(od.overUnder) : null;
       }
