@@ -438,7 +438,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v5.01 · 10a";
+const BUILD = "v5.02 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -5336,12 +5336,24 @@ async function fetchWnbaProps() {
 /* ================================================================
    🔒 LOCKS — one page, both sports, the bets most likely to hit
    ================================================================ */
+function capKeyOf(x) { return /1ST INNING/.test(x.type) ? "nrfi" : /H\+R\+RBI/.test(x.type) ? "hrr" : /\bTB\b/.test(x.type) ? "tb" : /TOTAL/.test(x.type) ? "tot" : /HIT/.test(x.type) ? "hit" : /HOME RUN/.test(x.type) ? "hr" : x.type === "K PROP" ? "k" : /PROP/.test(x.type) ? "wprop" : "ml"; }
 function capTypes(list, caps) { // keep any one bet type from flooding the board
   const cnt = {}; const res = [];
   for (const x of list) {
-    const key = /1ST INNING/.test(x.type) ? "nrfi" : /H\+R\+RBI/.test(x.type) ? "hrr" : /\bTB\b/.test(x.type) ? "tb" : /TOTAL/.test(x.type) ? "tot" : /HIT/.test(x.type) ? "hit" : /HOME RUN/.test(x.type) ? "hr" : x.type === "K PROP" ? "k" : /PROP/.test(x.type) ? "wprop" : "ml";
+    const key = capKeyOf(x);
     cnt[key] = (cnt[key] || 0) + 1;
     if (cnt[key] <= (caps[key] ?? 99)) res.push(x);
+  }
+  return res;
+}
+function lvDiversify(list) { // best-first but DIVERSE: round-robin draft across prop types so no one type hogs the top of the board
+  const buckets = new Map();
+  for (const x of list) { const k = capKeyOf(x); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(x); }
+  const res = [];
+  while (res.length < list.length) {
+    let took = false;
+    for (const arr of buckets.values()) if (arr.length) { res.push(arr.shift()); took = true; }
+    if (!took) break;
   }
   return res;
 }
@@ -5864,8 +5876,8 @@ function collectLocks() {
   S._lvPool = out.slice(); // pre-filter pool → "today's pool" note
   out.sort((a, b) => b.prob - a.prob);
   const flt = out.filter(x => lvPass(LV.locks, x));
-  const capped = capTypes(flt, { hit: 3, hr: 1, tb: 3, hrr: 5, nrfi: 3, wprop: LV.locks.sport === "ALL" ? 8 : 12, tot: LV.locks.cat === "tot" ? 24 : 6 });
-  const strong = capped.filter(l => l.prob >= 0.60);
+  const capped = capTypes(flt, { hit: 3, hr: 1, tb: 3, hrr: 4, nrfi: 3, wprop: LV.locks.sport === "ALL" ? 8 : 12, tot: LV.locks.cat === "tot" ? 24 : 6 });
+  const strong = LV.locks.cat && LV.locks.cat !== "ALL" ? capped.filter(l => l.prob >= 0.60) : lvDiversify(capped.filter(l => l.prob >= 0.60)); // one-type filters keep pure prob order
   const fill = capped.filter(l => l.prob < 0.60);
   const res = [...strong];
   for (const f of fill) { if (res.length >= 8) break; res.push(f); } // thin day? surface the next-best LEANs
