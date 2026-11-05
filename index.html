@@ -67,7 +67,7 @@
   .bb.top1{border:1.5px solid transparent;background:linear-gradient(160deg,#0f2a24 0%,#0e1e2b 45%,#101722 80%) padding-box,linear-gradient(120deg,#34d399 0%,#22d3ee 45%,#a78bfa 95%) border-box;animation:lvglow 3.2s ease-in-out infinite;}
   .bb.top1::before{height:4px;background:linear-gradient(90deg,#34d399,#22d3ee 50%,#a78bfa);}
   .crownchip{font-size:9px;font-weight:800;letter-spacing:1px;color:#06121c;background:linear-gradient(90deg,#34d399,#22d3ee 55%,#a78bfa);border-radius:5px;padding:2px 8px;margin-left:8px;}
-  /* GOLDEN SWEEP — all four of Kevin's boxes checked: shiny gold card */
+  /* GOLDEN SWEEP — all five of Kevin's boxes checked: shiny gold card */
   @keyframes goldshine{0%{background-position:-250% 0;}100%{background-position:250% 0;}}
   .card.golden{border:2px solid transparent;background:linear-gradient(160deg,#2a220f 0%,#1a1510 45%,#12161f 85%) padding-box,linear-gradient(120deg,#f5b93e,#fff3c4,#c98f1b,#ffe9a8,#f5b93e) border-box;background-size:auto,320% 320%;animation:goldflow 5s linear infinite,goldpulse 2.4s ease-in-out infinite alternate;position:relative;transition:transform .2s;}
   .card.golden:hover{transform:translateY(-3px);}
@@ -438,7 +438,7 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v5.02 · 10a";
+const BUILD = "v5.12 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -474,11 +474,11 @@ const PRESETS = {
   offense:  { name:"OFFENSE HEAVY", desc:"Bats win — OPS/AVG/HR/Runs carry the pick.", w:{ wK:0.20, wOff:0.50, wForm:0.22, wPen:0.18, wBounce:0.10 } }
 };
 const SLIDERS = [
-  ["wK", "STARTING PITCHER", "The whole pitcher, not just strikeouts: 65% his season grade (runs his team allows in his starts, sample-shrunk) + 35% his last-30-days shape, where each recent start is weighted by how good the offense he faced was. Fully replayable — dragging this moves the live season record.", 0, 1],
+  ["wK", "STARTING PITCHER", "The whole pitcher, not just strikeouts: 65% his season grade (runs his team allows in his starts, sample-shrunk) + 35% his last-30-days shape, where each recent start is weighted by how good the offense he faced was. Quick-hook era: this weight auto-shrinks as starters' real share of innings shrinks (mirrored in the replay). Fully replayable — dragging this moves the live season record.", 0, 1],
   ["wOff", "OFFENSE", "OPS · AVG · HR/game · Runs/game, league-relative.", 0, 1],
   ["wOff30", "OFFENSE — 30-DAY FORM (OPP-ADJUSTED)", "How hot the bats are right now: runs scored over the last 30 days, each game scaled by the quality of the pitching they faced — 5 runs on a stingy staff counts more than 5 on a sieve. Fully replayable — moves the live season record.", 0, 1],
   ["wForm", "30-DAY FORM (SOS-ADJUSTED)", "Win% over the last 30 days, weighted by the strength of the teams they beat — 7-3 vs contenders rates far above 7-3 vs cellar-dwellers.", 0, 1],
-  ["wPen", "BULLPEN", "Reliever-only ERA, WHIP, K/9 and inherited-runner rescues. Also not in the season replay — judge it by your tracked record.", 0, 1],
+  ["wPen", "BULLPEN", "Reliever-only ERA, WHIP, K/9 and inherited-runner rescues. Quick-hook era: this weight auto-grows with the share of innings the two pens actually throw tonight (shown on every card). Still not in the season replay — no historical day-by-day pen data; judge it by your tracked record.", 0, 1],
   ["wBounce", "YESTERDAY'S LOSS", "Your bounce-back idea. Right of center = a team that lost yesterday is MORE likely to win today. Left of center = fade them. Middle = off.", -0.5, 0.5],
   ["hfa", "HOME FIELD", "Baseline bump for the home side. 0.16 ≈ 54% in an even matchup.", 0, 0.4],
   ["edgeThresh", "★ EDGE THRESHOLD (%)", "How much the models must beat the market before a bet makes BEST BETS. Lower = more picks, weaker signal.", 0, 10]
@@ -810,16 +810,27 @@ function parseSplit(data, key) {
     const st = s.stat;
     const o = { team: s.team, era: num(st.era), whip: num(st.whip), k9: num(st.strikeoutsPer9Inn), bb9: num(st.walksPer9Inn), hr9: num(st.homeRunsPer9),
       avgA: num(st.avg) || null,
+      ip: ipToOuts(st.inningsPitched) / 3, // real innings by this staff role — powers the quick-hook era share
       irsPct: num(st.inheritedRunners) ? num(st.inheritedRunnersScored) / num(st.inheritedRunners) : 0.3 };
     items.push(o);
     S.teams[s.team.id] = S.teams[s.team.id] || {}; S.teams[s.team.id][key] = o;
   }
+  S.league._rpShr = null; // share cache invalidates whenever either split refreshes
   if (key === "rp" && items.length) {
     const zE = zMap(items, t => -t.era), zW = zMap(items, t => -t.whip), zK = zMap(items, t => t.k9), zI = zMap(items, t => -t.irsPct);
     for (const t of items) { const id = t.team.id; S.teams[id].penZ = 0.5 * zE[id] + 0.2 * zW[id] + 0.2 * zK[id] + 0.1 * zI[id]; }
     S.league.rpHr9 = mean(items.map(t => t.hr9));
   }
   if (key === "sp" && items.length) { S.league.spEra = mean(items.map(t => t.era)); S.league.spHr9 = mean(items.map(t => t.hr9)); S.league.spK9 = mean(items.map(t => t.k9)); }
+}
+/* ---------- QUICK-HOOK ERA: how much of the game do bullpens ACTUALLY throw? ----------
+   Starters get pulled earlier every year — these shares come straight from each team's real
+   SP-split vs RP-split innings, so the models weight tonight's arms by tonight's usage, not 2015's. */
+function rpShareOf(id) { const t = S.teams[id]; const rp = t?.rp?.ip, sp = t?.sp?.ip; return (rp > 0 && sp > 0) ? rp / (rp + sp) : null; }
+function lgRpShare() {
+  if (S.league._rpShr != null) return S.league._rpShr;
+  const v = Object.keys(S.teams).map(id => rpShareOf(+id)).filter(x => x != null);
+  return S.league._rpShr = v.length >= 20 ? mean(v) : 0.42;
 }
 
 function parseResults(data) {
@@ -1189,25 +1200,32 @@ function nrfiJRec() { // the real record — graded snapshots only
   for (const d2 of Object.keys(nj).sort()) { if (!rec.since) rec.since = d2; for (const pk in nj[d2]) { const e2 = nj[d2][pk]; if (e2.res == null) { rec.pend++; continue; } const hit = (e2.call === "YRFI") === !!e2.res; (e2.call === "YRFI" ? rec.y : rec.n)[hit ? "w" : "l"]++; } }
   return rec;
 }
-async function spWarLoad() { // starting-pitcher WAR (statsapi sabermetrics) — day-cached, one bulk call
-  if (S._warBusy || S.spWar) return; S._warBusy = true;
+async function spWarLoad() { // starting-pitcher WAR (statsapi sabermetrics) — day-cached, retried, self-healing
+  if (S._warBusy || (S.spWar && Object.keys(S.spWar).length)) return; S._warBusy = true;
+  const raceW = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
   try {
     const ck = "kb_spwar_" + S.date;
     let w2 = null;
-    if (hasLS) try { w2 = JSON.parse(localStorage.getItem(ck) || "null"); } catch (e) {}
+    if (hasLS) try { const sv = JSON.parse(localStorage.getItem(ck) || "null"); if (sv && Object.keys(sv).length) w2 = sv; } catch (e) {}
     if (!w2) {
       const pids = [...new Set((S.games || []).flatMap(g => [g.home.pitcherId, g.away.pitcherId]).filter(Boolean))];
       if (pids.length) {
-        const js = await j(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.join(",")}&hydrate=stats(group=[pitching],type=[sabermetrics])&fields=people,id,stats,splits,stat,war,fip`);
-        w2 = {};
-        for (const p2 of js?.people || []) { const s2 = p2?.stats?.[0]?.splits?.[0]?.stat; if (s2 && s2.war != null) w2[p2.id] = { war: s2.war, fip: s2.fip ?? null }; }
-        kbSet(ck, JSON.stringify(w2));
+        for (let att = 0; att < 3 && !w2; att++) { // the one-shot version died quietly in the boot burst — retry with backoff
+          try {
+            const js = await raceW(j(`https://statsapi.mlb.com/api/v1/people?personIds=${pids.join(",")}&hydrate=stats(group=[pitching],type=[sabermetrics])&fields=people,id,stats,splits,stat,war,fip`), 20000);
+            const built = {};
+            for (const p2 of js?.people || []) { const s2 = p2?.stats?.[0]?.splits?.[0]?.stat; if (s2 && s2.war != null) built[p2.id] = { war: s2.war, fip: s2.fip ?? null }; }
+            if (Object.keys(built).length) { w2 = built; kbSet(ck, JSON.stringify(built)); } // never cache an empty answer
+            else break;
+          } catch (e) { if (att < 2) await new Promise(r => setTimeout(r, 2500 + att * 2500)); }
+        }
       }
     }
     if (w2) S.spWar = w2;
   } catch (e) {}
   S._warBusy = false;
-  try { if (!whyOpenNow() && document.querySelector("#tab-board")?.style.display !== "none") renderBoard(); } catch (e) {}
+  if (!S.spWar || !Object.keys(S.spWar).length) setTimeout(() => { S._warTries = (S._warTries || 0) + 1; if (S._warTries < 5) spWarLoad(); }, 60000); // keep trying quietly through the day
+  try { if (S.spWar && Object.keys(S.spWar).length && !whyOpenNow() && document.querySelector("#tab-board")?.style.display !== "none") renderBoard(); } catch (e) {}
 }
 async function nrfiLoad() {
   if (NRFI.busy) return; NRFI.busy = true;
@@ -1271,8 +1289,8 @@ async function nrfiLoad() {
   try { if (!whyOpenNow() && document.querySelector("#tab-board")?.style.display !== "none") renderBoard(); } catch (e) {}
   try { renderNrfi(); } catch (e) {}
 }
-function goldenSweep(g) { // ✨ the better team checks all four of Kevin's boxes:
-  // ① its starter's K prop line is +1 or more OVER the opposing starter's  ② better offense  ③ lost yesterday (bounce-back)  ④ hotter 30-day form
+function goldenSweep(g) { // ✨ the better team checks all FIVE of Kevin's boxes:
+  // ① its starter's K prop line is +1 or more OVER the opposing starter's  ② better offense  ③ lost yesterday (bounce-back)  ④ hotter 30-day form  ⑤ hotter 30-day bats (arms-faced-adj)
   if (g.state !== "Preview") return null;
   const kman = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
   const kOf = pid => { // book K line first (manual override wins); if no line posted yet, the model's projected Ks fill in
@@ -1294,7 +1312,9 @@ function goldenSweep(g) { // ✨ the better team checks all four of Kevin's boxe
     if (!(th.offZ != null && ta.offZ != null && th.offZ > ta.offZ)) continue; // ②
     if (!th.daily?.lostY) continue;                                           // ③
     if (!((th.daily?.form30 ?? -1) > (ta.daily?.form30 ?? 2))) continue;      // ④
-    return { sk, myL: my.v, opL: op.v, myProj: my.proj, opProj: op.proj };
+    const my30 = th.daily?.off30adj, op30 = ta.daily?.off30adj;
+    if (!(my30 != null && op30 != null && my30 > op30)) continue;             // ⑤ hotter 30-day bats, weighted by the arms faced
+    return { sk, myL: my.v, opL: op.v, myProj: my.proj, opProj: op.proj, my30, op30 };
   }
   return null;
 }
@@ -1331,7 +1351,12 @@ function kevinModel(g) {
   const rpgLive = id => { const t = S.teams[id]?.daily; return t && t.gp >= 5 ? t.rs / t.gp : 4.5; };
   const qh = spGrade(S.spLog?.[g.home.pitcherId], S.date, rpgLive), qa = spGrade(S.spLog?.[g.away.pitcherId], S.date, rpgLive);
   const fK = (g.home.pitcherId && g.away.pitcherId) ? clamp(qh - qa, -2, 2) : 0;
-  f.push({ name: "Starting pitcher", val: fK, w: W.wK });
+  // QUICK-HOOK ERA WEIGHTING: starters throw fewer innings every year, pens more — so the starter
+  // factor shrinks and the bullpen factor grows with tonight's REAL innings shares (vs the classic 62/38 split)
+  const shrH = rpShareOf(g.home.id), shrA = rpShareOf(g.away.id);
+  const shr = (shrH != null && shrA != null) ? (shrH + shrA) / 2 : lgRpShare();
+  const eraK = clamp((1 - shr) / 0.62, 0.75, 1.1), eraP = clamp(shr / 0.38, 0.9, 1.35);
+  f.push({ name: `Starting pitcher · ${Math.round((1 - shr) * 100)}% of IP → w ×${eraK.toFixed(2)}`, val: fK, w: W.wK * eraK });
   const fOff = (th.offZ != null && ta.offZ != null) ? clamp((th.offZ - ta.offZ) / 1.5, -2, 2) : 0;
   f.push({ name: "Offense (OPS/AVG/HR/R)", val: fOff, w: W.wOff });
   const o30h = th.daily?.off30adj, o30a = ta.daily?.off30adj;
@@ -1340,7 +1365,7 @@ function kevinModel(g) {
   const fh = th.daily?.form30 ?? 0.5, fa = ta.daily?.form30 ?? 0.5;
   f.push({ name: "30-day form", val: clamp((fh - fa) / 0.25, -2, 2), w: W.wForm });
   const fPen = (th.penZ != null && ta.penZ != null) ? clamp((th.penZ - ta.penZ) / 1.5, -2, 2) : 0;
-  f.push({ name: "Bullpen quality", val: fPen, w: W.wPen });
+  f.push({ name: `Bullpen quality · pens throw ${Math.round(shr * 100)}% of IP → w ×${eraP.toFixed(2)}`, val: fPen, w: W.wPen * eraP });
   const fB = (th.daily?.lostY ? 1 : 0) - (ta.daily?.lostY ? 1 : 0);
   f.push({ name: "Lost yesterday", val: fB, w: W.wBounce });
   const score = 0.9 * f.reduce((s, x) => s + x.w * x.val, 0) + W.hfa;
@@ -1363,7 +1388,10 @@ function mlbTotalExp(g) { // expected total runs: each lineup vs the other side'
   const eH = lg * ((dh.rs / dh.gp) / lg) * ((da.ra / da.gp) / lg);
   const rpgLive = id => { const t = S.teams[id]?.daily; return t && t.gp >= 5 ? t.rs / t.gp : 4.5; };
   const qH = spGrade(S.spLog?.[g.home.pitcherId], S.date, rpgLive), qA = spGrade(S.spLog?.[g.away.pitcherId], S.date, rpgLive);
-  return clamp(eA * (1 - 0.05 * qH) + eH * (1 - 0.05 * qA), 5, 14);
+  // quick-hook era: the starter's nudge shrinks with his real share of innings; the pen behind him covers the rest
+  const shrT = lgRpShare(), spw = clamp((1 - shrT) / 0.62, 0.75, 1.1), pw = 0.03 * (shrT / 0.38);
+  const pz = id => clamp(S.teams[id]?.penZ ?? 0, -1.5, 1.5);
+  return clamp(eA * (1 - 0.05 * qH * spw) * (1 - pw * pz(g.home.id)) + eH * (1 - 0.05 * qA * spw) * (1 - pw * pz(g.away.id)), 5, 14);
 }
 function pythagModel(g) {
   const dh = S.teams[g.home.id]?.daily, da = S.teams[g.away.id]?.daily;
@@ -1508,6 +1536,11 @@ function projectKs(pid, oppTeamId) {
   const oppMult = oppKPct != null ? clamp(oppKPct / (S.league.kPct || 0.22), 0.75, 1.3) : 1;
   const usedSplit = splitK != null;
   let flags = [], profileBoost = 0;
+  // QUICK-HOOK VISIBILITY: the projection already leans 60% on his last-5 workload, so a shrinking
+  // leash is priced in — this flag just makes it impossible to miss when the hook is coming early
+  const gsOuts = seasonOuts / gs;
+  if (recent.length >= 3 && recentOuts <= gsOuts - 1.2) flags.push(`EARLY HOOK — ${(recentOuts / 3).toFixed(1)} IP last 5 vs ${(gsOuts / 3).toFixed(1)} season (priced into projection)`);
+  else if (recent.length >= 3 && recentOuts >= gsOuts + 1.2) flags.push(`LONG LEASH — ${(recentOuts / 3).toFixed(1)} IP last 5 vs ${(gsOuts / 3).toFixed(1)} season`);
   if (opp) {
     const lowOBP = opp.obp < (S.league.obp || 0.315) - 0.004;
     const hrHungry = opp.hrG > (S.league.hrG || 1.1) * 1.05;
@@ -2125,7 +2158,9 @@ function backtestModels() {
       };
       const oH2 = o30(g.hId, g.d), oA2 = o30(g.aId, g.d);
       const fO30 = (oH2 != null && oA2 != null) ? clamp((oH2 - oA2) / 1.5, -2, 2) : 0;
-      const score = 0.9 * ((W.wK || 0) * fSp + W.wOff * fOff + (W.wOff30 || 0) * fO30 + W.wForm * fForm + W.wBounce * (bH - bA)) + W.hfa;
+      // starter weight carries the same quick-hook scaling as the live model (season-level innings share — one constant, no look-ahead worth naming)
+      const eraKbt = clamp((1 - lgRpShare()) / 0.62, 0.75, 1.1);
+      const score = 0.9 * ((W.wK || 0) * eraKbt * fSp + W.wOff * fOff + (W.wOff30 || 0) * fO30 + W.wForm * fForm + W.wBounce * (bH - bA)) + W.hfa;
       bt.kevin[(score >= 0) === homeWon ? "w" : "l"]++;
       // calibration rows: what probability did each model claim, and what happened
       const pEloH = 1 / (1 + Math.pow(10, (E(g.aId) - E(g.hId) - CFG.eloHFA) / 400));
@@ -2539,6 +2574,7 @@ function genBento(root, sp) { // gen sports in the MLB board format — UFC excl
   renderBentoX(root, { key: "g:" + sp, bets, record, games, tiles });
 }
 function renderBoard() {
+  try { if ((!S.spWar || !Object.keys(S.spWar).length) && !S._warBusy && (S.games || []).length) setTimeout(spWarLoad, 400); } catch (e) {}
   const root = $("#tab-board"); root.innerHTML = "";
   if (!S.games.length) { root.innerHTML = `<div class="loadingBox">No games found for ${S.date}.</div>`; return; }
   const bets = bestBets();
@@ -2582,7 +2618,7 @@ function renderBoard() {
   const rbs = S.games.filter(g => { try { return !!rainbowPick(g); } catch (e) { return false; } });
   if (rbs.length) root.appendChild(el("div", "subhead", `<span style="font-weight:700;background:linear-gradient(90deg,#ff5f6d,#ffc371,#47e891,#5b9dff,#b46bff);-webkit-background-clip:text;background-clip:text;color:transparent;">${rbs.length} TRIPLE EDGE${rbs.length > 1 ? "S" : ""} on today's slate</span> — ${rbs.map(g => { const r2 = rainbowPick(g); return `<b style="color:var(--txt)">${g[r2.sk].abbr}</b> (${g.away.abbr} @ ${g.home.abbr})`; }).join(" · ")}. Triple edge = one team is <b style="color:var(--txt)">clearly</b> better in all three: tonight's starting pitcher (both arms must be proven with 3+ logged starts — a no-track-record rookie can never "win" this leg), season batting, and 30-day opponent-adjusted offense. Pre-game only; the rainbow card marks it.`));
   const sweeps = S.games.filter(g => { try { return !!goldenSweep(g); } catch (e) { return false; } });
-  if (sweeps.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold);font-weight:700;">✨ ${sweeps.length} GOLDEN SWEEP${sweeps.length > 1 ? "S" : ""} on today's slate</span> — ${sweeps.map(g => { const s2 = goldenSweep(g); return `<b style="color:var(--txt)">${g[s2.sk].abbr}</b> (${g.away.abbr} @ ${g.home.abbr})`; }).join(" · ")}. All four boxes checked: K line +1 over the opposing starter, better offense, lost yesterday, hotter 30-day form.${(() => { const r2 = sweepRec(); return r2.n || r2.pending ? ` <b style="color:var(--gold)">Your sweep record since tracking: ${r2.w}-${r2.l}${r2.units ? " (" + (r2.units >= 0 ? "+" : "") + r2.units.toFixed(2) + "u flat)" : ""}${r2.pending ? " · " + r2.pending + " pending" : ""}</b> — graded automatically, never rewritten.` : " Sweeps now journal themselves and grade from finals — the record builds from today."; })()}`));
+  if (sweeps.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold);font-weight:700;">✨ ${sweeps.length} GOLDEN SWEEP${sweeps.length > 1 ? "S" : ""} on today's slate</span> — ${sweeps.map(g => { const s2 = goldenSweep(g); return `<b style="color:var(--txt)">${g[s2.sk].abbr}</b> (${g.away.abbr} @ ${g.home.abbr})`; }).join(" · ")}. All five boxes checked: K line +1 over the opposing starter, better offense, lost yesterday, hotter 30-day form, hotter 30-day bats (arms-faced-adj).${(() => { const r2 = sweepRec(); return r2.n || r2.pending ? ` <b style="color:var(--gold)">Your sweep record since tracking: ${r2.w}-${r2.l}${r2.units ? " (" + (r2.units >= 0 ? "+" : "") + r2.units.toFixed(2) + "u flat)" : ""}${r2.pending ? " · " + r2.pending + " pending" : ""}</b> — graded automatically, never rewritten.` : " Sweeps now journal themselves and grade from finals — the record builds from today."; })()}`));
   const grid = el("div", "grid");
   const rank = g => g.state === "Preview" ? 0 : g.state === "Live" ? 1 : 2;
   const bestEdge = g => Math.max(g.edgeHome ?? -99, g.edgeAway ?? -99);
@@ -2725,12 +2761,13 @@ function gameCard(g, vRank) {
     </div>` : ""}
     ${!played && g.consensus != null ? pickBanner() : ""}
     ${gs ? `<div style="margin-top:9px;background:linear-gradient(155deg,rgba(245,185,62,.16),rgba(245,185,62,.04) 65%);border:1px solid rgba(245,185,62,.45);border-radius:10px;padding:8px 11px;">
-      <div style="font-size:9px;font-weight:800;letter-spacing:1.1px;color:var(--gold);margin-bottom:5px;">✨ GOLDEN SWEEP — ${g[gs.sk].abbr} CHECKS ALL FOUR OF YOUR BOXES</div>
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.1px;color:var(--gold);margin-bottom:5px;">✨ GOLDEN SWEEP — ${g[gs.sk].abbr} CHECKS ALL FIVE OF YOUR BOXES</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:10.5px;font-weight:600;color:#e6d5a8;">
         <span>✓ starter's K number +${(gs.myL - gs.opL).toFixed(1)} over the opposing starter (${gs.myProj ? gs.myL.toFixed(1) + " proj" : gs.myL} vs ${gs.opProj ? gs.opL.toFixed(1) + " proj" : gs.opL})</span>
         <span>✓ better offense</span>
         <span>✓ lost yesterday — bounce-back</span>
         <span>✓ hotter 30-day form (SOS-adj)</span>
+        <span>✓ hotter 30-day bats (arms-faced-adj ${gs.my30 != null ? gs.my30.toFixed(2) : "—"} vs ${gs.op30 != null ? gs.op30.toFixed(2) : "—"})</span>
       </div></div>` : ""}
     ${!played ? spreadTotal() : ""}
     <div class="prow">
@@ -2892,6 +2929,7 @@ function expandedStats(g) {
     ["Lineup K%", pct(ta.hit?.kPct), pct(thm.hit?.kPct), null],
     ["Bullpen ERA", f2(ta.rp?.era), f2(thm.rp?.era), (a, h) => a - h, 1],
     ["Bullpen K/9", f2(ta.rp?.k9), f2(thm.rp?.k9), (a, h) => h - a, 1.5],
+    ["Pen share of innings", rpShareOf(g.away.id) != null ? Math.round(rpShareOf(g.away.id) * 100) + "%" : "—", rpShareOf(g.home.id) != null ? Math.round(rpShareOf(g.home.id) * 100) + "%" : "—", null],
     ["Elo rating", Math.round(ta.daily?.elo ?? 1500), Math.round(thm.daily?.elo ?? 1500), (a, h) => h - a, 80]
   ];
   const cmpRows = cmp.map(([label, a, h, better, gapRed]) => {
@@ -3039,11 +3077,13 @@ function altBoxDiscrete(rows, title, note) { // for "k+" props (hits, HRs) — o
 }
 function altSpreadBox(pHome, spread, sig, hAbbr, aAbbr, step, title, note, calKey) { // alt spread ladder — each side labeled with ITS OWN number
   if (pHome == null || spread == null) return "";
+  const muOv = typeof arguments[10] === "number" ? arguments[10] : null; // blended score-rate margin (gen sports) — rungs beyond its honest range are dropped, not faked
   const rows = [];
   for (let k = -6; k <= 6; k++) {
     const s2 = Math.round((spread + k * step) * 2) / 2;
     if (rows.some(r => r.s === s2)) continue;
-    let pc = coverProb(pHome, s2, sig);
+    if (muOv != null && (Math.abs(s2) > Math.abs(muOv) + 0.8 * sig || Math.abs(s2) > 2.8 * sig)) continue;
+    let pc = muOv != null ? 1 - phi(((-s2) - muOv) / sig) : coverProb(pHome, s2, sig);
     if (calKey) pc = calApply(calKey, pc);
     if (pc == null || !isFinite(pc)) continue;
     rows.push({ s: s2, pc: clamp(pc, 0.005, 0.995) });
@@ -3610,10 +3650,27 @@ async function fetchHotForm() {
   const hot = {};
   try {
     const chunks = [];
-    for (let i2 = 0; i2 < ids.length; i2 += 40) chunks.push(ids.slice(i2, i2 + 40));
+    for (let i2 = 0; i2 < ids.length; i2 += 28) chunks.push(ids.slice(i2, i2 + 28)); // smaller payloads survive throttled connections
     let done = 0;
+    const raceT = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]); // statsapi sometimes hangs a socket — never let one stall freeze the counter
+    const fetchIds = async idList => {
+      const d2 = await raceT(j(`https://statsapi.mlb.com/api/v1/people?personIds=${idList.join(",")}&hydrate=stats(group=[hitting],type=[gameLog])&fields=people,id,stats,splits,date,stat,hits,atBats,homeRuns,doubles,triples,rbi,runs`), 22000);
+      ingest(d2);
+      done += idList.length;
+      S.hotStage = Math.min(done, ids.length) + "/" + ids.length;
+      pubSoon();
+    };
     const pull = async chunk => {
-      const d2 = await j(`https://statsapi.mlb.com/api/v1/people?personIds=${chunk.join(",")}&hydrate=stats(group=[hitting],type=[gameLog])&fields=people,id,stats,splits,date,stat,hits,atBats,homeRuns,doubles,triples,rbi,runs`);
+      try { await fetchIds(chunk); return; }
+      catch (e) {} // hung or throttled — halve it and try each part once
+      const mid = Math.ceil(chunk.length / 2);
+      for (const half of [chunk.slice(0, mid), chunk.slice(mid)]) {
+        if (!half.length) continue;
+        try { await fetchIds(half); }
+        catch (e2) { done += half.length; S.hotStage = Math.min(done, ids.length) + "/" + ids.length + " · some skipped"; }
+      }
+    };
+    const ingest = d2 => {
       for (const per of d2?.people || []) {
         const sp2 = per?.stats?.[0]?.splits || [];
         const last7 = sp2.slice(-7);
@@ -3628,9 +3685,6 @@ async function fetchHotForm() {
           h10: l10.map(s2 => num(s2.stat?.hits)), hr10: l10.map(s2 => num(s2.stat?.homeRuns)),
           tbVals: sp2.slice(-18).map(tbOf).reverse(), hrrVals: sp2.slice(-18).map(hrrOf).reverse() };
       }
-      done += chunk.length;
-      S.hotStage = Math.min(done, ids.length) + "/" + ids.length;
-      pubSoon(); // publish per chunk — the first 40 hitters put cards on screen immediately
     };
     let pubT = 0;
     const publish = () => {
@@ -3638,9 +3692,9 @@ async function fetchHotForm() {
       try { wxRecompute(); } catch (e) {}
     };
     const pubSoon = () => { const now = Date.now(); if (now - pubT > 400) { pubT = now; publish(); } };
-    for (let w = 0; w < chunks.length; w += 3) { // three chunks in flight at once
-      await Promise.all(chunks.slice(w, w + 3).map(c2 => pull(c2).catch(() => {})));
-      if (w + 3 < chunks.length) await new Promise(r => setTimeout(r, 150));
+    for (let w = 0; w < chunks.length; w += 2) { // two chunks in flight — fast without tripping the throttle
+      await Promise.all(chunks.slice(w, w + 2).map(c2 => pull(c2).catch(() => {})));
+      if (w + 2 < chunks.length) await new Promise(r => setTimeout(r, 160));
     }
     publish(); // final full publish
     if (hasLS) try { kbSet("kb_hot4", JSON.stringify({ d: S.date, hot })); } catch (e) {}
@@ -4559,7 +4613,7 @@ P(home wins) = 1 / (1 + e<sup>−score</sup>)</span>
       <tr><td><b>Offense composite</b> (${W.wOff.toFixed(2)})</td><td>League-relative z-scores of OPS, AVG, HR/game and Runs/game averaged per team. Factor = (home z − away z) ÷ 1.5.</td></tr>
       <tr><td><b>Offense — 30-day form, opp-adjusted</b> (${(W.wOff30 ?? 0).toFixed(2)})</td><td>How hot the bats are <i>right now</i>: runs scored per game over the last 30 days, with each game scaled by the run prevention of the staff they faced — <i>adjusted runs = runs × (4.5 ÷ opponent's runs-allowed/game)</i>, so 5 runs on a stingy staff counts like ~6 and 5 on a sieve like ~4. Factor = (home − away) ÷ 1.5. Walk-forward replayable — this slider moves the live season record.</td></tr>
       <tr><td><b>30-day form</b> (${W.wForm.toFixed(2)})</td><td>Win% over the last 30 calendar days. Factor = (home − away) ÷ 0.25 — a team 25 points hotter counts as one full unit.</td></tr>
-      <tr><td><b>Bullpen quality</b> (${W.wPen.toFixed(2)})</td><td>Reliever-only splits: 50% ERA + 20% WHIP + 20% K/9 + 10% inherited-runners-scored rate, as league z-scores. Factor = (home − away) ÷ 1.5.</td></tr>
+      <tr><td><b>Bullpen quality</b> (${W.wPen.toFixed(2)})</td><td>Reliever-only splits: 50% ERA + 20% WHIP + 20% K/9 + 10% inherited-runners-scored rate, as league z-scores. Factor = (home − away) ÷ 1.5. <b>Quick-hook era:</b> the weight then scales by tonight's two pens' REAL share of innings ÷ the classic 38% (league now ~${(lgRpShare() * 100).toFixed(0)}%) — and the starter's weight shrinks by the mirror-image factor, because a 5-inning start only controls ~55% of the game. Both multipliers print on every card's factor bars.</td></tr>
       <tr><td><b>Yesterday's loss</b> (${W.wBounce.toFixed(2)})</td><td>+1 if the team lost yesterday, 0 otherwise, home minus away. Slider right of center = bounce-back boost (your setting); left of center = fade cold teams.</td></tr>
       <tr><td><b>Home field</b> (${W.hfa.toFixed(2)})</td><td>Flat bump for the home side. 0.16 ≈ 54% in an even matchup — the long-run MLB home rate.</td></tr>
     </table>
@@ -6283,7 +6337,7 @@ function renderWnba() {
     const b = el("button", null, WS.errors.length ? "RETRY WNBA" : "LOAD WNBA"); b.className = "btn"; b.addEventListener("click", wnbaEnsure); root.appendChild(b); return;
   }
   if (WS.errors.length) {
-    const soft = WS.errors.filter(e => /saved copy|saved season|nothing is affected/i.test(e));
+    const soft = WS.errors.filter(e => /saved copy|saved season|nothing is affected|ℹ/i.test(e));
     const hard = WS.errors.filter(e => !soft.includes(e));
     if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some WNBA sources failed: ${hard.join(" · ")}</span>`));
     if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
@@ -6740,7 +6794,7 @@ const GS_CFG = {
   nba: { name: "NBA", emoji: "🏀", path: "basketball/nba", teamCap: 40, mSig: 12, tSig: 18.5, eloHFA: 70, eloK: 14, pyx: 13.91, hb: 0.045, btMin: 8, props: [["player_points", "POINTS"], ["player_rebounds", "REBOUNDS"], ["player_assists", "ASSISTS"], ["player_threes", "3-POINTERS"], ["player_points_rebounds_assists", "PRA"]], oa: "basketball_nba" },
   cbb: { name: "CBB", emoji: "🎓", path: "basketball/mens-college-basketball", teamCap: 0, mSig: 11, tSig: 16.5, eloHFA: 90, eloK: 16, pyx: 11.5, hb: 0.06, btMin: 6, props: [["player_points", "POINTS"], ["player_rebounds", "REBOUNDS"], ["player_assists", "ASSISTS"]], oa: "basketball_ncaab" },
   nhl: { name: "NHL", emoji: "🏒", path: "hockey/nhl", teamCap: 40, mSig: 2.25, tSig: 2.0, eloHFA: 33, eloK: 8, pyx: 2.15, hb: 0.045, btMin: 8, props: [["player_shots_on_goal", "SHOTS ON GOAL"], ["player_points", "POINTS"], ["player_goals", "GOALS"], ["player_total_saves", "GOALIE SAVES"]], oa: "icehockey_nhl" },
-  cfb: { name: "CFB", emoji: "🏟️", path: "football/college-football", teamCap: 0, mSig: 16, tSig: 15.5, eloHFA: 90, eloK: 22, pyx: 2.37, hb: 0.065, btMin: 3, props: [["player_pass_yds", "PASS YDS"], ["player_rush_yds", "RUSH YDS"], ["player_reception_yds", "REC YDS"], ["player_anytime_td", "ANYTIME TD"]], oa: "americanfootball_ncaaf" },
+  cfb: { name: "CFB", emoji: "🏟️", path: "football/college-football", teamCap: 0, grp: 80, wkRe: true, spFirst: true, mSig: 16, tSig: 15.5, eloHFA: 90, eloK: 22, pyx: 2.37, hb: 0.065, btMin: 3, props: [["player_pass_yds", "PASS YDS"], ["player_rush_yds", "RUSH YDS"], ["player_reception_yds", "REC YDS"], ["player_anytime_td", "ANYTIME TD"]], oa: "americanfootball_ncaaf" },
   epl: { name: "EPL", emoji: "⚽", path: "soccer/eng.1", teamCap: 30, soccer: true, mSig: 1.75, tSig: 1.7, eloHFA: 55, eloK: 18, pyx: 1.35, hb: 0.06, btMin: 4, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"], ["player_shots", "SHOTS"]], oa: "soccer_epl" },
   mls: { name: "MLS", emoji: "🇺🇸", path: "soccer/usa.1", teamCap: 40, soccer: true, mSig: 1.85, tSig: 1.8, eloHFA: 60, eloK: 18, pyx: 1.35, hb: 0.065, btMin: 4, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"]], oa: "soccer_usa_mls" },
   ucl: { name: "UCL", emoji: "🏆", path: "soccer/uefa.champions", teamCap: 60, soccer: true, mSig: 1.8, tSig: 1.75, eloHFA: 50, eloK: 18, pyx: 1.35, hb: 0.055, btMin: 3, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"]], oa: "soccer_uefa_champs_league" },
@@ -7066,7 +7120,11 @@ async function genFetchResults(sp) { // season results in gentle chunks — para
   if (hasLS && seasonYr) { try { const sv2 = JSON.parse(localStorage.getItem("kb_geloseed_" + sp) || "null"); if (sv2?.elo && sv2.yr < seasonYr) seed = sv2.elo; } catch (e) {} }
   try { s.bt = genFit(sp, s.results, seed); } catch (e) { s.errors.push("models: " + e.message); }
   if (hasLS && seasonYr && s.results.length >= 60 && s.bt?.state?.elo) { try { kbSet("kb_geloseed_" + sp, JSON.stringify({ yr: seasonYr, elo: s.bt.state.elo })); } catch (e) {} }
-  try { // calibration + earned weights from this backtest
+  genPostFit(sp);
+}
+function genPostFit(sp) { // calibration + earned weights from whatever backtest just landed
+  const s = gSlot(sp);
+  try {
     if (s.bt?.n) {
       CALK["g:" + sp + ":c"] = calFitK(s.bt.cal, "c");
       CALK["g:" + sp + ":sp"] = calFitK(s.bt.st.sp.cal, "p");
@@ -7075,6 +7133,65 @@ async function genFetchResults(sp) { // season results in gentle chunks — para
       if (s.bt.dc) { s._cw.dc = perfWeight(s.bt.dc); CALK["g:" + sp + ":dctot"] = calFitK(s.bt.dc.tot.cal, "p"); }
     }
   } catch (e) {}
+}
+async function genSeasonReplay(sp) { // CFB: 134 FBS teams make per-team schedule fetches impossible — but football is WEEK-based,
+  // so ONE scoreboard call per week replays an entire season. Last season fetches once and is saved forever (it can never change);
+  // this season's played weeks stack on top. genFit sees both and applies the offseason regression at the boundary.
+  const cfg = GS_CFG[sp], s = gSlot(sp);
+  const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
+  const today = s.dateLoaded || S.date || localISO(new Date());
+  const seasonYr = +today.slice(0, 4) - (+today.slice(5, 7) < 6 ? 1 : 0); // Aug–Jan season, labeled by its fall year
+  const priYr = seasonYr - 1;
+  const raceW = (p, ms) => Promise.race([p, new Promise((_, rj) => setTimeout(() => rj(new Error("timeout")), ms))]);
+  const pullWeek = async (yr, wk) => {
+    for (let att = 0; att < 2; att++) {
+      try { return await raceW(j(`${base}/scoreboard?dates=${yr}&seasontype=2&week=${wk}&groups=${cfg.grp || 80}&limit=300`), 20000); }
+      catch (e) { if (!att) await new Promise(r => setTimeout(r, 900)); }
+    }
+    return null;
+  };
+  const rowsOf = sb => {
+    const out = [];
+    for (const ev of sb?.events || []) {
+      const c = ev.competitions?.[0]; if (!c?.status?.type?.completed) continue;
+      const h = (c.competitors || []).find(x => x.homeAway === "home"), a = (c.competitors || []).find(x => x.homeAway === "away");
+      if (!h || !a || h.score == null || a.score == null) continue;
+      out.push({ id: ev.id, d: (ev.date || "").slice(0, 10), hId: +h.id, aId: +a.id, hs: +h.score, as: +a.score });
+    }
+    return out;
+  };
+  // ---- last season: regular-season weeks 1–16, then a permanent saved copy ----
+  let pri = null, priPartial = null;
+  if (hasLS) try { const sv = JSON.parse(localStorage.getItem("kb_gpri_" + sp) || "null"); if (sv?.yr === priYr && sv.res?.length) { if (sv.res.length >= 500) pri = sv.res; else priPartial = sv.res; } } catch (e) {}
+  if (!pri) { // no complete saved copy — fetch (a partial copy from an interrupted run is retried, and kept only as a fallback)
+    pri = [];
+    for (let wk = 1; wk <= 16; wk++) {
+      s.stage = `${priYr} season replay — week ${wk}/16 (one-time, saved after)…`; genRenderIf(sp);
+      const sb = await pullWeek(priYr, wk);
+      if (sb) pri.push(...rowsOf(sb));
+    }
+    if (priPartial && priPartial.length > pri.length) pri = priPartial;
+    if (pri.length >= 100 && hasLS) try { kbSet("kb_gpri_" + sp, JSON.stringify({ yr: priYr, res: pri })); } catch (e) {}
+  }
+  // ---- this season: the weeks already played (early season = a couple of calls) ----
+  let cur = [];
+  for (let wk = 1; wk <= 16; wk++) {
+    s.stage = `${seasonYr} season — week ${wk}…`; genRenderIf(sp);
+    const sb = await pullWeek(seasonYr, wk);
+    if (!sb) break;
+    const rows = rowsOf(sb);
+    cur.push(...rows);
+    const evD = (sb.events || []).map(e2 => (e2.date || "").slice(0, 10)).filter(Boolean).sort();
+    if (!rows.length || (evD.length && evD[evD.length - 1] >= today)) break; // reached the live / not-yet-played week
+  }
+  if (cur.length >= 10 && hasLS) try { kbSet("kb_gres_" + sp, JSON.stringify({ d: today, res: cur })); } catch (e) {}
+  else if (!cur.length && hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null"); if (sv?.res?.length) { cur = sv.res; s.errors.push(`this season's results served from your saved copy (${sv.d})`); } } catch (e) {} }
+  if (!pri.length && !cur.length) { s.errors.push("season replay: no completed games reachable — auto-retry will handle it"); return; }
+  const seen = {}; s.results = [];
+  for (const r of [...pri, ...cur].sort((a, b) => a.d < b.d ? -1 : 1)) if (!seen[r.id]) { seen[r.id] = 1; s.results.push(r); }
+  s.priYr = pri.length ? priYr : null; s.priN = pri.length; s.curN = cur.length;
+  try { s.bt = genFit(sp, s.results); } catch (e) { s.errors.push("models: " + e.message); }
+  genPostFit(sp);
 }
 async function socBoxEnsure(sub) { // real per-match player logs from game summaries (the W-BOX trick) → honest soccer prop backtests
   const s = gSlot(sub);
@@ -7153,7 +7270,7 @@ async function genLoad(sp) {
     }
     if (!Object.keys(s.teams).length) { // team list AND cache both gone — seed from the scoreboard BEFORE the per-team stages so results & models still run
       try {
-        const sb0 = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=300&groups=50" : ""}`);
+        const sb0 = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=300&groups=${cfg.grp || 50}` : ""}`);
         for (const ev of sb0?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) {
           const t = cp.team; if (!t?.id) continue;
           s.teams[+t.id] = { id: +t.id, abbr: t.abbreviation || (t.shortDisplayName || "").slice(0, 4).toUpperCase(), name: t.displayName, logo: t.logo || t.logos?.[0]?.href || "", color: t.color ? "#" + String(t.color).replace("#", "") : "" };
@@ -7176,12 +7293,15 @@ async function genLoad(sp) {
         }
       } catch (e) {}
     }
+    if (cfg.wkRe) { // CFB previous-season carry: week-by-week replay of last season + this season's played weeks
+      try { await genSeasonReplay(sp); } catch (e) { s.errors.push("season replay: " + e.message); }
+    }
   }
   s.stage = "today's games & odds…"; genRenderIf(sp);
   try {
     let sb = null, sbErr = null;
     for (let att = 0; att < 2 && !sb; att++) {
-      try { sb = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=300&groups=50" : ""}`); }
+      try { sb = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=300&groups=${cfg.grp || 50}` : ""}`); }
       catch (e) { sbErr = e; if (att === 0) await new Promise(r => setTimeout(r, 1200)); }
     }
     if (!sb) throw sbErr || new Error("scoreboard unavailable");
@@ -7242,7 +7362,7 @@ async function genLoad(sp) {
       for (const off of [7, 14, 21, 30, 45, 60, 90]) {
         try {
           const dd = addDays(S.date, off);
-          const sb3 = await j(`${base}/scoreboard?dates=${dd.replace(/-/g, "")}${cfg.teamCap === 0 ? "&limit=50&groups=50" : ""}`);
+          const sb3 = await j(`${base}/scoreboard?dates=${dd.replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=50&groups=${cfg.grp || 50}` : ""}`);
           const dts = (sb3?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(Boolean).sort();
           if (dts.length) { s.nextDay = dts[0] > S.date ? dts[0] : dd; break; }
         } catch (e) {}
@@ -7260,9 +7380,9 @@ async function genLoad(sp) {
     setTimeout(() => { s.loaded = false; if (GX.cur === sp || (GS_CFG[GX.cur]?.combo || []).includes(sp)) genEnsure(sp); }, 12000);
   } else if (!noTeams) { s.autoRetry = 0; }
   // records self-heal too: teams arrived but the season-results pass came up empty → one gentle re-run 14s later
-  if (!noTeams && cfg.teamCap > 0 && Object.keys(s.teams).length <= cfg.teamCap && (!s.bt || !s.bt.n) && (s.resRetry || 0) < 2) {
+  if (!noTeams && (cfg.wkRe || (cfg.teamCap > 0 && Object.keys(s.teams).length <= cfg.teamCap)) && (!s.bt || !s.bt.n) && (s.resRetry || 0) < 2) {
     s.resRetry = (s.resRetry || 0) + 1;
-    setTimeout(async () => { if (s.bt?.n) return; await genFetchResults(sp); if (whyOpenNow()) { GX._dirty = 1; } else genRenderIf(sp); }, 14000);
+    setTimeout(async () => { if (s.bt?.n) return; await (cfg.wkRe ? genSeasonReplay(sp) : genFetchResults(sp)); if (s.bt?.state) for (const g of s.games) genPredict(sp, g); if (whyOpenNow()) { GX._dirty = 1; } else genRenderIf(sp); }, 14000);
   }
   s.loaded = true; s.loading = false;
   sportDots();
@@ -7314,7 +7434,17 @@ function genFit(sp, results, seed) { // generic walk-forward: Elo + Pythag + For
   const bt = { elo: { w: 0, l: 0 }, pyth: { w: 0, l: 0 }, form: { w: 0, l: 0 }, home: { w: 0, l: 0 }, n: 0, cal: [],
     st: { sp: { w: 0, l: 0, n: 0, cal: [] }, tot: { w: 0, l: 0, n: 0, cal: [] } },
     dc: cfg.soccer ? { w: 0, l: 0, n: 0, cal: [], draw: [], tot: { w: 0, l: 0, n: 0, cal: [] } } : null };
+  let prevD = null;
   for (const r of results || []) {
+    if (prevD && (Date.parse(r.d) - Date.parse(prevD)) > 45 * 864e5) {
+      // OFFSEASON BOUNDARY (results span two seasons, e.g. CFB's prior-season replay): last year informs, never dominates —
+      // Elo half-regressed to 1500, last season's scoring shrunk to a 4-game prior, form nearly cleared, rest slate wiped
+      for (const id in elo) elo[id] = 1500 + (elo[id] - 1500) * 0.5;
+      for (const id in cum) { const c2 = cum[id]; if (c2.gp > 4) { const k2 = 4 / c2.gp; c2.pf *= k2; c2.pa *= k2; c2.gp = 4; } }
+      for (const id in hist) hist[id] = hist[id].slice(-3);
+      for (const id in lastP) delete lastP[id];
+    }
+    prevD = r.d;
     const ch = C(r.hId), ca = C(r.aId);
     const tie = r.hs === r.as, homeWon = r.hs > r.as;
     if (ch.gp >= cfg.btMin && ca.gp >= cfg.btMin && ch.pf > 0 && ca.pf > 0 && !tie) {
@@ -7336,22 +7466,28 @@ function genFit(sp, results, seed) { // generic walk-forward: Elo + Pythag + For
       }
       bt.cal.push({ e: pE, py: pP, f: pF, c: pc3, y: homeWon });
       const m = r.hs - r.as, T = r.hs + r.as;
-      const mu = invPhi(clamp(pc3, 0.03, 0.97)) * cfg.mSig;
+      const ids = Object.keys(cum).filter(id => cum[id].gp >= Math.max(3, cfg.btMin));
+      let eH = null, eA = null;
+      if (ids.length >= 6) {
+        const lg = mean(ids.map(id => cum[id].pf / cum[id].gp));
+        eH = lg * ((ch.pf / ch.gp) / lg) * ((ca.pa / ca.gp) / lg);
+        eA = lg * ((ca.pf / ca.gp) / lg) * ((ch.pa / ch.gp) / lg);
+      }
+      // margin = win-prob bell BLENDED with real score rates — the same math the live board uses
+      // (the prob half is clamped near ±2σ; the rates half is what lets blowout margins be real)
+      const muP = invPhi(clamp(pc3, 0.03, 0.97)) * cfg.mSig;
+      const mu = eH != null ? 0.55 * muP + 0.45 * ((eH - eA) + cfg.eloHFA / 28) : muP;
       const sB = -(Math.round(mu * 2) / 2);
       for (const so of [-cfg.mSig / 2, -cfg.mSig / 4, 0, cfg.mSig / 4, cfg.mSig / 2]) {
         const s2 = Math.round((sB + so) * 2) / 2;
         if (m === -s2) continue;
-        const pcv = coverProb(pc3, s2, cfg.mSig);
+        const pcv = 1 - phi(((-s2) - mu) / cfg.mSig);
         const sc = Math.max(pcv, 1 - pcv);
         const wn = (pcv >= 0.5) === (m > -s2);
         bt.st.sp.n++; bt.st.sp.cal.push({ p: sc, y: wn });
         if (sc >= 0.57) { wn ? bt.st.sp.w++ : bt.st.sp.l++; }
       }
-      const ids = Object.keys(cum).filter(id => cum[id].gp >= Math.max(3, cfg.btMin));
-      if (ids.length >= 6) {
-        const lg = mean(ids.map(id => cum[id].pf / cum[id].gp));
-        const eH = lg * ((ch.pf / ch.gp) / lg) * ((ca.pa / ca.gp) / lg);
-        const eA = lg * ((ca.pf / ca.gp) / lg) * ((ch.pa / ch.gp) / lg);
+      if (eH != null) {
         const expT = eH + eA;
         const bL = Math.round(expT * 2) / 2 + (Math.round(expT * 2) % 2 === 0 ? 0.5 : 0);
         for (const off of [-cfg.tSig / 2, -cfg.tSig / 4, 0, cfg.tSig / 4, cfg.tSig / 2]) {
@@ -7390,7 +7526,12 @@ function genFit(sp, results, seed) { // generic walk-forward: Elo + Pythag + For
     elo[r.hId] = Rh + delta; elo[r.aId] = Ra - delta;
     lastP[r.hId] = r.d; lastP[r.aId] = r.d;
     ch.pf += r.hs; ch.pa += r.as; ch.gp++; ca.pf += r.as; ca.pa += r.hs; ca.gp++;
-    H(r.hId).push(r.hs - r.as); H(r.aId).push(r.as - r.hs);
+    // EARLY-SEASON FORM, OPPONENT-ADJUSTED: each game's margin is weighted by WHO it came against —
+    // opponent strength = their Elo at kickoff, which carries last season (half-regressed). Beating a
+    // powerhouse counts extra; fattening up on a cupcake gets discounted. Pre-game Elo → walk-forward safe.
+    // In week 2 this is literally Kevin's rule: last week's result × who they played × both teams' last season.
+    const ePts = 400 / (1.34 * cfg.mSig);
+    H(r.hId).push((r.hs - r.as) + (Ra - 1500) / ePts); H(r.aId).push((r.as - r.hs) + (Rh - 1500) / ePts);
   }
   bt.state = { elo, cum, hist, lastP };
   return bt;
@@ -7431,9 +7572,30 @@ function genPredict(sp, g) {
     const ids = Object.keys(st.cum).filter(id => st.cum[id].gp >= Math.max(3, cfg.btMin));
     if (ids.length >= 6) {
       const lg = mean(ids.map(id => st.cum[id].pf / st.cum[id].gp));
-      g.expT = lg * ((ch.pf / ch.gp) / lg) * ((ca.pa / ca.gp) / lg) + lg * ((ca.pf / ca.gp) / lg) * ((ch.pa / ch.gp) / lg);
+      const eH2 = lg * ((ch.pf / ch.gp) / lg) * ((ca.pa / ca.gp) / lg), eA2 = lg * ((ca.pf / ca.gp) / lg) * ((ch.pa / ch.gp) / lg);
+      g.expT = eH2 + eA2;
+      g.expM = (eH2 - eA2) + cfg.eloHFA / 28; // score-rate margin + home edge in points — reaches 40+ where the win-prob clamp can't
     }
   }
+}
+/* ---------- HONEST SPREADS ON HUGE COLLEGE LINES ----------
+   coverProb turns win% into a margin, but win% is clamped at 97%, so the implied margin maxes out
+   near 2×sigma (~32 pts in CFB). Against a −45 book line that math can ONLY take the dog — at fake
+   confidence, on every blowout on the board. Fix: blend a real score-rate margin into the estimate
+   (mirrored in the backtest so calibration stays truthful), and when the book line still sits beyond
+   what the model can see, say NO CALL instead of inventing a number. */
+function genMu(g, sig, hfaPts) {
+  const muP = g.cons != null ? invPhi(clamp(g.cons, 0.03, 0.97)) * sig : null;
+  const muS = g.expM != null ? clamp(g.expM, -4 * sig, 4 * sig) : null;
+  if (muP == null) return muS;
+  return muS == null ? muP : 0.55 * muP + 0.45 * muS;
+}
+function genSpreadCall(sub, g, line) {
+  const cfg = GS_CFG[sub]; if (line == null || !cfg) return null;
+  const sig = cfg.mSig, mu = genMu(g, sig, cfg.eloHFA / 28);
+  if (mu == null) return null;
+  if (Math.abs(line) > Math.abs(mu) + 0.8 * sig || Math.abs(line) > 2.8 * sig) return { off: true, mu, sig };
+  return { off: false, mu, sig, pc: calApply("g:" + sub + ":sp", 1 - phi(((-line) - mu) / sig)) };
 }
 async function genFetchProps(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
@@ -7484,7 +7646,7 @@ function renderGen() {
     if (!slots.some(x => x.loaded)) { const b = el("button", null, "LOAD SOCCER"); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
     if (loadingSubs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still loading: ${loadingSubs.map(k2 => GS_CFG[k2].name).join(" · ")} — their games join automatically.</span>`));
     const allErr = combo.flatMap(k2 => gSlot(k2).errors.map(e2 => GS_CFG[k2].name + " " + e2));
-    const soft2 = allErr.filter(e2 => /saved copy|auto-retrying/i.test(e2)), hard2 = allErr.filter(e2 => !soft2.includes(e2));
+    const soft2 = allErr.filter(e2 => /saved copy|auto-retrying|ℹ/i.test(e2)), hard2 = allErr.filter(e2 => !soft2.includes(e2));
     if (hard2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard2.join(" · ")}</span>`));
     if (soft2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft2.join(" · ")}</span>`));
   } else {
@@ -7495,22 +7657,24 @@ function renderGen() {
     }
     if (!s.loaded) { const b = el("button", null, `LOAD ${cfg.name}`); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
     if (s.errors.length) {
-      const soft = s.errors.filter(e2 => /saved copy|auto-retrying/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
+      const soft = s.errors.filter(e2 => /saved copy|auto-retrying|ℹ/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
       if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span>`));
       if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
     }
+    if (s.priYr && GX.view === "board") root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Models warmed by the ${s.priYr} season replay (${s.priN} games, offseason-regressed) + ${s.curN} played this season — records live on MODEL RECORDS.</span>`));
+    if (cfg.spFirst && GX.view === "board") root.appendChild(el("div", "subhead", `<span style="color:var(--gold);font-weight:700;">SPREAD-FIRST BOARD</span> <span style="color:var(--dim3)">— ${cfg.name} is a spread sport: team rows show the line, each card leads with the COVER call (or an honest NO CALL), sorted by best spread. Moneyline lives inside the box.</span>`));
   }
   if (GX.view === "how") {
     const sec = (t2, b2) => { const c2 = el("div", "card"); c2.style.marginBottom = "14px"; c2.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:19px;color:var(--gold);margin-bottom:8px;">${t2}</div><div style="font-size:13.5px;color:#c6ccdb;line-height:1.65;">${b2}</div>`; root.appendChild(c2); };
     if (cfg.teamCap === -1) sec("UFC — WHAT THIS TAB IS", `Fight cards with the book's moneylines. No team stats exist in MMA, so <b style="color:var(--txt)">no models make claims here</b> — it's an odds board, nothing more. If it ever pretends to predict a fight, don't trust it.`);
-    else sec("THE MODELS (SAME HONESTY RULES AS MLB/WNBA)", `Three generic engines run wherever full season results exist: <b style="color:var(--txt)">ELO</b> (rating updated each game, margin-weighted, home bump), <b style="color:var(--txt)">PYTHAG</b> (points/goals for &amp; against → expected win rate, matchup-combined), and <b style="color:var(--txt)">FORM-10</b> (net margin last 10). Consensus = the average. All walk-forward, all backtested with a TRUTH CHECK on MODEL RECORDS. Spread &amp; total use the same margin-bell-curve idea, tuned per sport (this sport: margins ±${cfg.mSig}, totals ±${cfg.tSig}).${cfg.soccer ? ` <br><br>⚠ <b style="color:var(--gold)">Soccer honesty:</b> matches can DRAW — these are 2-way win probabilities (draws skipped in grading, half-credit in Elo). The book's draw price shows on each card; a 55% "win prob" is NOT a 55% moneyline bet in a 3-way market.` : ""}${cfg.teamCap === 0 ? ` <br><br>⚠ College leagues are huge, so full-season replays aren't fetched — the board, odds and props work now; models join once a compact results source is wired.` : ""} Records here are young — trust them only as their sample grows.`);
+    else sec("THE MODELS (SAME HONESTY RULES AS MLB/WNBA)", `Three generic engines run wherever full season results exist: <b style="color:var(--txt)">ELO</b> (rating updated each game, margin-weighted, home bump), <b style="color:var(--txt)">PYTHAG</b> (points/goals for &amp; against → expected win rate, matchup-combined), and <b style="color:var(--txt)">FORM-10 (OPP-ADJ)</b> — net margin last 10, where every margin is adjusted by the opponent's Elo AT KICKOFF. Early in a season that's the whole ballgame: last week's result is read through WHO it came against, and since Elo carries last season (half-regressed at the boundary), both your team's and the opponent's previous season anchor the number. A 40-point romp over a bottom-feeder gets marked down; a close loss to a powerhouse barely dents you. Consensus = the average. All walk-forward, all backtested with a TRUTH CHECK on MODEL RECORDS. Spread &amp; total use the same margin-bell-curve idea, tuned per sport (this sport: margins ±${cfg.mSig}, totals ±${cfg.tSig}). <b style="color:var(--txt)">Blowout honesty:</b> win% is capped at 97%, so a margin derived from it alone maxes out near ${Math.round(2 * cfg.mSig)} — which would force the model to take the dog on EVERY huge college line. Spread calls therefore blend in a real score-rate margin (55/45, mirrored in the backtest), and when the book number still sits beyond the model's own range it shows <b style="color:var(--txt)">NO CALL</b> with its margin, instead of a fake percentage.${cfg.soccer ? ` <br><br>⚠ <b style="color:var(--gold)">Soccer honesty:</b> matches can DRAW — these are 2-way win probabilities (draws skipped in grading, half-credit in Elo). The book's draw price shows on each card; a 55% "win prob" is NOT a 55% moneyline bet in a 3-way market.` : ""}${cfg.wkRe ? ` <br><br><b style="color:var(--txt)">THE PREVIOUS-SEASON CARRY (CFB):</b> 134 FBS teams make per-team schedule fetches impossible — but football is week-based, so one scoreboard call per week replays a whole season. Last season's regular season (weeks 1–16) is replayed in full and saved permanently; this season's played weeks stack on top. At the boundary every rating is <b style="color:var(--txt)">offseason-regressed</b>: Elo pulled halfway back to average, last year's scoring shrunk to a 4-game prior, form nearly cleared — because rosters turn over, last year informs but never dominates. That's why this board has real models, real records and a real truth check in week 1 instead of "wait a month".` : cfg.teamCap === 0 ? ` <br><br>⚠ College basketball is huge AND date-based (no weekly-replay trick), so full-season replays aren't fetched — the board, odds and props work now; models join once a compact results source is wired.` : ""} Records here are young — trust them only as their sample grows.`);
     return;
   }
   if (GX.view === "rec") {
     for (const sub of subsOf()) {
       const c3 = GS_CFG[sub], s3 = gSlot(sub), bt = s3.bt;
       if (combo) root.appendChild(el("div", "h1", `${c3.emoji} ${c3.name}`));
-      if (c3.teamCap === -1 || c3.teamCap === 0 || !bt || !bt.n) {
+      if (c3.teamCap === -1 || (c3.teamCap === 0 && !c3.wkRe) || !bt || !bt.n) {
         root.appendChild(el("div", "nobets", c3.teamCap === -1 ? "UFC has no team models — nothing to backtest honestly." : !s3.results.length ? (c3.soccer ? `No completed ${c3.name} matches loaded. EPL &amp; UCL sit between seasons in summer (new seasons start Aug/Sep). MLS runs right now — its records usually just need the season-results fetch to land; use the button below.` : `No completed ${c3.name} games loaded yet — off-season or the season hasn't started. Models, records and truth checks light up automatically once real games exist.`) : "Not enough completed games yet for a backtest."));
         if (c3.teamCap > 0 && Object.keys(s3.teams).length) {
           const fb = el("button", null, `⟳ FETCH ${c3.name} RESULTS AGAIN`); fb.className = "btn ghost"; fb.style.margin = "0 0 14px";
@@ -7519,8 +7683,8 @@ function renderGen() {
         }
         continue;
       }
-      root.appendChild(el("div", "h1", `MODEL RECORDS <small>· ${bt.n} games, walk-forward${combo ? " · " + c3.name : ""}</small>`));
-      const cards = [["ELO", bt.elo], ["PYTHAG", bt.pyth], ["FORM-10", bt.form], ["ALWAYS HOME", bt.home]].map(([n2, r2]) => `<div class="reccard"><div class="recname">${n2}</div><div class="recwl">${r2.w}-${r2.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(r2.w / Math.max(1, r2.w + r2.l) * 100).toFixed(1)}%</b></div></div>`);
+      root.appendChild(el("div", "h1", `MODEL RECORDS <small>· ${bt.n} games, walk-forward${s3.priYr ? ` · incl. the ${s3.priYr} season replay (${s3.priN} gm) + ${s3.curN} this season, offseason-regressed at the boundary` : ""}${combo ? " · " + c3.name : ""}</small>`));
+      const cards = [["ELO", bt.elo], ["PYTHAG", bt.pyth], ["FORM-10 (OPP-ADJ)", bt.form], ["ALWAYS HOME", bt.home]].map(([n2, r2]) => `<div class="reccard"><div class="recname">${n2}</div><div class="recwl">${r2.w}-${r2.l}</div><div class="recsub">win% <b style="color:var(--txt)">${(r2.w / Math.max(1, r2.w + r2.l) * 100).toFixed(1)}%</b></div></div>`);
       root.appendChild(el("div", "recgrid", cards.join("")));
       const gKey = (hasLS && localStorage.getItem("kb_gcal_" + sub)) || "c";
       const gNames = { c: "CONSENSUS", e: "ELO", py: "PYTHAG", f: "FORM-10" };
@@ -7874,7 +8038,7 @@ function renderGen() {
   }
   if (!boardGames.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games on ${S.date} — off day or off-season. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
   if (boardGames.length > 1) {
-    const gSortK = (hasLS && localStorage.getItem("kb_gsort_" + sp)) || "cons";
+    const gSortK = (hasLS && localStorage.getItem("kb_gsort_" + sp)) || (cfg.spFirst ? "spread" : "cons"); // spread-first sports open sorted by BEST SPREAD
     const gsBar = el("div");
     gsBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
     gsBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
@@ -7883,7 +8047,7 @@ function renderGen() {
     root.appendChild(gsBar);
     const gConf = ent => {
       const c3 = GS_CFG[ent.sub], g2 = ent.g;
-      if (gSortK === "spread") { if (g2.spread == null || g2.cons == null) return -1; const pc = calApply("g:" + ent.sub + ":sp", coverProb(g2.cons, g2.spread, c3.mSig || 10)); return pc == null ? -1 : Math.max(pc, 1 - pc); }
+      if (gSortK === "spread") { const sc3 = genSpreadCall(ent.sub, g2, g2.spread); return !sc3 || sc3.off || sc3.pc == null ? -1 : Math.max(sc3.pc, 1 - sc3.pc); }
       if (gSortK === "total") { if (g2.total == null || g2.expT == null) return -1; const pOv = calApply("g:" + ent.sub + ":tot", 1 - phi((g2.total - g2.expT) / (c3.tSig || 10))); return Math.max(pOv, 1 - pOv); }
       return g2.cons == null ? -1 : Math.max(g2.cons, 1 - g2.cons);
     };
@@ -7895,22 +8059,31 @@ function renderGen() {
     const cfgG = GS_CFG[sub], sG = gSlot(sub);
     const card = el("div", "card" + (g.completed || g.live ? " played" : ""));
     card.dataset.ggid = g.id;
-    if (!g.completed && !g.live && g.cons != null) { // 10a team slip — the pick's color washes the card, same as MLB
-      const _gs2 = g.cons >= 0.5 ? g.home : g.away;
+    const scallC = !g.completed && !g.live && cfgG.spFirst && g.spread != null && g.cons != null ? genSpreadCall(sub, g, g.spread) : null; // spread-first: the COVER pick leads the card
+    if (!g.completed && !g.live && g.cons != null) { // 10a team slip — the pick's color washes the card (spread-first: the covering side's color)
+      const _gs2 = scallC && !scallC.off && scallC.pc != null ? (scallC.pc >= 0.5 ? g.home : g.away) : (g.cons >= 0.5 ? g.home : g.away);
       if (_gs2.color) { card.style.background = `linear-gradient(150deg, ${hexA(_gs2.color, 0.16)}, #0c0d16 58%)`; card.style.borderColor = hexA(_gs2.color, 0.45); }
     }
     const logo2 = t2 => t2.logo ? `<img src="${t2.logo}" style="width:28px;height:28px;object-fit:contain;">` : "";
     const mrow2 = (n2, p2) => { if (p2 == null) return ""; const hp2 = p2 >= 0.5, ab = hp2 ? g.home.abbr : g.away.abbr, sp2 = hp2 ? p2 : 1 - p2; const col2 = hp2 ? "var(--green)" : "var(--blue)"; return `<div class="mrow"><span class="mlabel">${n2}</span><div class="mbar"><i style="width:${(sp2 * 100).toFixed(0)}%;background:${col2};"></i></div><span class="mpct" style="min-width:76px;"><b style="color:${col2};">${ab}</b> ${(sp2 * 100).toFixed(1)}%</span><span class="medge"></span></div>`; };
-    let stp = "";
+    let stp = "", spBan = "";
     if (!g.completed && !g.live && (g.spread != null || g.total != null)) {
       const rows2 = [];
-      if (g.spread != null && g.cons != null) { const pc2 = calApply("g:" + sub + ":sp", coverProb(g.cons, g.spread, cfgG.mSig)); const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
+      const scall = scallC ?? (g.spread != null && g.cons != null ? genSpreadCall(sub, g, g.spread) : null);
+      if (cfgG.spFirst && scall) { // spread-first sport: the cover call IS the headline — big banner, ML demoted below
+        spBan = scall.off
+          ? `<div style="margin-top:9px;background:var(--panel3);border:1px solid var(--line2);border-radius:10px;padding:7px 11px;font-size:11px;color:var(--dim);"><b style="color:var(--txt)">SPREAD — NO CALL</b> · book ${g.spread > 0 ? "+" : ""}${g.spread} is beyond the model's range (its margin: ${(scall.mu >= 0 ? g.home : g.away).abbr} by ${Math.abs(scall.mu).toFixed(1)}) — it won't fake a % it can't back</div>`
+          : (() => { const pc2 = scall.pc, hp2 = pc2 >= 0.5, t2 = hp2 ? g.home : g.away, ln2 = hp2 ? g.spread : -g.spread, pp2 = Math.max(pc2, 1 - pc2); return `<div style="margin-top:9px;background:linear-gradient(150deg,${hexA(t2.color || "#3d9bff", 0.22)},var(--panel3) 70%);border:1px solid ${hexA(t2.color || "#3d9bff", 0.5)};border-radius:10px;padding:8px 11px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:9px;font-weight:800;letter-spacing:1.1px;color:var(--dim);">SPREAD PICK</span><b style="font-family:var(--cond);font-size:18px;">${t2.abbr} ${ln2 > 0 ? "+" : ""}${ln2}</b><span style="font-size:10.5px;color:var(--dim3);">model: ${(scall.mu >= 0 ? g.home : g.away).abbr} by ${Math.abs(scall.mu).toFixed(1)}</span><div class="spacer"></div><b style="font-family:var(--cond);font-size:17px;">${(pp2 * 100).toFixed(1)}%</b></div>`; })();
+        if (g.mlHome != null || g.mlAway != null) rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">MONEYLINE</span><b>${g.away.abbr} ${fmtML(g.mlAway)}</b><b>${g.home.abbr} ${fmtML(g.mlHome)}</b><div class="spacer"></div><b>${g.cons != null ? (g.cons >= 0.5 ? g.home.abbr + " " + (g.cons * 100).toFixed(1) : g.away.abbr + " " + ((1 - g.cons) * 100).toFixed(1)) + "%" : ""}</b></div>`);
+      }
+      else if (scall && !scall.off && scall.pc != null) { const pc2 = scall.pc; const pp2 = Math.max(pc2, 1 - pc2); const pick2 = pc2 >= 0.5 ? `${g.home.abbr} ${g.spread > 0 ? "+" : ""}${g.spread}` : `${g.away.abbr} ${-g.spread > 0 ? "+" : ""}${-g.spread}`; rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b>${pick2}</b><span style="color:var(--dim3);font-size:11px;">model: ${(scall.mu >= 0 ? g.home : g.away).abbr} by ${Math.abs(scall.mu).toFixed(1)}</span><div class="spacer"></div><b>${(pp2 * 100).toFixed(1)}%</b></div>`); }
+      else if (scall && scall.off) rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">SPREAD</span><b style="color:var(--dim)">NO CALL</b><span style="color:var(--dim3);font-size:11px;">book ${g.spread > 0 ? "+" : ""}${g.spread} is beyond this model's range — its own margin is ${(scall.mu >= 0 ? g.home : g.away).abbr} by ${Math.abs(scall.mu).toFixed(1)}, and it won't fake a % it can't back</span></div>`);
       if (g.total != null && cfgG.soccer && g.dc) { const pOv2 = calApply("g:" + sub + ":dctot", g.dc.pOverT(g.total)); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">Dixon–Coles matrix (${(g.dc.lh + g.dc.la).toFixed(2)} xG)</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
       else if (g.total != null && g.expT != null) { const pOv2 = calApply("g:" + sub + ":tot", 1 - phi((g.total - g.expT) / cfgG.tSig)); const pp3 = Math.max(pOv2, 1 - pOv2); rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL ${g.total}</span><b>${pOv2 >= 0.5 ? "OVER" : "UNDER"}</b><span style="color:var(--dim3);font-size:11px;">model ${g.expT.toFixed(1)}</span><div class="spacer"></div><b>${(pp3 * 100).toFixed(1)}%</b></div>`); }
       else if (g.total != null) rows2.push(`<div style="display:flex;gap:8px;font-size:12px;padding:2.5px 0;"><span style="color:var(--dim);flex:0 0 84px;">TOTAL</span><b>${g.total}</b><span style="color:var(--dim3);font-size:11px;">book line (model needs season data)</span></div>`);
       const spStep = cfgG.mSig <= 3 ? 0.5 : cfgG.mSig <= 8 ? 1 : Math.max(2, Math.round(cfgG.mSig / 4));
       const totStep = cfgG.tSig <= 3 ? 0.5 : cfgG.tSig <= 8 ? 1 : Math.max(2, Math.round(cfgG.tSig / 4));
-      const altSp = g.spread != null && g.cons != null ? altSpreadBox(g.cons, g.spread, cfgG.mSig, g.home.abbr, g.away.abbr, spStep, "ALT SPREADS — every rung priced", null, "g:" + sub + ":sp") : "";
+      const altSp = scall && !scall.off ? altSpreadBox(g.cons, g.spread, cfgG.mSig, g.home.abbr, g.away.abbr, spStep, "ALT SPREADS — every rung priced", null, "g:" + sub + ":sp", null, scall.mu) : "";
       const altTot = cfgG.soccer && g.dc && g.total != null
         ? altBox(altRungs(L3 => calApply("g:" + sub + ":dctot", g.dc.pOverT(L3)), g.total, 1, 3), g.total, "ALT GOAL TOTALS — matrix-priced", `Every rung read straight off the Dixon–Coles score matrix (${(g.dc.lh + g.dc.la).toFixed(2)} expected goals) — the same math the goals research uses. Bet a rung only when your book beats fair.`)
         : (g.total != null && g.expT != null ? altBox(altRungs(L3 => calApply("g:" + sub + ":tot", 1 - phi((L3 - g.expT) / cfgG.tSig)), g.total, totStep, 3), g.total, "ALT TOTALS — every rung priced", `Bell curve on the model's ${g.expT.toFixed(1)} total, width ±${cfgG.tSig}. Bet a rung only when your book beats fair.`) : "");
@@ -7920,10 +8093,11 @@ function renderGen() {
       <div class="chead"><span class="time">${timeLabel(g.date)}</span>
         ${g.completed ? '<span class="finchip">FINAL</span>' : g.live ? '<span class="livechip">● LIVE</span>' : ""}
         ${g.book && !g.completed ? `<span class="bookchip">${g.book}</span>` : ""}${combo ? `<span class="chip">${cfgG.emoji} ${cfgG.name}</span>` : ""}<div class="spacer"></div></div>
-      <div class="trow" style="margin-top:3px;">${logo2(g.away)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${(g.away.name || g.away.abbr || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(gSlot(sub).results, +g.away.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : `<div class="tml">${fmtML(g.mlAway)}</div>`}</div>
-      <div class="trow" style="margin-top:3px;">${logo2(g.home)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${(g.home.name || g.home.abbr || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(gSlot(sub).results, +g.home.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : `<div class="tml">${fmtML(g.mlHome)}</div>`}</div>
+      <div class="trow" style="margin-top:3px;">${logo2(g.away)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${(g.away.name || g.away.abbr || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(gSlot(sub).results, +g.away.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : cfgG.spFirst && g.spread != null ? `<div class="tml" style="color:var(--txt);">${-g.spread > 0 ? "+" : ""}${-g.spread}</div>` : `<div class="tml">${fmtML(g.mlAway)}</div>`}</div>
+      <div class="trow" style="margin-top:3px;">${logo2(g.home)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${(g.home.name || g.home.abbr || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(gSlot(sub).results, +g.home.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : cfgG.spFirst && g.spread != null ? `<div class="tml" style="color:var(--txt);">${g.spread > 0 ? "+" : ""}${g.spread}</div>` : `<div class="tml">${fmtML(g.mlHome)}</div>`}</div>
       ${!g.completed && (g.dc || g.mlDraw != null) ? `<div style="font-size:11px;color:var(--dim);margin-top:4px;">${g.dc ? `<b style="color:var(--txt)">DIXON–COLES 3-WAY:</b> ${g.home.abbr} ${(g.dc.pW * 100).toFixed(0)}% · <b style="color:var(--gold)">DRAW ${(g.dc.pD * 100).toFixed(0)}% (fair ${fmtML(probToAmerican(g.dc.pD))})</b> · ${g.away.abbr} ${(g.dc.pL * 100).toFixed(0)}%` : ""}${g.mlDraw != null ? ` · book draw ${fmtML(g.mlDraw)}${g.dc && americanToProb(g.mlDraw) < g.dc.pD ? ' <span style="color:var(--green)">— pays better than fair</span>' : ""}` : ""}</div>` : ""}
-      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10", g.mForm)}${g.mDC != null ? mrow2("Dixon–Coles", g.mDC) : ""}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
+      ${spBan}
+      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS${cfgG.spFirst ? ' <span style="color:var(--dim3);letter-spacing:0;font-weight:600;">· win prob — the SPREAD PICK above is the headline here</span>' : ""}</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10 (opp-adj)", g.mForm)}${g.mDC != null ? mrow2("Dixon–Coles", g.mDC) : ""}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
       ${stp}`;
     grid.appendChild(card);
   }
