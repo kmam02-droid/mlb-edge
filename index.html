@@ -443,6 +443,32 @@
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.44  Player props no longer mix in PRESEASON games: starters play 10–15 minutes there, which dragged projections down and widened the swing
+          (Mitchell P+A "26.1 over 12 games" when only ~9 games count) — preseason is dropped by name AND by date (before the schedule's first game);
+          game logs are also sorted newest-first explicitly instead of trusting ESPN's order.
+   v5.43  Win-probability honesty: the card now shows the chain "models alone → tonight's absences → final" (the three bars are BEFORE injuries, the
+          consensus was AFTER — that is how a 75 % consensus became 88.8 %); a player who has already missed most of his team's last 10 games is
+          discounted (his absence is already in Form-10 / Elo — it was counted twice); a ⚠ when the model is 12+ points from the market; and an
+          INJURY ADJUSTMENT strength control (FULL / ¾ / ½ / OFF).
+   v5.42  MATCHUP: player props now use defence-vs-position — each projection is scaled by how much the opponent allows to the player's position
+          (shrunk toward "no effect" for small samples, capped ±12 %), shown on cards / Best Prop Bets / pool, switchable (🎯 MATCHUP ON/OFF), and
+          MODEL RECORDS adds a walk-forward "BLEND + MATCHUP" engine so the record shows whether it really helps. NBA + NFL.
+   v5.41  Players who can't play no longer appear in picks: the cross-sport TODAY'S POOL, BEST PROP BETS and the prop tabs now check LIVE
+          that his team has a game today and that he is not ruled OUT / doubtful (the old check ran once, when the props were built).
+   v5.40  EFFICIENCY: the line between a game's two teams is now slim and clean — it stops at each team's ring instead of running through the
+          logos, and a small pill in the middle shows the points apart. (Thick outlined bar removed.)
+   v5.39  EFFICIENCY: clicking a team works again (v5.37's drag support captured the pointer, which made Chrome send the click to the chart frame
+          instead of the logo); the line between a clicked team and its opponent is now drawn ON TOP of the logos, thick and outlined.
+   v5.38  EFFICIENCY zoom: the plain mouse wheel now zooms the chart (switch "WHEEL" to give it back to page scrolling); Firefox's
+          line-based wheel notches are handled; at ×1 / ×12 the wheel scrolls the page instead of trapping the cursor.
+   v5.37  EFFICIENCY: real ZOOM — + / − buttons, drag to move, double-tap, pinch, Ctrl+scroll, 🎯 fit the ringed teams, reset; zooming spreads
+          crowded logos apart (they keep their size) and adds point gridlines; works on every sport's chart.
+   v5.36  EFFICIENCY: click any team (logo, chip or table row) and its own game's differential jumps to the TOP — rank among the day's
+          games, both teams ringed on the chart, trend; a team with no game shows its own numbers; ✕ goes back to the biggest.
+   v5.35  Betting lines no longer vanish: odds are read from EVERY provider ESPN lists (not just the first); when the schedule arrives
+          without lines they are filled from ESPN direct / relays, ESPN's odds feed, then your Odds API key — and a banner says what happened.
+          Much faster first sight: the board now draws as soon as the schedule (games + lines) arrives instead of waiting for all 30 team
+          schedules; picks fill in when the models are ready. Dead routes are remembered across page loads; ESPN waits cut from 15 s to 9 s.
    v5.34  This changelog, written into the file.
    v5.33  NBA / NFL / NHL team records (ELO · PYTHAG · FORM-10, spread, totals) no longer empty early in a season: last season's
           results are fetched ONCE, saved for good, and warm the walk-forward fit; the page says the record includes the replay.
@@ -472,7 +498,7 @@
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.34 · 10a";
+const BUILD = "v5.44 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -661,18 +687,20 @@ async function jFetch(url, ms) {
   } finally { clearTimeout(t); }
 }
 function espnMirror(u) { return u.startsWith("https://site.api.espn.com/apis/site/v2/") ? u.replace("https://site.api.espn.com/", "https://site.web.api.espn.com/") : u.startsWith("https://site.web.api.espn.com/apis/site/v2/") ? u.replace("https://site.web.api.espn.com/", "https://site.api.espn.com/") : null; }
-const ROUTE_HEALTH = {}; // route family → { fails, until }: after 2 soft failures a route is skipped for 60 s (then tried again), so a dead route costs seconds once — not 15 s on EVERY request
+const ROUTE_HEALTH = (() => { try { const o = JSON.parse(localStorage.getItem("kb_routehealth") || "{}"), now = Date.now(), out = {}; for (const k in o) if (o[k] && o[k].until > now) out[k] = o[k]; return out; } catch (e) { return {}; } })(); // survives a page reload (expired entries dropped)
+function routeSave() { try { if (hasLS) localStorage.setItem("kb_routehealth", JSON.stringify(ROUTE_HEALTH)); } catch (e) {} }
+// route family → { fails, until }: after 2 soft failures a route is skipped for 60 s (then tried again), so a dead route costs seconds once — not 15 s on EVERY request
 function routeKey(u) { const m = /^https?:\/\/([^/]+)(\/apis\/[^/]+\/v\d\/sports\/)[^/]+\/[^/]+\/([^/?]+)/.exec(u); return m ? m[1] + m[2] + "*/*/" + m[3] : (/^https?:\/\/([^/]+)/.exec(u) || [0, u])[1]; }
 const routeCooling = k => { const h = ROUTE_HEALTH[k]; return !!h && h.fails >= 2 && Date.now() < h.until; };
-function routeMark(k, ok) { if (ok) { delete ROUTE_HEALTH[k]; return; } const h = ROUTE_HEALTH[k] = ROUTE_HEALTH[k] || { fails: 0, until: 0 }; h.fails++; if (h.fails >= 2) h.until = Date.now() + 60000; }
+function routeMark(k, ok) { if (ok) { if (ROUTE_HEALTH[k]) { delete ROUTE_HEALTH[k]; routeSave(); } return; } const h = ROUTE_HEALTH[k] = ROUTE_HEALTH[k] || { fails: 0, until: 0 }; h.fails++; if (h.fails >= 2) h.until = Date.now() + 60000; routeSave(); }
 async function j(url) {
   const r = routed(url);
   if (r !== url) return jFetch(r); // local helper proxy handles it
   // never relay the Odds API (your key is in the URL); everything else falls back through relays if blocked
   if (url.startsWith("https://api.the-odds-api.com/")) return jFetch(url);
   const mirror = espnMirror(url); // ESPN serves the same /apis/site/v2/ data from site.api AND site.web.api — when one host is blocked for you (CORS / network), the other often isn't
-  const attempts = [{ k: routeKey(url), u: url, ms: 15000 }];
-  if (mirror) attempts.push({ k: routeKey(mirror), u: mirror, ms: 12000 });
+  const attempts = [{ k: routeKey(url), u: url, ms: mirror ? 9000 : 15000 }]; // with a mirror to fall back on, a hanging route is abandoned after 9 s, not 15
+  if (mirror) attempts.push({ k: routeKey(mirror), u: mirror, ms: 9000 });
   for (let i = 1; i < RELAYS.length; i++) attempts.push({ k: "relay" + i, u: RELAYS[i](url), ms: 9000, relay: i });
   const live = attempts.filter(a => !routeCooling(a.k)), run = live.length ? live : attempts; // everything cooling → try it all again rather than give up
   let lastErr = null;
@@ -5681,13 +5709,14 @@ function collectAltLocks() { // ALT-RUNG locks: no book line needed — each mod
       const defs = pmModels(ps2.cls || "big");
       for (const p2 of (ss.pdata[ps2.k] || []).slice(0, 10)) {
         if (!p2.vals || p2.vals.length < 8 || !["A", "B"].includes(p2.grade)) continue;
-        if (p2.team && (ss.games || []).some(g2 => g2.home.abbr === p2.team || g2.away.abbr === p2.team) && !upG.some(g2 => g2.home.abbr === p2.team || g2.away.abbr === p2.team)) continue;
+        const av = genPlayerUsable(sp2, p2); if (!av.ok) continue; // team has no game today / game over or live / ruled OUT or doubtful → never a pick
         let fits; try { fits = defs.map(m2 => m2.fit(p2.vals.slice().reverse())); } catch (e) { continue; }
+        const muR = muApply(sp2, p2, ps2, fits); fits = muR.fits; // matchup vs his position
         const consProj = mean(fits.map(f2 => f2.proj));
         const step = ps2.cls === "yds" ? Math.max(5, Math.round(consProj * 0.12 / 5) * 5) : ps2.cls === "count" ? 1 : 2;
         const rung = safeRung(L2 => mean(fits.map(f2 => clamp(f2.pOver(L2), 0.01, 0.99))), Math.max(0.5, Math.round(consProj - 0.5) + 0.5), step, 0.72, 4);
         if (!rung || rung.p > 0.92 || !fits.every(f2 => f2.pOver(rung.L) >= 0.6)) continue;
-        out.push({ sportKey: sp2, sport: GS_CFG[sp2].emoji + " " + GS_CFG[sp2].name, type: ps2.k + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: pnm(p2.name) + " " + ps2.n.toLowerCase(), sub: `consensus proj ${consProj.toFixed(1)} · ${p2.vals.length} games`, time: null, go: () => { setSport(sp2); selectTab("gen:pstat:" + ps2.k); jumpToCard(`#tab-gen [data-gpid="${p2.id}"]`); },
+        out.push({ sportKey: sp2, sport: GS_CFG[sp2].emoji + " " + GS_CFG[sp2].name, type: ps2.k + " ALT PROP", prob: rung.p, odds: null, big: "OVER " + rung.L, bigLbl: "ALT RUNG · fair " + fmtML(probToAmerican(rung.p)), label: pnm(p2.name) + " " + ps2.n.toLowerCase(), sub: `consensus proj ${consProj.toFixed(1)} · ${p2.vals.length} games${muR.mu && Math.abs(muR.mu.f - 1) >= 0.01 ? " · matchup " + muPct(muR.mu) : ""}${av.flag ? " · ⚠ " + av.flag : ""}`, time: null, go: () => { setSport(sp2); selectTab("gen:pstat:" + ps2.k); jumpToCard(`#tab-gen [data-gpid="${p2.id}"]`); },
           info: [["Consensus projection", consProj.toFixed(1)], ["Safe rung", "OVER " + rung.L + " · " + fmtPct(rung.p), "var(--green)"], ["All engines 60%+ here", "unanimous", "var(--green)"], ["Fair price", fmtML(probToAmerican(rung.p))], ["Grade", p2.grade + " · " + p2.vals.length + " games logged"], ["⚠ No book line", "compare with your book's alt menu — bet only above fair", "var(--gold)"]] });
       }
     }
@@ -5805,6 +5834,8 @@ function collectGenLV(mode) { // NFL/NBA/NHL/soccer moneylines for LOCKS & VALUE
         ["Pythag", gsd(g.mPyth) != null ? fmtPct(gsd(g.mPyth)) : "—"],
         ["Form-10", gsd(g.mForm) != null ? fmtPct(gsd(g.mForm)) : "—"],
         ["Consensus", fmtPct(prob), "var(--green)"],
+        ...(g.consBase != null && Math.abs(g.cons - g.consBase) >= 0.005 && g.injNet ? [["Before injuries", fmtPct(homeSide ? g.consBase : 1 - g.consBase)], ["Injury adjustment", (g.injNet > 0 ? g.away.abbr : g.home.abbr) + " short ≈ " + Math.abs(g.injNet).toFixed(1) + " pts → " + (((prob - (homeSide ? g.consBase : 1 - g.consBase)) * 100) >= 0 ? "+" : "") + ((prob - (homeSide ? g.consBase : 1 - g.consBase)) * 100).toFixed(1) + " pts of win probability", "var(--gold)"]] : []),
+        ...(dv != null && Math.abs(prob - dv) >= 0.12 ? [["⚠ Far from the market", `the model is ${(Math.abs(prob - dv) * 100).toFixed(0)} pts ${prob > dv ? "above" : "below"} the book — books already price injuries; treat it as a warning, not an automatic edge`, "var(--red)"]] : []),
         ["Market (de-vig)", dv != null ? fmtPct(dv) : "no line yet"],
         ["Edge vs market", dv != null ? ((prob - dv) * 100 >= 0 ? "+" : "") + ((prob - dv) * 100).toFixed(1) + "%" : "—", "var(--gold)"],
         ["Model records", s.bt?.n ? `backtested on ${s.bt.n} games — see MODEL RECORDS` : "young season — records still building"]
@@ -5814,7 +5845,7 @@ function collectGenLV(mode) { // NFL/NBA/NHL/soccer moneylines for LOCKS & VALUE
       if (mode === "locks") {
         if (prob < (cfg.soccer ? 0.60 : 0.55)) continue; // soccer draws punish overconfidence — demand more
         if (ml != null && !oddsOK(ml, 2)) continue;
-        out.push({ sportKey, sport: spTag, type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label, sub: "3-model consensus" + (cfg.soccer ? " · 2-way (draw aside)" : ""), time: g.date, go, info });
+        out.push({ sportKey, sport: spTag, type: "MONEYLINE", prob, odds: ml, big: fmtML(ml), bigLbl: ml != null ? "MONEYLINE" : "NO LINE YET", label, sub: "3-model consensus" + (g.consBase != null && Math.abs(g.cons - g.consBase) >= 0.005 && g.injNet ? " · " + Math.round((homeSide ? g.consBase : 1 - g.consBase) * 100) + "% before injuries" : "") + (dv != null && Math.abs(prob - dv) >= 0.12 ? " · ⚠ " + ((prob - dv) * 100).toFixed(0) + " pts vs book" : "") + (cfg.soccer ? " · 2-way (draw aside)" : ""), time: g.date, go, info });
       } else {
         if (dv == null || ml == null) continue;
         const edge = (prob - dv) * 100;
@@ -6000,6 +6031,7 @@ function lvPoolNote(entries) { // what each sport put in the pool today — and 
     else if (ss.games.every(g2 => g2.cons == null)) reasons.push(`${label[sp2]}: season too young for models`);
     else reasons.push(`${label[sp2]}: nothing clears the bar today`);
   }
+  for (const sp2 of ["nfl", "nba", "nhl"]) { const ss = gSlot(sp2); if (cnt[sp2] && GS_CFG[sp2].inj && !(ss.inj && Object.keys(ss.inj).length)) reasons.push(`⚠ ${label[sp2]}: injury report not loaded — confirm players are active before betting`); }
   if (!cnt.soc) {
     const anyLoaded = ["epl", "mls", "ucl"].some(k3 => gSlot(k3).loaded);
     reasons.push("⚽: " + (!anyLoaded ? "not loaded — tap the SOCCER chip" : ["epl", "mls", "ucl"].some(k3 => gSlot(k3).games?.length) ? "nothing clears the 60% draw-safe bar / 72% rung bar today" : "leagues between seasons"));
@@ -6924,6 +6956,69 @@ function poisCdf(k, lam) { if (lam <= 0) return 1; let s2 = 0, t2 = Math.exp(-la
 function ewmaMean(vals, hl = 6) { const a2 = 1 - Math.pow(0.5, 1 / hl); let m2 = vals[0] ?? 0; for (let i = 1; i < vals.length; i++) m2 = a2 * vals[i] + (1 - a2) * m2; return m2; }
 function lognFit(vals) { const lg2 = vals.map(v => Math.log(Math.max(0, v) + 1)); return { m: mean(lg2), s: Math.max(0.12, sd(lg2)) }; }
 function median2(vals) { const s2 = vals.slice().sort((a2, b2) => a2 - b2); const n2 = s2.length; return n2 ? (n2 % 2 ? s2[(n2 - 1) / 2] : (s2[n2 / 2 - 1] + s2[n2 / 2]) / 2) : 0; }
+/* ---------- MATCHUP: DEFENCE VS POSITION → PLAYER PROPS ----------
+   How much does THIS opponent allow to THIS position (versus the league), from the saved box scores behind DEF VS POS?  factor = 1 + n/(n+6) × (their
+   average ÷ league average − 1): few games → close to 1 (it's noisy), capped at ±12 %.  It scales every engine's projection AND its distribution
+   (P(over L) → P(over L ÷ factor)).  History is used "as of" each game's date (only earlier games), so the walk-forward record on MODEL RECORDS
+   is honest: it shows whether adding the matchup actually beats the plain BLEND.  Unknown position / opponent / data → factor 1 (no change). */
+const MU_STAT = { nba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], TPM: ["tpm"], PRA: ["pts", "reb", "ast"], PR: ["pts", "reb"], RA: ["reb", "ast"], PA: ["pts", "ast"] }, nfl: { PASSYDS: ["pyds"], RUSHYDS: ["ryds"], RECYDS: ["cyds"], REC: ["rec"] } };
+const MU_K = 6, MU_CAP = [0.88, 1.12];
+const muOn = () => { try { return !(hasLS && localStorage.getItem("kb_matchup") === "off"); } catch (e) { return true; } };
+const muScale = (f2, k) => (Math.abs(k - 1) < 1e-6 ? f2 : { ...f2, proj: f2.proj * k, pOver: L2 => f2.pOver(L2 / k) });
+function muIndex(sp) { // per-defence game list (what the opposing offence did, by position) + event lookup; rebuilt when the box-score set changes
+  const s = gSlot(sp), D = s.dvp, C = DVP_CFG[sp]; if (!D || !D.agg || !C) return null;
+  const key = Object.keys(D.agg).length + ":" + (s.results || []).length; if (s._mu && s._mu.key === key) return s._mu;
+  const byDef = {}, byId = {};
+  for (const r of s.results || []) {
+    const rec = D.agg[r.id]; if (!rec || !rec.t) continue; const ids = Object.keys(rec.t); if (ids.length !== 2) continue;
+    byId[String(r.id)] = { d: r.d || "", ids: ids.map(Number) };
+    for (const id of ids) (byDef[id] = byDef[id] || []).push({ d: r.d || "", off: rec.t[ids.find(x => x !== id)] });
+  }
+  return (s._mu = { key, byDef, byId, C, memo: {} });
+}
+function muSeries(ix, defId, pos, keys) { // dated per-game totals allowed (defId null = the whole league), with prefix sums for fast "as of" means
+  const ck = (defId == null ? "L" : defId) + "|" + pos + "|" + keys.join("+"); if (ix.memo[ck] !== undefined) return ix.memo[ck];
+  const idxs = keys.map(k => (ix.C.stats[pos] || []).findIndex(([kk]) => kk === k)); if (idxs.some(i2 => i2 < 0)) return (ix.memo[ck] = null);
+  const rows = [], add = g => { const arr = g.off && g.off.p && g.off.p[pos]; rows.push({ d: g.d, v: arr ? idxs.reduce((a2, i2) => a2 + (arr[i2] || 0), 0) : 0 }); };
+  if (defId == null) { for (const id in ix.byDef) for (const g of ix.byDef[id]) add(g); } else for (const g of ix.byDef[defId] || []) add(g);
+  rows.sort((a2, b2) => (a2.d < b2.d ? -1 : a2.d > b2.d ? 1 : 0)); const pre = [0]; let c = 0; for (const r of rows) { c += r.v; pre.push(c); }
+  return (ix.memo[ck] = { rows, pre });
+}
+function muBefore(ser, asOf) { let lo = 0, hi = ser.rows.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (ser.rows[mid].d < asOf) lo = mid + 1; else hi = mid; } return lo; } // rows strictly before the date
+function muFactor(sp, defId, pos, pk, asOf) {
+  const ix = muIndex(sp), keys = (MU_STAT[sp] || {})[pk]; if (!ix || !keys) return null;
+  const so = muSeries(ix, defId, pos, keys), sl = muSeries(ix, null, pos, keys); if (!so || !sl) return null;
+  const n = muBefore(so, asOf), nl = muBefore(sl, asOf); if (n < 3 || nl < 20) return null;
+  const mo = so.pre[n] / n, ml = sl.pre[nl] / nl; if (!(ml > 0)) return null;
+  const raw = mo / ml, f = Math.max(MU_CAP[0], Math.min(MU_CAP[1], 1 + (n / (n + MU_K)) * (raw - 1)));
+  return { f, raw, n, mean: mo, lgMean: ml };
+}
+function muToday(sp, p, ps) { // the matchup for a player's NEXT game (null = no adjustment)
+  if (!muOn() || !(MU_STAT[sp] || {})[ps.k]) return null;
+  const s = gSlot(sp), D = s.dvp, ix = muIndex(sp); if (!ix || !D.pos) return null;
+  const pos = D.pos[String(p.id)]; if (!pos) return null;
+  const gs = genPlayerGame(sp, p); if (!gs.g) return null; const ab = String(p.team || "").toUpperCase(); if (!ab) return null;
+  const oppAb = gs.g.home === ab ? gs.g.away : gs.g.away === ab ? gs.g.home : null; if (!oppAb) return null;
+  let oppId = null; for (const id in s.teams) if (String(s.teams[id].abbr || "").toUpperCase() === oppAb) oppId = +id; if (oppId == null) return null;
+  const r = muFactor(sp, oppId, pos, ps.k, "9999-12-31"); if (!r) return null;
+  const keys = MU_STAT[sp][ps.k], all = []; for (const id in ix.byDef) { const ser = muSeries(ix, +id, pos, keys); if (ser && ser.rows.length >= 3) all.push({ id: +id, m: ser.pre[ser.rows.length] / ser.rows.length }); }
+  all.sort((a2, b2) => b2.m - a2.m); const rank = all.findIndex(x => x.id === oppId) + 1;
+  return { ...r, pos, opp: oppAb, stat: ps.n, rank, of: all.length, most: rank > 0 && rank <= all.length / 2 };
+}
+const muText = mu => `${mu.opp} allow the ${mu.most ? dvpOrd(mu.rank) + " MOST" : dvpOrd(mu.of - mu.rank + 1) + " FEWEST"} ${String(mu.stat).toLowerCase()} to ${mu.pos}`;
+const muEsc = x => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const muPct = mu => (mu.f >= 1 ? "+" : "−") + Math.abs((mu.f - 1) * 100).toFixed(1) + "%";
+function muApply(sp, p, ps, fits) { const mu = muToday(sp, p, ps); return mu ? { fits: fits.map(f2 => muScale(f2, mu.f)), mu } : { fits, mu: null }; }
+function pmDropStale(key, pre) { // the matchup data grows while it builds — keep ONE cached backtest per view of a prop, never a pile of old ones
+  for (const k2 of Object.keys(GX._pmbt || {})) if (k2 !== key && k2.indexOf(pre) === 0) delete GX._pmbt[k2];
+}
+function muBtPrep(sp, ps) { // for the walk-forward record: the same adjustment, computed "as of" each historical game
+  if (!muOn()) return null; const s = gSlot(sp), D = s.dvp, ix = muIndex(sp); if (!ix || !D.pos || !(MU_STAT[sp] || {})[ps.k]) return null;
+  const tidOf = ab => { const u = String(ab || "").toUpperCase(); for (const id in s.teams) if (String(s.teams[id].abbr || "").toUpperCase() === u) return +id; return null; };
+  return { tid: tidOf, fit(base, p2, row, tid) {
+    try { if (!row || !tid) return base; const g = ix.byId[String(row.id)]; if (!g || g.ids.indexOf(tid) < 0) return base; const opp = g.ids.find(x => x !== tid), pos = D.pos[String(p2.id)]; if (opp == null || !pos) return base;
+      const r = muFactor(sp, opp, pos, ps.k, row.d); return r ? muScale(base, r.f) : base; } catch (e) { return base; } } };
+}
 function pmModels(cls) { // each: fit(prior chronological) → { proj, pOver(L) }
   const countP = lam => L2 => 1 - poisCdf(Math.floor(L2), Math.max(0.05, lam));
   const normP = (mu, sg) => L2 => 1 - phi((L2 - mu) / Math.max(0.35, sg));
@@ -6944,13 +7039,14 @@ function pmModels(cls) { // each: fit(prior chronological) → { proj, pOver(L) 
     { key: "tr", name: "TRIM-10 NORMAL", fit: v => { const l10 = v.slice(-10).slice().sort((a2, b2) => a2 - b2); const t10 = l10.length > 4 ? l10.slice(1, -1) : l10; const p2 = mean(t10); return { proj: p2, pOver: normP(p2, sd(v)) }; } }
   ];
 }
-function pmBacktest(players, cls) { // walk-forward per player at rolling-median reference lines ± an offset
-  const models = pmModels(cls);
+function pmBacktest(players, cls, ctx) { // walk-forward per player at rolling-median reference lines ± an offset (ctx { sp, ps } adds the BLEND + MATCHUP engine)
+  const models = pmModels(cls).slice(); const muB = ctx && ctx.sp ? muBtPrep(ctx.sp, ctx.ps) : null; if (muB) models.push({ key: "mu", name: "BLEND + MATCHUP", mu: true });
   const out = {};
   for (const m2 of models) out[m2.key] = { name: m2.name, w: 0, l: 0, n: 0, cal: [] };
   for (const p2 of players || []) {
     const chron = (p2.vals || []).slice().reverse(); // oldest → newest
     if (chron.length < 8) continue;
+    const metaC = p2.meta ? p2.meta.slice().reverse() : null, tidP = muB ? muB.tid(p2.team) : null;
     for (let i = 6; i < chron.length; i++) {
       const prior = chron.slice(0, i);
       const ref = median2(prior.slice(-10));
@@ -6961,7 +7057,7 @@ function pmBacktest(players, cls) { // walk-forward per player at rolling-median
         if (act === L2) continue;
         for (const m2 of models) {
           try {
-            const f2 = m2.fit(prior);
+            const f2 = m2.mu ? muB.fit(models[0].fit(prior), p2, metaC && metaC[i], tidP) : m2.fit(prior);
             const pOv = clamp(f2.pOver(L2), 0.01, 0.99);
             const side = Math.max(pOv, 1 - pOv);
             const won = (pOv >= 0.5) === (act > L2);
@@ -6979,14 +7075,23 @@ function genTabs(sp) {
   const ps = GS_PSTATS[sp] || [];
   return [["gen:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ...(DVP_CFG[sp] ? [["gen:dvp", "DEF VS POS"]] : []), ["gen:eff", "EFFICIENCY"], ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
 }
-function glParse(gl) { // shared ESPN gamelog shape: combined labels + per-category offsets (football) or flat labels (everything else)
+function genRegSeasonCut(sp) { // the day before this season's first scheduled game (from the schedule we already hold) — anything earlier is preseason
+  const ds = (gSlot(sp).results || []).map(r => r.d).filter(Boolean).sort(); return ds.length >= 8 ? addDays(ds[0], -1) : null;
+}
+function glParse(gl, cut) { // shared ESPN gamelog shape: combined labels + per-category offsets (football) or flat labels (everything else)
   const labels = gl?.labels || [];
   const cats = (gl?.categories || []).map(c2 => ({ name: c2.name, count: num(c2.count) }));
   const rows = [];
-  for (const stp of gl?.seasonTypes || []) for (const cat of stp?.categories || []) for (const ev of cat?.events || []) {
-    if (!ev?.stats) continue;
-    rows.push({ d: ((gl?.events?.[ev.eventId]?.gameDate) || "").slice(0, 10), stats: ev.stats });
+  for (const stp of gl?.seasonTypes || []) {
+    if (/pre-?season/i.test(String(stp?.displayName || stp?.name || ""))) continue; // starters play 10–15 minutes in preseason: those games say nothing about a regular-season line
+    for (const cat of stp?.categories || []) for (const ev of cat?.events || []) {
+      if (!ev?.stats) continue;
+      const d = ((gl?.events?.[ev.eventId]?.gameDate) || "").slice(0, 10);
+      if (cut && d && d < cut) continue; // …and a preseason that isn't labelled as one is still older than the first scheduled game
+      rows.push({ d, id: String(ev.eventId || ""), stats: ev.stats });
+    }
   }
+  if (rows.length && rows.every(r => r.d)) rows.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0)); // newest first, whatever order ESPN listed months / season types in
   return { labels, cats, rows };
 }
 function glIdx(parsed, ps) { // resolve which stats-column a prop stat lives in
@@ -7005,14 +7110,15 @@ function glIdx(parsed, ps) { // resolve which stats-column a prop stat lives in
 function glVals(parsed, ps, full) { // per-game values, most recent first (full=true: whole season, for backtests)
   const idx = glIdx(parsed, ps);
   const pick = (row, i2) => { const v = row.stats[i2]; if (v == null) return NaN; const s2 = String(v); const m2 = ps.made ? s2.match(/^(\d+)[-–]/) : null; return m2 ? +m2[1] : num(s2); };
-  const out = [];
+  const out = [], meta = [];
   for (const row of parsed.rows) {
     let v;
     if (Array.isArray(idx)) { if (idx.some(i2 => i2 < 0)) return []; v = idx.reduce((a2, i2) => a2 + pick(row, i2), 0); }
     else { if (idx < 0) return []; v = pick(row, idx); }
-    if (isFinite(v)) out.push(v);
+    if (isFinite(v)) { out.push(v); meta.push({ d: row.d, id: row.id }); }
   }
-  return full ? out : out.slice(0, 18);
+  const res = full ? out : out.slice(0, 18); res.meta = full ? meta : meta.slice(0, 18); // meta[i] = { date, event id } of vals[i] (newest first)
+  return res;
 }
 async function genPropsLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
@@ -7084,7 +7190,7 @@ async function genPropsLoad(sp) {
     if (!players.length) throw new Error("no player leaders returned (off-season feeds can be empty)");
     s._gl = {};
     await Promise.all(players.map(async p2 => {
-      try { const gl = await j(`${web}/athletes/${p2.id}/gamelog`); const parsed = glParse(gl); if (parsed.rows.length >= 5) s._gl[p2.id] = { p: p2, parsed }; } catch (e2) {}
+      try { const gl = await j(`${web}/athletes/${p2.id}/gamelog`); const parsed = glParse(gl, genRegSeasonCut(sp)); if (parsed.rows.length >= 5) s._gl[p2.id] = { p: p2, parsed }; } catch (e2) {}
     }));
     s.pdata = {};
     for (const ps of GS_PSTATS[sp] || []) {
@@ -7099,7 +7205,7 @@ async function genPropsLoad(sp) {
         const proj = 0.6 * mean(recent) + 0.4 * mean(vals);
         const sigma = Math.max(ps.fl, sd(vals));
         const cv = mean(vals) > 0 ? sd(vals) / mean(vals) : 9;
-        arr.push({ id: src.id, name: src.name, team: src.team, hs: src.hs, vals, proj, sigma, last5: mean(recent), season: mean(vals), grade: cv <= 0.35 ? "A" : cv <= 0.55 ? "B" : cv <= 0.8 ? "C" : "D", inj: ij && /^(doubt|quest|day)/i.test(ij.status || "") ? ij.status : null });
+        arr.push({ id: src.id, name: src.name, team: src.team, hs: src.hs, vals, meta: vals.meta, proj, sigma, last5: mean(recent), season: mean(vals), grade: cv <= 0.35 ? "A" : cv <= 0.55 ? "B" : cv <= 0.8 ? "C" : "D", inj: ij && /^(doubt|quest|day)/i.test(ij.status || "") ? ij.status : null });
       }
       arr.sort((a2, b2) => (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
       s.pdata[ps.k] = arr;
@@ -7107,7 +7213,7 @@ async function genPropsLoad(sp) {
     s.pFull = {}; // whole-season logs per prop (newest first) → feeds the PLAYER PROP MODELS backtest on MODEL RECORDS
     for (const ps of GS_PSTATS[sp] || []) {
       const full = [];
-      for (const id2 in s._gl) { const v3 = glVals(s._gl[id2].parsed, ps, true); if (v3.length >= 8) full.push({ id: +id2, name: s._gl[id2].p.name, vals: v3 }); }
+      for (const id2 in s._gl) { const v3 = glVals(s._gl[id2].parsed, ps, true); if (v3.length >= 8) full.push({ id: +id2, name: s._gl[id2].p.name, team: s._gl[id2].p.team, vals: v3, meta: v3.meta }); }
       s.pFull[ps.k] = full;
     }
     s.pReady = true;
@@ -7364,11 +7470,15 @@ function genRenderIf(sp) { // background loads must never repaint the page you'r
 }
 async function genLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
-  s.loading = true; s._t0 = Date.now(); s.dateLoaded = S.date || localISO(new Date()); s.errors = []; s.games = []; s.results = []; s.teams = {}; s.sbOK = false;
+  s.loading = true; s._t0 = Date.now(); s.dateLoaded = S.date || localISO(new Date()); s.errors = []; s.games = []; s.results = []; s.teams = {}; s.sbOK = false; s.oddsSrc = null; s.oddsMissing = 0; s.oddsBusy = false;
   s.stage = "team list…"; genRenderIf(sp);
   const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
   // these don't depend on the season-results stage (30 team schedules, the slow part) — start them NOW so they overlap with it instead of queueing behind it
   const sbEarly = genSbChain(sp, S.date).catch(() => null);
+  s._gamesEarly = false;
+  sbEarly.then(sb => { // the schedule (games + lines) is one small request — show it NOW; don't make it wait for 30 team schedules
+    try { if (sb && s.loading && !(s.games || []).length) { s.games = genGamesFrom(sb); s._gamesEarly = true; s.sbOK = true; genRenderIf(sp); setTimeout(() => { try { genOddsFill(sp); } catch (e) {} }, 300); } } catch (e) {}
+  });
   const injEarly = cfg.inj ? (async () => {
     await genInjuries(sp);
     if (cfg.inj === "price") { const sbj = await sbEarly; const ids = new Set(); for (const ev of sbj?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) if (cp.team?.id) ids.add(+cp.team.id); await genInjProd(sp, ids); }
@@ -7461,26 +7571,13 @@ async function genLoad(sp) {
       }
       if (flat.length) s.calendar = [...new Set(flat)].sort();
     } catch (e) {}
-    const side = cp => cp ? ({ id: +cp.id, abbr: cp.team?.abbreviation || (cp.athlete ? (cp.athlete.shortName || cp.athlete.displayName) : "?"), name: cp.team?.displayName || cp.athlete?.displayName || "?", logo: cp.team?.logo || cp.team?.logos?.[0]?.href || cp.athlete?.headshot || "", color: cp.team?.color ? "#" + String(cp.team.color).replace("#", "") : "", score: cp.score != null ? +cp.score : null, winner: !!cp.winner }) : null;
-    s.games = (sb?.events || []).map(ev => {
-      const c = ev.competitions?.[0] || {};
-      const g = { id: ev.id, name: ev.name || "", date: ev.date, completed: !!c.status?.type?.completed, live: c.status?.type?.state === "in",
-        home: side((c.competitors || []).find(x => x.homeAway === "home") || (c.competitors || [])[0]),
-        away: side((c.competitors || []).find(x => x.homeAway === "away") || (c.competitors || [])[1]) };
-      const od = (c.odds || [])[0];
-      if (od) {
-        g.book = od.provider?.name || "book";
-        g.mlHome = parseAm(od.homeTeamOdds?.current?.moneyLine?.american ?? od.homeTeamOdds?.moneyLine ?? od.moneyline?.home?.close?.odds ?? od.moneyline?.home?.open?.odds); // ESPN's newer odds shape (soccer moved first)
-        g.mlAway = parseAm(od.awayTeamOdds?.current?.moneyLine?.american ?? od.awayTeamOdds?.moneyLine ?? od.moneyline?.away?.close?.odds ?? od.moneyline?.away?.open?.odds);
-        g.mlDraw = parseAm(od.drawOdds?.moneyLine ?? od.drawOdds?.current?.moneyLine?.american ?? od.moneyline?.draw?.close?.odds ?? od.moneyline?.draw?.open?.odds);
-        g.spread = od.spread != null && isFinite(num(od.spread)) ? num(od.spread) : null;
-        g.total = od.overUnder != null && isFinite(num(od.overUnder)) ? num(od.overUnder) : null;
-      }
-      return g;
-    }).filter(g => g.home && g.away);
+    const earlyById = {}; for (const g0 of s.games || []) earlyById[String(g0.id)] = g0; // lines already found while the models were loading must survive the rebuild
+    s.games = genGamesFrom(sb);
+    for (const g of s.games) { const o = earlyById[String(g.id)]; if (o) for (const k of ["mlHome", "mlAway", "mlDraw", "spread", "total", "book"]) if (g[k] == null && o[k] != null) g[k] = o[k]; }
     try { if (injEarly) await injEarly; } catch (e2) {}
     try { if (weekEarly) await weekEarly; } catch (e2) {}
     if (s.bt?.state) for (const g of s.games) genPredict(sp, g);
+    setTimeout(() => { try { genOddsFill(sp); } catch (e) {} }, 400); // lines missing? fetch them in the background
   } catch (e) { s.errors.push("scoreboard: " + e.message); }
   // NEXT-GAME-DAY guarantee, three layers deep:
   // ① the dated scoreboard's calendar  ② the undated scoreboard's calendar
@@ -7703,40 +7800,71 @@ async function genInjuries(sp) {
     s.injAt = Date.now(); s.injErr = String(e.message || e);
   }
 }
+function genPlayerOut(sp, p) { // ruled OUT right now (live — the injury report can arrive AFTER the props were built, or the props can come from a saved copy)
+  const cfg = GS_CFG[sp]; if (!cfg || !cfg.inj) return false; const ij = genInjOf(sp, p); return !!(ij && /^out/i.test(ij.status || ""));
+}
+function genPlayerUsable(sp, p) { // can this player be offered as a pick today? game still to play + not out / doubtful (questionable → allowed with a flag)
+  const cfg = GS_CFG[sp]; const gs = genPlayerGame(sp, p); if (gs.state === "none" || gs.state === "final" || gs.state === "live") return { ok: false, why: gs.state };
+  const ij = cfg && cfg.inj ? genInjOf(sp, p) : null, st = ij ? String(ij.status || "") : "";
+  if (/^out/i.test(st)) return { ok: false, why: "out" }; if (/^doubt/i.test(st)) return { ok: false, why: "doubtful" };
+  return { ok: true, flag: /^(quest|day)/i.test(st) ? st : "", gs };
+}
 function genInjOf(sp, p) { const s = gSlot(sp); return (s.inj && (s.inj[String(p.id)] || s.inj["n:" + (p.name || "").toLowerCase()])) || null; }
 async function genInjProd(sp, playingIds) { // production of every OUT/DOUBTFUL player on tonight's teams — his own recent PRA, so a star costs more than a bench piece
   const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || cfg.inj !== "price" || !s.injTeam) return;
   s.injProd = s.injProd || {};
   try { const sv = hasLS ? JSON.parse(localStorage.getItem("kb_ginjp_" + sp) || "null") : null; if (sv && sv.d === S.date) for (const k2 in sv.v) if (!s.injProd[k2]) s.injProd[k2] = sv.v[k2]; } catch (e) {}
   const playing = playingIds || new Set(); if (!playingIds) for (const g of s.games || []) if (!g.completed) { playing.add(+g.home.id); playing.add(+g.away.id); }
-  const want = []; for (const tid of playing) for (const e of s.injTeam[tid] || []) if (/^(out|doubt)/i.test(e.status || "") && e.id && !s.injProd[e.id]) want.push(e);
+  const want = []; for (const tid of playing) for (const e of s.injTeam[tid] || []) if (/^(out|doubt)/i.test(e.status || "") && e.id && (!s.injProd[e.id] || !s.injProd[e.id].played)) want.push(e);
   const praDef = (GS_PSTATS[sp] || []).find(x => x.k === "PRA"); if (!praDef) return;
   const web = `https://site.web.api.espn.com/apis/common/v3/sports/${cfg.path}`;
   for (let i = 0; i < Math.min(want.length, 30); i += 6) {
     await Promise.all(want.slice(i, i + 6).map(async e => {
-      try { const v = glVals(glParse(await j(`${web}/athletes/${e.id}/gamelog`)), praDef, false).slice(0, 10); if (v.length >= 3) s.injProd[e.id] = { pra: mean(v), n: v.length }; } catch (e2) {}
+      try { const vv = glVals(glParse(await j(`${web}/athletes/${e.id}/gamelog`), genRegSeasonCut(sp)), praDef, false), v = vv.slice(0, 10); if (v.length >= 3) s.injProd[e.id] = { pra: mean(v), n: v.length, played: (vv.meta || []).map(m2 => m2.id).filter(Boolean) }; } catch (e2) {}
     }));
   }
   if (hasLS) { try { const keep = {}; for (const k2 in s.injProd) if (s.injProd[k2]) keep[k2] = s.injProd[k2]; localStorage.setItem("kb_ginjp_" + sp, JSON.stringify({ d: S.date, v: keep })); } catch (e) {} }
 }
 async function genInjStage(sp) { const cfg = GS_CFG[sp]; if (!cfg || !cfg.inj) return; await genInjuries(sp); await genInjProd(sp); }
+const genInjScale = () => { let v = null; try { v = hasLS ? localStorage.getItem("kb_injscale") : null; } catch (e) {} return v === "0.75" ? 0.75 : v === "0.5" ? 0.5 : v === "0" ? 0 : 1; };
+function genTeamRecentIds(sp, tid, n) { const s = gSlot(sp); return (s.results || []).filter(r => r.hId === +tid || r.aId === +tid).sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : 0)).slice(0, n).map(r => String(r.id)); }
 function genInjShift(sp, teamId) { // margin points a team loses tonight to ruled-out players
   const s = gSlot(sp), P = GS_INJ[sp]; if (!P) return { shift: 0, det: [] };
-  let shift = 0; const det = [];
+  let shift = 0; const det = []; let recent = null;
+  const cw = s._cw || {}, shareF = (cw.f || 1) / ((cw.e || 1) + (cw.py || 1) + (cw.f || 1)); // how much of the consensus is the recent-form model — the part that has ALREADY seen a long absence
   for (const o of (s.injTeam || {})[+teamId] || []) {
     const out = /^out/i.test(o.status || ""), dbt = /^doubt/i.test(o.status || ""); if (!out && !dbt) continue;
     const pra = (s.injProd && s.injProd[o.id] && s.injProd[o.id].pra) ?? ((s.pdata?.PRA || []).find(x => String(x.id) === String(o.id))?.season ?? null);
     const unk = pra == null;
     let pts = unk ? 1 : clamp(P.k * pra, 0.4, P.capP); // unknown rotation piece — one nominal point, flagged with a "?"
     if (dbt) pts *= P.doubtful;
-    shift += pts; det.push({ name: (o.name || "").split(" ").slice(-1)[0] || "?", pts, st: out ? "O" : "D", unk });
+    // a player who has missed most of his team's last 10 games is ALREADY in Form-10 (and partly Elo): counting him in full would count the absence twice
+    const pe = s.injProd && s.injProd[o.id]; let missed = null, of = 0;
+    if (pe && pe.played && pe.played.length) {
+      if (!s._resIds || s._resIds.n !== (s.results || []).length) s._resIds = { n: (s.results || []).length, set: new Set((s.results || []).map(r => String(r.id))) };
+      if (pe.played.some(id => s._resIds.set.has(id))) { // only if his log can really be matched to this season's schedule (otherwise "missed" would just mean "ids don't line up")
+        recent = recent || genTeamRecentIds(sp, teamId, 10); if (recent.length >= 5) { of = recent.length; missed = recent.filter(id => pe.played.indexOf(id) < 0).length; }
+      }
+    }
+    const disc = missed != null ? shareF * (missed / of) : 0; pts *= 1 - disc;
+    shift += pts; det.push({ name: (o.name || "").split(" ").slice(-1)[0] || "?", pts, st: out ? "O" : "D", unk, missed, of, disc });
   }
-  return { shift: Math.min(P.capT, shift), det };
+  return { shift: Math.min(P.capT, shift) * genInjScale(), det };
 }
-function genInjBanner(sp) { // one honest line: did the injury report load, and what does the model do with it
+function genInjBanner(sp) { const b = genInjBannerBase(sp); const cfg = GS_CFG[sp]; if (!b || !cfg || cfg.inj !== "price") return b; const cur = genInjScale();
+  return b + `<div style="margin:-4px 0 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><span style="font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">INJURY ADJUSTMENT</span>${[["1", "FULL"], ["0.75", "¾"], ["0.5", "½"], ["0", "OFF"]].map(([v, l]) => `<span class="fchip${cur === +v ? " on" : ""}" data-injscale="${v}">${l}</span>`).join("")}<span style="font-size:10px;color:var(--dim3);font-weight:600;">how much of the injury shift goes into every number (the weights are judgment, not fitted)</span></div>`;
+}
+function genInjBannerBase(sp) { // one honest line: did the injury report load, and what does the model do with it
   const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.inj || s.injAt == null) return "";
   if (s.injOK === false) return `<div style="margin:0 0 10px;background:rgba(255,71,87,0.09);border:1px solid rgba(255,71,87,0.35);border-radius:9px;padding:7px 11px;font-size:11.5px;color:#ff97a0;font-weight:700;">⚠ The injury report did NOT load — right now this model is blind to who is out (a star could be missing and the number won't know). Tap RELOAD ${cfg.name} DATA below to retry.</div>`;
   return `<div style="margin:0 0 10px;font-size:11px;color:var(--dim3);">✓ Injury report loaded (${s.injN || 0} players listed${s.injStale ? " · saved copy from earlier — live one didn't answer" : ""}) — ${cfg.inj === "price" ? "players ruled <b>OUT</b> (and <b>doubtful</b> at 75%) are priced into every number below; questionable players are flagged but not priced" : `shown on the game cards, but the ${cfg.name} model does <b>NOT</b> adjust its numbers for them`}.</div>`;
+}
+function genChainNote(sp, g) { // models alone → absences → final, and how far that is from the book
+  if (g.cons == null || g.completed) return ""; const pc = x => (x * 100).toFixed(1) + "%", hAb = g.home.abbr, aAb = g.away.abbr; const bits = [];
+  if (g.consBase != null && Math.abs(g.cons - g.consBase) >= 0.005 && g.injNet) bits.push(`Models alone <b style="color:var(--txt)">${hAb} ${pc(g.consBase)}</b> → tonight's absences (${g.injNet > 0 ? aAb : hAb} short ≈ ${Math.abs(g.injNet).toFixed(1)} pts) → <b style="color:var(--txt)">${hAb} ${pc(g.cons)}</b>. The three bars above are the models <i>before</i> injuries; the consensus is after.`);
+  if (g.mlHome != null && g.mlAway != null) { try { const [ih] = deVig(americanToProb(g.mlHome), americanToProb(g.mlAway)), gap = g.cons - ih;
+    if (Math.abs(gap) >= 0.12) bits.push(`<span style="color:#ffc27a;font-weight:700;">⚠ The book (no-vig) has ${hAb} at ${pc(ih)} — this model is ${(Math.abs(gap) * 100).toFixed(0)} pts ${gap > 0 ? "higher" : "lower"}. Books already price injuries; a gap this big is a warning, not an automatic edge.</span>`); } catch (e) {} }
+  return bits.length ? `<div style="font-size:10.5px;color:var(--dim3);line-height:1.5;margin-top:6px;">${bits.join("<br>")}</div>` : "";
 }
 function genInjRow(sp, g) { // red warning strip on a game card
   const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.inj || g.completed || !s.injTeam) return "";
@@ -7746,7 +7874,7 @@ function genInjRow(sp, g) { // red warning strip on a game card
     const all = (s.injTeam[+side.id] || []).filter(x => sev(x) <= 2).sort((a, b) => sev(a) - sev(b));
     if (!all.length) return "";
     if (cfg.inj === "price" && det) {
-      const pr = det.det.map(d => `${d.name}${d.st === "D" ? " (doubtful)" : ""} (−${d.pts.toFixed(1)}${d.unk ? "?" : ""})`);
+      const pr = det.det.map(d => `${d.name}${d.st === "D" ? " (doubtful)" : ""} (−${d.pts.toFixed(1)}${d.unk ? "?" : ""}${d.missed >= 3 ? `, already out ${d.missed} of last ${d.of}` : ""})`);
       const q = all.filter(x => sev(x) === 2).map(last);
       return `${side.abbr} ${pr.length ? "out: " + pr.slice(0, 3).join(", ") + (pr.length > 3 ? " +" + (pr.length - 3) : "") : ""}${q.length ? (pr.length ? " · " : "") + "questionable: " + q.slice(0, 3).join(", ") + (q.length > 3 ? " +" + (q.length - 3) : "") : ""}`;
     }
@@ -7833,9 +7961,11 @@ function genBestProps(sp) {
     const defs = pmModels(ps.cls || "big");
     for (const p2 of (s.pdata && s.pdata[ps.k]) || []) {
       const gs = genPlayerGame(sp, p2); if (gs.state !== "up" && gs.state !== "unk") continue; // still to play only
+      { const ijl = GS_CFG[sp].inj ? genInjOf(sp, p2) : null; if (ijl && /^(out|doubt)/i.test(ijl.status || "")) continue; } // live: ruled out / doubtful after the props were built
       let fits;
       try { const chron = p2.vals.slice().reverse(); fits = defs.map(m2 => { try { const f2 = m2.fit(chron); return { proj: f2.proj, pOver: f2.pOver }; } catch (e) { return null; } }).filter(Boolean); } catch (e) { continue; }
       if (fits.length < 2) continue;
+      const muR = muApply(sp, p2, ps, fits); fits = muR.fits; // opponent vs his position (factor 1 when unknown / switched off)
       const proj = mean(fits.map(f2 => f2.proj)), line = Math.max(0.5, Math.round(proj - 0.5) + 0.5);
       const pAt = L => mean(fits.map(f2 => clamp(f2.pOver(L), 0.01, 0.99)));
       const side0 = fits.map(f2 => f2.pOver(line) >= 0.5);
@@ -7846,7 +7976,7 @@ function genBestProps(sp) {
       let edgeLine = line;
       if (over) { for (let L = line + 0.5, n = 0; n < 60; L += 0.5, n++) { if (pAt(L) >= BP_MINP) edgeLine = L; else break; } }
       else { for (let L = line - 0.5, n = 0; n < 60 && L >= 0.5; L -= 0.5, n++) { if (1 - pAt(L) >= BP_MINP) edgeLine = L; else break; } }
-      out.push({ k: ps.k, stat: ps.n, id: p2.id, name: p2.name, team: p2.team || "", hs: p2.hs || "", over, line, edgeLine, conf, pSide, inj: p2.inj || null, gs, season: p2.season, last5: p2.last5, sigma: p2.sigma });
+      out.push({ k: ps.k, stat: ps.n, id: p2.id, name: p2.name, team: p2.team || "", hs: p2.hs || "", over, line, edgeLine, conf, pSide, inj: p2.inj || null, gs, mu: muR.mu, season: p2.season, last5: p2.last5, sigma: p2.sigma });
     }
   }
   out.sort((a2, b2) => b2.conf - a2.conf || (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
@@ -7869,7 +7999,7 @@ function genBestPropsSection(root, sp) {
       <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;background:var(--panel3);flex:0 0 36px;">${b.hs ? `<img src="${b.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
       <div style="min-width:0;flex:1;"><div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.name} <span style="font-size:11px;color:var(--dim);font-weight:600;">${b.team}${b.gs.label ? " · " + b.gs.label : ""}</span></div>
         <div style="margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><span style="font-family:var(--cond);font-weight:800;font-size:15px;letter-spacing:.3px;color:${b.over ? "var(--green)" : "var(--red)"};">${b.over ? "OVER" : "UNDER"} ${b.line} ${b.stat}</span>
-          <span class="chip green">ENGINES AGREE</span>${b.inj ? `<span class="chip red">⚠ ${b.inj}</span>` : ""}<span class="chip">season ${b.season.toFixed(1)} · last 5 ${b.last5.toFixed(1)}</span></div></div>
+          <span class="chip green">ENGINES AGREE</span>${b.mu && Math.abs(b.mu.f - 1) >= 0.01 ? `<span class="chip ${(b.mu.f > 1) === b.over ? "green" : "red"}" title="${muEsc(muText(b.mu))}">MATCHUP ${muPct(b.mu)}</span>` : ""}${b.inj ? `<span class="chip red">⚠ ${b.inj}</span>` : ""}<span class="chip">season ${b.season.toFixed(1)} · last 5 ${b.last5.toFixed(1)}</span></div></div>
       <div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:20px;color:var(--gold);">${(b.conf * 100).toFixed(0)}%</div>
         <div style="font-size:10px;color:var(--dim3);font-weight:700;max-width:150px;">${b.edgeLine === b.line ? "only at this line" : `still ≥${(BP_MINP * 100).toFixed(0)}% at book lines ${b.over ? "up to" : "down to"} ${b.edgeLine}`}</div></div>
     </div>`).join("");
@@ -7910,7 +8040,8 @@ function effBuild(results, teams, win) {
   return { rows, lg };
 }
 const EFF_SORTS = [["net", "BEST NET"], ["off", "BEST OFFENSE"], ["def", "BEST DEFENSE"], ["trend", "TREND"], ["wl", "W-L"]];
-function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
+function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayLabel, games }
+  if (GX.effScope !== o.scope) { GX.effScope = o.scope; GX.effTeam = null; GX.effHl = null; GX.effZ = null; } // a selection never leaks into another sport / league
   const rows = o.rows, lg = o.lg, f1 = x => x.toFixed(1);
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
@@ -7924,14 +8055,25 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
   const byId = {}; rows.forEach(r => { byId[r.id] = r; });
   const pairs = (o.games || []).map(g => { const a = byId[g.away], h = byId[g.home]; if (!a || !h) return null; const fav = h.net >= a.net ? h : a, dog = fav === h ? a : h;
     return { key: g.away + "-" + g.home, g, a, h, fav, dog, diff: fav.net - dog.net }; }).filter(Boolean).sort((x, y) => y.diff - x.diff);
-  const hlKey = pairs.some(p3 => p3.key === GX.effHl) ? GX.effHl : (pairs[0] && pairs[0].key), hl = pairs.find(p3 => p3.key === hlKey) || null;
-  const hlIds = hl ? new Set([hl.a.id, hl.h.id]) : new Set();
+  const selId = GX.effTeam && byId[GX.effTeam] ? +GX.effTeam : null, sel = selId ? byId[selId] : null;           // a team the user clicked
+  const selPair = sel ? pairs.find(p3 => p3.a.id === selId || p3.h.id === selId) : null;                          // …and the game it plays in this slate
+  const hlKey = selPair ? selPair.key : (pairs.some(p3 => p3.key === GX.effHl) ? GX.effHl : (pairs[0] && pairs[0].key)), hl = pairs.find(p3 => p3.key === hlKey) || null;
+  const hlIds = sel && !selPair ? new Set([selId]) : (hl ? new Set([hl.a.id, hl.h.id]) : new Set());
   const whenOf = g3 => (g3.status === "final" ? "FINAL" : g3.status === "live" ? "LIVE" : timeLabel(g3.date));
   const logoTagPre = (r, px) => (r.logo ? `<img src="${esc(r.logo)}" onerror="this.style.visibility='hidden'" style="width:${px}px;height:${px}px;object-fit:contain;border-radius:50%;background:rgba(255,255,255,.94);padding:2px;box-sizing:border-box;flex:0 0 auto;" alt="">` : `<span style="width:${px}px;height:${px}px;border-radius:50%;background:${r.color};color:#fff;font-size:${Math.round(px * 0.36)}px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;">${esc(String(r.abbr).slice(0, 3))}</span>`);
+  const clearSel = () => { GX.effTeam = null; o.rerender(); };
+  if (sel && !selPair) { // the clicked team isn't playing in this slate: show ITS numbers on top (the day's biggest differential stays below)
+    const dn0 = dnOf(sel), sg0 = v => (v >= 0 ? "+" : "") + f1(v), sc = el("div", "card"); sc.dataset.effsel = String(selId); sc.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
+    sc.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">📍 SELECTED · NO GAME ${o.dayLabel === "TODAY" ? "TODAY" : o.dayLabel === "THIS WEEK" ? "THIS WEEK" : "ON " + esc(o.dayLabel || "THIS DATE")}</span><button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button></div>
+      <div style="display:flex;align-items:center;gap:10px;margin:8px 0 4px;">${logoTagPre(sel, 34)}<span><b style="font-size:17px;">${esc(sel.abbr)}</b> <b style="color:${sel.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg0(sel.net)}</b> <span style="color:var(--dim);font-size:12px;">${esc(sel.name)}</span><br><span style="font-size:10.5px;color:var(--dim3);">#${sel.rNet} net · ${sel.w}-${sel.l} last ${sel.n}</span></span></div>
+      <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">Scores <b style="color:var(--txt)">${f1(sel.off)}</b> (#${sel.rOff}) · allows <b style="color:var(--txt)">${f1(sel.def)}</b> (#${sel.rDef})${dn0 != null ? ` · vs its previous ${sel.n} games: net ${dn0 >= 0 ? "+" : ""}${f1(dn0)} (${dn0 >= 0 ? "improving" : "slipping"})` : ""}. No differential to show — it isn't in this slate. The team is ringed on the chart.</div>`;
+    sc.querySelector("[data-effclear]").addEventListener("click", clearSel);
+    root.appendChild(sc);
+  }
   if (hl) {
     const sg = v => (v >= 0 ? "+" : "") + f1(v), fav = hl.fav, dog = hl.dog;
     const hlCard = el("div", "card"); hlCard.dataset.effhl = hl.key; hlCard.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
-    hlCard.innerHTML = `<div style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);">🔥 BIGGEST DIFFERENTIAL ${o.dayLabel || "TODAY"} · ${whenOf(hl.g)} · ${esc(hl.a.abbr)} @ ${esc(hl.h.abbr)}</div>
+    hlCard.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">${selPair ? `📍 ${esc(sel.abbr)}'S GAME ${o.dayLabel || "TODAY"} — #${pairs.indexOf(selPair) + 1} OF ${pairs.length} BY DIFFERENTIAL` : `🔥 BIGGEST DIFFERENTIAL ${o.dayLabel || "TODAY"}`} · ${whenOf(hl.g)} · ${esc(hl.a.abbr)} @ ${esc(hl.h.abbr)}</span>${selPair ? `<button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button>` : ""}</div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 6px;">
         <span style="display:inline-flex;align-items:center;gap:8px;">${logoTagPre(fav, 34)}<span><b style="font-size:17px;">${esc(fav.abbr)}</b> <b style="color:var(--green);font-size:15px;">${sg(fav.net)}</b><br><span style="font-size:10.5px;color:var(--dim3);">#${fav.rNet} net · ${fav.w}-${fav.l} last ${fav.n}</span></span></span>
         <span style="text-align:center;flex:1 1 90px;"><span style="font-family:var(--cond);font-weight:800;font-size:26px;color:var(--gold);">${f1(hl.diff)}</span><br><span style="font-size:9.5px;letter-spacing:1px;color:var(--dim3);font-weight:700;">POINTS APART</span></span>
@@ -7939,11 +8081,12 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
       </div>
       <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">${esc(fav.abbr)} scores <b style="color:var(--txt)">${f1(fav.off)}</b> (#${fav.rOff}) against a ${esc(dog.abbr)} defense allowing <b style="color:var(--txt)">${f1(dog.def)}</b> (#${dog.rDef}) · ${esc(dog.abbr)} scores <b style="color:var(--txt)">${f1(dog.off)}</b> (#${dog.rOff}) against a ${esc(fav.abbr)} defense allowing <b style="color:var(--txt)">${f1(fav.def)}</b> (#${fav.rDef}).</div>
       <div style="font-size:10px;color:var(--dim3);margin-top:6px;">Differential = the gap between the two teams' nets over their last ${o.win === "all" ? "season" : o.win} games — a measure of form, not a prediction (no home court, injuries or rest). Both teams are ringed on the chart below.</div>`;
+    if (selPair) { const dnS = dnOf(sel); const ex = el("div"); ex.style.cssText = "font-size:11px;color:var(--gold);margin-top:6px;font-weight:700;"; ex.textContent = `${sel.abbr}: #${sel.rNet} net${dnS != null ? ` · ${dnS >= 0 ? "▲ improving" : "▼ slipping"} ${f1(Math.abs(dnS))} vs its previous ${sel.n} games` : ""}`; hlCard.dataset.effsel = String(selId); hlCard.appendChild(ex); hlCard.querySelector("[data-effclear]").addEventListener("click", clearSel); }
     root.appendChild(hlCard);
     if (pairs.length > 1) {
       const lst = el("div", "card"); lst.style.cssText = "max-width:680px;margin:0 auto 12px;padding:4px 12px;";
       lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span><span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span></div>`).join("");
-      lst.querySelectorAll("[data-effgame]").forEach(r3 => r3.addEventListener("click", () => { GX.effHl = r3.dataset.effgame; o.rerender(); }));
+      lst.querySelectorAll("[data-effgame]").forEach(r3 => r3.addEventListener("click", () => { GX.effHl = r3.dataset.effgame; GX.effTeam = null; o.rerender(); }));
       root.appendChild(lst);
     }
   } else if (o.games && o.games.length === 0) {
@@ -7957,12 +8100,20 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
   strip.innerHTML = top3.map((r, i) => `<span style="display:inline-flex;align-items:center;gap:7px;background:rgba(255,160,46,.08);border:1px solid rgba(255,160,46,.35);border-radius:11px;padding:5px 10px 5px 6px;font-size:11px;cursor:pointer;" data-effchip="${r.id}">${logoTag(r, 22)}<span><b style="color:var(--gold);font-size:12px;">#${i + 1} NET</b> <b style="color:var(--txt)">${esc(r.abbr)}</b><br><span style="color:var(--dim);">#${r.rOff} offense · #${r.rDef} defense</span></span></span>`).join("") +
     chip("BEST OFFENSE", best("off", -1), f1(best("off", -1).off) + " scored") + chip("BEST DEFENSE", best("def", 1), f1(best("def", 1).def) + " allowed") + chip("WORST OFFENSE", best("off", 1), f1(best("off", 1).off) + " scored") + chip("WORST DEFENSE", best("def", -1), f1(best("def", -1).def) + " allowed") + chip("WORST NET", worst, (worst.net >= 0 ? "+" : "") + f1(worst.net));
   root.appendChild(strip);
-  // ---- geometry (equal scale on both axes so the diagonal is a true net-0 line); data uses ≤ 83% of the box so the corners stay clear
-  const W = 620, H = 600, cx = 310, cy = 292, half = 250, DISK = 14;
+  // ---- geometry (equal scale on both axes so the diagonal is a true net-0 line); at zoom ×1 the data uses ≤ 83% of the box so the corners stay clear
+  const W = 620, H = 600, cx = 310, cy = 292, half = 250, DISK = 14, L0 = cx - half, R0 = cx + half, T0 = cy - half, B0 = cy + half;
   let mx = 1; for (const r of rows) for (const pt of [r, r.prior]) if (pt) mx = Math.max(mx, Math.abs(pt.off - lg), Math.abs(lg - pt.def));
-  const k = half / (mx * 1.2), X = off => cx + (off - lg) * k, Y = def => cy - (lg - def) * k;
-  // ---- light de-overlap: nudge crowded logos apart (never more than 22 px from the true spot; a thin line + dot marks the true spot)
-  const pts = rows.map(r => ({ r, ox: X(r.off), oy: Y(r.def), x: X(r.off), y: Y(r.def) })), MIN = DISK * 2 + 3;
+  const k0 = half / (mx * 1.2), clampv = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const Zs = GX.effZ && GX.effZ.scope === o.scope ? GX.effZ : (GX.effZ = { z: 1, px: 0, py: 0, scope: o.scope }); // zoom ×z, pan (px, py) in points from the league average
+  const uid = "effclip" + (GX._clipN = (GX._clipN || 0) + 1); // unique id for this chart's clip region
+  const wrap = el("div"); wrap.style.cssText = "max-width:680px;margin:0 auto 10px;";
+  const zbar = el("div"); zbar.style.cssText = "max-width:680px;margin:0 auto 8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;";
+  zbar.innerHTML = `<span style="font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">🔍 ZOOM</span><span class="fchip" data-effz="out">−</span><span class="fchip" data-effz="in">+</span><span class="fchip" data-effz="fit">🎯 FIT THE RINGED TEAMS</span><span class="fchip" data-effz="reset">RESET</span><span class="fchip" data-effwheel title="what the mouse wheel does while the pointer is over the chart"></span><span data-effzlab style="font-size:10px;color:var(--dim3);font-weight:600;"></span>`;
+  root.appendChild(zbar);
+  const paint = () => {
+    const z = Zs.z, kz = k0 * z, X = off => cx + ((off - lg) - Zs.px) * kz, Y = def => cy - ((lg - def) - Zs.py) * kz, X0 = X(lg), Y0 = Y(lg);
+    const MIN = DISK * 2 + 3;
+    const pts = rows.map(r => ({ r, ox: X(r.off), oy: Y(r.def), x: X(r.off), y: Y(r.def) })).filter(q => q.ox > L0 - DISK - 24 && q.ox < R0 + DISK + 24 && q.oy > T0 - DISK - 24 && q.oy < B0 + DISK + 24); // only what is in view
   for (let it = 0; it < 80; it++) {
     let moved = false;
     for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
@@ -7973,20 +8124,30 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
     for (const p of pts) { const ddx = p.x - p.ox, ddy = p.y - p.oy, dd = Math.hypot(ddx, ddy); if (dd > 22) { p.x = p.ox + ddx / dd * 22; p.y = p.oy + ddy / dd * 22; } p.x = Math.max(cx - half + DISK, Math.min(cx + half - DISK, p.x)); p.y = Math.max(cy - half + DISK, Math.min(cy + half - DISK, p.y)); }
     if (!moved) break;
   }
-  let g = `<rect x="0" y="0" width="${W}" height="${H}" rx="16" style="fill:var(--panel2)"/>
-    <rect x="${cx}" y="${cy - half}" width="${half}" height="${half}" fill="rgba(52,211,153,.06)"/><rect x="${cx - half}" y="${cy}" width="${half}" height="${half}" fill="rgba(255,71,87,.06)"/>
-    <line x1="${cx - half}" y1="${cy - half}" x2="${cx + half}" y2="${cy + half}" stroke="#4a5670" stroke-width="1.5" stroke-dasharray="6 6"/>
-    <line x1="${cx - half}" y1="${cy}" x2="${cx + half}" y2="${cy}" stroke="#5b6680" stroke-width="1.5"/><line x1="${cx}" y1="${cy - half}" x2="${cx}" y2="${cy + half}" stroke="#5b6680" stroke-width="1.5"/>
+    let ticks = ""; // point gridlines once zoomed — labelled in points better (+) / worse (−) than the league average
+    if (z > 1.01) {
+      const step = [0.5, 1, 2, 5, 10, 20, 50, 100].find(q => q * kz >= 52) || 100;
+      const xMin = (L0 - cx) / kz + Zs.px, xMax = (R0 - cx) / kz + Zs.px, yMin = (cy - B0) / kz + Zs.py, yMax = (cy - T0) / kz + Zs.py;
+      for (let i = Math.ceil(xMin / step); i * step <= xMax; i++) { const v = i * step; if (!v) continue; const xx = cx + (v - Zs.px) * kz; ticks += `<line data-gridline="x" x1="${xx.toFixed(1)}" y1="${T0}" x2="${xx.toFixed(1)}" y2="${B0}" stroke="#2a3347" stroke-width="1"/><text x="${(xx + 3).toFixed(1)}" y="${B0 - 5}" font-size="9" fill="#6f7a92">${v > 0 ? "+" : "−"}${Math.abs(v)}</text>`; }
+      for (let i = Math.ceil(yMin / step); i * step <= yMax; i++) { const v = i * step; if (!v) continue; const yy = cy - (v - Zs.py) * kz; ticks += `<line data-gridline="y" x1="${L0}" y1="${yy.toFixed(1)}" x2="${R0}" y2="${yy.toFixed(1)}" stroke="#2a3347" stroke-width="1"/><text x="${L0 + 4}" y="${(yy - 3).toFixed(1)}" font-size="9" fill="#6f7a92">${v > 0 ? "+" : "−"}${Math.abs(v)}</text>`; }
+    }
+    const qx = clampv(X0, L0, R0), qy = clampv(Y0, T0, B0);
+    let g = `<defs><clipPath id="${uid}"><rect x="${L0}" y="${T0}" width="${2 * half}" height="${2 * half}"/></clipPath></defs><rect x="0" y="0" width="${W}" height="${H}" rx="16" style="fill:var(--panel2)"/>
+    <g clip-path="url(#${uid})"><rect x="${qx.toFixed(1)}" y="${T0}" width="${(R0 - qx).toFixed(1)}" height="${(qy - T0).toFixed(1)}" fill="rgba(52,211,153,.06)"/><rect x="${L0}" y="${qy.toFixed(1)}" width="${(qx - L0).toFixed(1)}" height="${(B0 - qy).toFixed(1)}" fill="rgba(255,71,87,.06)"/>${ticks}
+    <line data-netline="1" x1="${(X0 - 2000).toFixed(1)}" y1="${(Y0 - 2000).toFixed(1)}" x2="${(X0 + 2000).toFixed(1)}" y2="${(Y0 + 2000).toFixed(1)}" stroke="#4a5670" stroke-width="1.5" stroke-dasharray="6 6"/>
+    <line data-axis="x" x1="${L0}" y1="${Y0.toFixed(1)}" x2="${R0}" y2="${Y0.toFixed(1)}" stroke="#5b6680" stroke-width="1.5"/><line data-axis="y" x1="${X0.toFixed(1)}" y1="${T0}" x2="${X0.toFixed(1)}" y2="${B0}" stroke="#5b6680" stroke-width="1.5"/></g>
     <text x="${cx + half - 10}" y="${cy - half + 24}" text-anchor="end" font-size="14" font-weight="800" letter-spacing="2" fill="#34d399" opacity=".75">QUADRANT OF WOW</text>
     <text x="${cx - half + 10}" y="${cy + half - 14}" font-size="14" font-weight="800" letter-spacing="2" fill="#ff6b78" opacity=".75">QUADRANT OF WOE</text>
     <text x="${cx - half + 10}" y="${cy - half + 24}" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#8a94ab" opacity=".7">ALL DEFENSE, NO OFFENSE</text>
     <text x="${cx + half - 10}" y="${cy + half - 14}" text-anchor="end" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#8a94ab" opacity=".7">ALL OFFENSE, NO DEFENSE</text>
     <text x="${cx}" y="${H - 12}" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#9aa5bd">OFFENSIVE EFFICIENCY  →  scores more</text>
-    <text transform="translate(16 ${cy}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#9aa5bd">DEFENSIVE EFFICIENCY  →  allows less</text>`;
-  for (const r of rows) if (r.prior) g += `<line x1="${X(r.prior.off).toFixed(1)}" y1="${Y(r.prior.def).toFixed(1)}" x2="${X(r.off).toFixed(1)}" y2="${Y(r.def).toFixed(1)}" stroke="${r.color}" stroke-width="2" opacity=".4"/><circle cx="${X(r.prior.off).toFixed(1)}" cy="${Y(r.prior.def).toFixed(1)}" r="3" fill="${r.color}" opacity=".45"/>`;
+    <text transform="translate(16 ${cy}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#9aa5bd">DEFENSIVE EFFICIENCY  →  allows less</text>
+    <g clip-path="url(#${uid})">`;
+    for (const r of rows) if (r.prior) g += `<line x1="${X(r.prior.off).toFixed(1)}" y1="${Y(r.prior.def).toFixed(1)}" x2="${X(r.off).toFixed(1)}" y2="${Y(r.def).toFixed(1)}" stroke="${r.color}" stroke-width="2" opacity=".4"/><circle cx="${X(r.prior.off).toFixed(1)}" cy="${Y(r.prior.def).toFixed(1)}" r="3" fill="${r.color}" opacity=".45"/>`;
   for (const p of pts) if (Math.hypot(p.x - p.ox, p.y - p.oy) > 3) g += `<line x1="${p.ox.toFixed(1)}" y1="${p.oy.toFixed(1)}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="${p.r.color}" stroke-width="1.2" opacity=".8"/><circle cx="${p.ox.toFixed(1)}" cy="${p.oy.toFixed(1)}" r="2.2" fill="${p.r.color}"/>`;
-  if (hl) { const A = pts.find(q => q.r.id === hl.a.id), B = pts.find(q => q.r.id === hl.h.id);
-    if (A && B) g += `<line data-hlline="1" x1="${A.x.toFixed(1)}" y1="${A.y.toFixed(1)}" x2="${B.x.toFixed(1)}" y2="${B.y.toFixed(1)}" stroke="#ffa02e" stroke-width="3" stroke-dasharray="2 6" stroke-linecap="round" opacity=".95"/>` + [A, B].map(q => `<circle data-hlring="${q.r.id}" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${DISK + 5}" fill="rgba(255,160,46,.12)" stroke="#ffa02e" stroke-width="2.5"/>`).join(""); }
+  if (sel && !selPair) { const A0 = pts.find(q => q.r.id === selId); if (A0) g += `<circle data-hlring="${selId}" cx="${A0.x.toFixed(1)}" cy="${A0.y.toFixed(1)}" r="${DISK + 5}" fill="rgba(255,160,46,.10)" stroke="#ffa02e" stroke-width="2"/>`; } // a clicked team with no game: just that team
+  else if (hl) { const A = pts.find(q => q.r.id === hl.a.id), B = pts.find(q => q.r.id === hl.h.id);
+    if (A && B) g += [A, B].map(q => `<circle data-hlring="${q.r.id}" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${DISK + 5}" fill="rgba(255,160,46,.10)" stroke="#ffa02e" stroke-width="2"/>`).join(""); }
   for (const p of pts) {
     const r = p.r, x = p.x.toFixed(1), y = p.y.toFixed(1), rankNo = top3.indexOf(r) + 1;
     g += `<g data-eff="${r.id}" data-tx="${p.ox.toFixed(1)}" data-ty="${p.oy.toFixed(1)}"${hlIds.has(r.id) ? ' data-hl="1"' : ""} style="cursor:pointer"><title>${esc(r.name)} — net ${r.net >= 0 ? "+" : ""}${f1(r.net)}</title>
@@ -7994,16 +8155,69 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
       ${r.logo ? `<image href="${esc(r.logo)}" x="${(p.x - 10.5).toFixed(1)}" y="${(p.y - 10.5).toFixed(1)}" width="21" height="21" style="pointer-events:none"/>` : `<text x="${x}" y="${(p.y + 3.2).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" style="pointer-events:none">${esc(String(r.abbr).slice(0, 3))}</text>`}
       ${rankNo ? `<circle cx="${(p.x + 11).toFixed(1)}" cy="${(p.y - 11).toFixed(1)}" r="7" fill="var(--gold)" stroke="#0b0e16" stroke-width="1.2" style="pointer-events:none"/><text x="${(p.x + 11).toFixed(1)}" y="${(p.y - 7.8).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="800" fill="#1a1204" style="pointer-events:none">${rankNo}</text>` : ""}</g>`;
   }
-  const wrap = el("div"); wrap.style.cssText = "max-width:680px;margin:0 auto 10px;";
-  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;border:1px solid var(--line2, #1c2230);border-radius:16px;" role="img" aria-label="Efficiency landscape">${g}</svg>`;
+    if (hl && !(sel && !selPair)) { // the line between a game's two teams — ON TOP of every logo, with a dark outline so it reads on any background
+      const posOf = id => { const q = pts.find(z2 => z2.r.id === id), r0 = byId[id]; return q ? { x: q.x, y: q.y } : (r0 ? { x: X(r0.off), y: Y(r0.def) } : null); };
+      const A1 = posOf(hl.a.id), B1 = posOf(hl.h.id);
+      if (A1 && B1) { // a slim line from ring edge to ring edge (never through a logo) with the gap in the middle
+        const dx = B1.x - A1.x, dy = B1.y - A1.y, dist = Math.hypot(dx, dy), ux = dx / (dist || 1), uy = dy / (dist || 1), rr = DISK + 5;
+        if (dist > rr * 2 + 6) {
+          g += `<line data-hlline="1" x1="${(A1.x + ux * rr).toFixed(1)}" y1="${(A1.y + uy * rr).toFixed(1)}" x2="${(B1.x - ux * rr).toFixed(1)}" y2="${(B1.y - uy * rr).toFixed(1)}" stroke="#ffa02e" stroke-width="2" stroke-linecap="round" opacity=".92" style="pointer-events:none"/>`;
+          const txt = f1(hl.diff), w0 = txt.length * 7 + 16; // the pill slides along the line (30–70 %) to the spot with the most free room, so it doesn't cover a neighbouring logo
+          let mx0 = (A1.x + B1.x) / 2, my0 = (A1.y + B1.y) / 2, bestGap = -1;
+          for (let tt = 0.3; tt <= 0.7001; tt += 0.05) { const cxp = A1.x + dx * tt, cyp = A1.y + dy * tt; let gap = 1e9; for (const q of pts) { if (q.r.id === hl.a.id || q.r.id === hl.h.id) continue; gap = Math.min(gap, Math.hypot(q.x - cxp, q.y - cyp)); } if (gap > bestGap + 0.01 || (Math.abs(tt - 0.5) < 0.026 && gap >= bestGap - 0.01)) { bestGap = gap; mx0 = cxp; my0 = cyp; } }
+          if (mx0 > L0 + w0 / 2 + 4 && mx0 < R0 - w0 / 2 - 4 && my0 > T0 + 14 && my0 < B0 - 14) g += `<g data-hllabel="1" style="pointer-events:none"><rect x="${(mx0 - w0 / 2).toFixed(1)}" y="${(my0 - 10).toFixed(1)}" width="${w0}" height="20" rx="10" fill="#0b0e16" stroke="#ffa02e" stroke-width="1.2" opacity=".96"/><text x="${mx0.toFixed(1)}" y="${(my0 + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="800" fill="#ffa02e">${txt}</text></g>`;
+        }
+      }
+    }
+    g += `</g>`;
+    wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;border:1px solid var(--line2, #1c2230);border-radius:16px;${z > 1.01 ? "touch-action:none;" : ""}cursor:${z > 1.01 ? "grab" : "default"};" role="img" aria-label="Efficiency landscape">${g}</svg>`;
+    const lab = zbar.querySelector("[data-effzlab]"); if (lab) lab.textContent = `×${z.toFixed(1)}${z > 1.01 ? " · drag to move" : " · wheel / + / double-tap / pinch to zoom"}`;
+  };
+  // ---- zoom + pan controls
+  const limit = mx * 1.25;
+  const setView = (z2, px2, py2) => { Zs.z = clampv(z2, 1, 12); Zs.px = clampv(px2, -limit, limit); Zs.py = clampv(py2, -limit, limit); if (Zs.z <= 1.0001) { Zs.px = 0; Zs.py = 0; } paint(); };
+  const zoomAt = (f, sx, sy) => { const z0 = Zs.z, z2 = clampv(z0 * f, 1, 12), dx = (sx - cx) / (k0 * z0) + Zs.px, dy = (cy - sy) / (k0 * z0) + Zs.py; setView(z2, dx - (sx - cx) / (k0 * z2), dy - (cy - sy) / (k0 * z2)); }; // the point under the finger / cursor stays put
+  const fitRinged = () => { const rs = [...hlIds].map(id => byId[id]).filter(Boolean); if (!rs.length) return; const dxs = rs.map(r => r.off - lg), dys = rs.map(r => lg - r.def), mxD = dxs.reduce((a, b) => a + b, 0) / rs.length, myD = dys.reduce((a, b) => a + b, 0) / rs.length;
+    const span = Math.max(2, ...dxs.map(v => Math.abs(v - mxD)), ...dys.map(v => Math.abs(v - myD))); let z2 = clampv(half * 0.55 / (k0 * span), 1, 12); if (rs.length === 1) z2 = Math.min(z2, 5); setView(z2, mxD, myD); }; // as close as possible while BOTH teams stay comfortably in view
+  zbar.querySelectorAll("[data-effz]").forEach(b => b.addEventListener("click", () => { const a2 = b.dataset.effz; if (a2 === "in") zoomAt(1.6, cx, cy); else if (a2 === "out") zoomAt(1 / 1.6, cx, cy); else if (a2 === "fit") fitRinged(); else setView(1, 0, 0); }));
+  const svgPt = e => { const r = wrap.getBoundingClientRect(), sc = r.width ? W / r.width : 1; return { x: (e.clientX - r.left) * sc, y: (e.clientY - r.top) * sc, sc }; };
+  let drag = null, moved = false; const ptrs = {}; let pinch = null;
+  // NOTE: never call setPointerCapture here — Chrome then retargets the CLICK to the captured element (the chart frame) and clicking a logo stops working.
+  const onMove = e => {
+    const id = e.pointerId ?? 0; if (!ptrs[id]) return; ptrs[id] = { x: e.clientX, y: e.clientY };
+    if (pinch && Object.keys(ptrs).length === 2) { const [a2, b2] = Object.values(ptrs), d = Math.hypot(a2.x - b2.x, a2.y - b2.y) || 1, mid = svgPt({ clientX: (a2.x + b2.x) / 2, clientY: (a2.y + b2.y) / 2 }); zoomAt(d / pinch.d, mid.x, mid.y); pinch.d = d; moved = true; return; }
+    if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true; if (moved) { const sc = svgPt({ clientX: 0, clientY: 0 }).sc; setView(Zs.z, Zs.px - dx * sc / (k0 * Zs.z), Zs.py + dy * sc / (k0 * Zs.z)); drag = { x: e.clientX, y: e.clientY }; } }
+  };
+  const onUp = e => {
+    delete ptrs[e.pointerId ?? 0]; if (Object.keys(ptrs).length < 2) pinch = null;
+    if (!Object.keys(ptrs).length) { drag = null; window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onUp); }
+    setTimeout(() => { moved = false; }, 60);
+  };
+  wrap.addEventListener("pointerdown", e => {
+    ptrs[e.pointerId ?? 0] = { x: e.clientX, y: e.clientY }; moved = false;
+    if (Object.keys(ptrs).length === 2) { const [a2, b2] = Object.values(ptrs); pinch = { d: Math.hypot(a2.x - b2.x, a2.y - b2.y) || 1 }; drag = null; } else if (Zs.z > 1.01) drag = { x: e.clientX, y: e.clientY };
+    window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); window.removeEventListener("pointercancel", onUp); // (no duplicates)
+    window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onUp); // follows the drag even outside the chart, without capturing the pointer
+  });
+  wrap.addEventListener("dblclick", e => { const p0 = svgPt(e); zoomAt(e.shiftKey ? 0.5 : 2, p0.x, p0.y); });
+  const wheelMode = () => { let v = null; try { v = hasLS ? localStorage.getItem("kb_effwheel") : null; } catch (er) {} return v === "page" ? "page" : "zoom"; }; // default: the wheel zooms the chart
+  const wheelChip = zbar.querySelector("[data-effwheel]"), paintWheel = () => { wheelChip.textContent = wheelMode() === "zoom" ? "🖱 WHEEL: ZOOMS" : "🖱 WHEEL: SCROLLS PAGE"; wheelChip.classList.toggle("on", wheelMode() === "zoom"); };
+  wheelChip.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effwheel", wheelMode() === "zoom" ? "page" : "zoom"); } catch (er) {} paintWheel(); }); paintWheel();
+  wrap.addEventListener("wheel", e => {
+    const mod = e.ctrlKey || e.metaKey; if (!mod && wheelMode() !== "zoom") return; // Ctrl/⌘+wheel (and trackpad pinch) always zooms
+    let dy = e.deltaY; if (e.deltaMode === 1) dy *= 33; else if (e.deltaMode === 2) dy *= 800; // Firefox reports wheel notches in LINES (±3), Chrome in pixels (±100)
+    const f = Math.exp(-dy * 0.0025);
+    if (!mod && ((f < 1 && Zs.z <= 1.0001) || (f > 1 && Zs.z >= 11.99))) return; // already at ×1 / ×12: let the page scroll instead of trapping the cursor over the chart
+    e.preventDefault(); const p0 = svgPt(e); zoomAt(f, p0.x, p0.y);
+  }, { passive: false });
+  wrap.addEventListener("click", e => { const g0 = e.target.closest && e.target.closest("[data-eff]"); if (g0 && !moved) show(g0.dataset.eff); }); // a drag is not a click
+  paint();
   root.appendChild(wrap);
-  root.appendChild(el("div", "subhead", `<span style="color:var(--dim3);display:block;max-width:680px;margin:0 auto 6px;">Dashed line = net 0: teams above-right of it are <b>POSITIVE TEAMS</b>, below-left are negative. Gold badges mark the top 3 by net; the orange ring and dotted line join the biggest-differential game. Faint line = where the team stood one ${o.win === "all" ? "window" : o.win + "-game window"} ago. A thin line from a logo to a dot means the logo was nudged a few pixels so it doesn't cover its neighbour — the dot is the true spot.</span>`));
+  root.appendChild(el("div", "subhead", `<span style="color:var(--dim3);display:block;max-width:680px;margin:0 auto 6px;">Dashed line = net 0: teams above-right of it are <b>POSITIVE TEAMS</b>, below-left are negative. Gold badges mark the top 3 by net; the orange ring and dotted line join the biggest-differential game. Zoom in to spread crowded logos apart (they keep their size); gridlines show points better (+) or worse (−) than the league average. Faint line = where the team stood one ${o.win === "all" ? "window" : o.win + "-game window"} ago. A thin line from a logo to a dot means the logo was nudged a few pixels so it doesn't cover its neighbour — the dot is the true spot.</span>`));
   const tip = el("div", "card"); tip.style.cssText = "max-width:680px;margin:0 auto 12px;padding:10px 14px;font-size:12.5px;color:var(--dim);";
-  tip.innerHTML = `Tap a team (logo, chip or table row) for its numbers.`;
+  tip.innerHTML = `Tap a team (logo, chip or table row) — its game's differential jumps to the top.`;
   root.appendChild(tip);
-  const show = id => { const r = rows.find(x => x.id === +id); if (!r) return; const dn = dnOf(r);
-    tip.innerHTML = `<b style="color:var(--txt);font-size:14px;">${esc(r.name)}</b> · last ${r.n} games: <b style="color:var(--txt)">${r.w}-${r.l}</b><br>NET <b style="color:${r.net >= 0 ? "var(--green)" : "var(--red)"}">${r.net >= 0 ? "+" : ""}${f1(r.net)}</b> (#${r.rNet}) · OFFENSE <b style="color:var(--txt)">${f1(r.off)}</b> (#${r.rOff}) · DEFENSE <b style="color:var(--txt)">${f1(r.def)}</b> allowed (#${r.rDef})${dn != null ? `<br><span style="color:var(--dim3)">vs the previous ${r.n} games: net ${dn >= 0 ? "+" : ""}${f1(dn)} (${dn >= 0 ? "improving" : "slipping"})</span>` : ""}`; };
-  wrap.querySelectorAll("[data-eff]").forEach(n2 => n2.addEventListener("click", () => show(n2.dataset.eff)));
+  const show = id => { if (!rows.some(x => x.id === +id)) return; GX.effTeam = +id; GX.effScroll = true; o.rerender(); }; // the answer appears at the TOP of the page, not under the chart you were looking at
   strip.querySelectorAll("[data-effchip]").forEach(n2 => n2.addEventListener("click", () => show(n2.dataset.effchip)));
   // ---- sortable table
   let sortK = null; try { sortK = hasLS ? localStorage.getItem("kb_effsort") : null; } catch (e) {} if (!EFF_SORTS.some(x => x[0] === sortK)) sortK = "net";
@@ -8023,6 +8237,7 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
   root.appendChild(tbl);
   root.querySelectorAll("[data-effs]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effsort", c.dataset.effs); } catch (e) {} o.rerender(); }));
   if (o.note) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">${o.note}</span>`));
+  if (GX.effScroll) { GX.effScroll = false; const topCard = root.querySelector("[data-effsel]"); if (topCard) setTimeout(() => { try { topCard.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }, 30); }
   root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">${o.unit} scored (OFF) and allowed (DEF) per game over each team's last ${o.win === "all" ? "season" : o.win} games · NET = OFF − DEF · centre of the chart = league average · TREND = net now vs the previous window · <b>BEST DEFENSE = fewest allowed</b>. Per-game totals, not pace-adjusted — the results feeds carry scores, not possessions.</span>`));
 }
 function renderEffMlb() {
@@ -8031,12 +8246,12 @@ function renderEffMlb() {
   if (!(S.seasonGames || []).length) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Waiting for the season's results — this fills in by itself.</div>`)); return; }
   const meta = {}; for (const gm of S.seasonGames) for (const id of [gm.hId, gm.aId]) if (!meta[id]) meta[id] = { abbr: String(ESPN_ABBR[id] || id).toUpperCase(), name: String(ESPN_ABBR[id] || id).toUpperCase(), logo: teamLogo(id), color: TEAM_COLORS[id] || "#5b9dff" };
   const win = effWin(), b = effBuild(S.seasonGames, meta, win);
-  effRender(root, { unit: "Runs", rows: b.rows, lg: b.lg, win, rerender: renderEffMlb, dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (S.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.time, status: g.state === "Final" ? "final" : g.state === "Live" ? "live" : "up" })) });
+  effRender(root, { unit: "Runs", rows: b.rows, lg: b.lg, win, rerender: renderEffMlb, scope: "mlb", dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (S.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.time, status: g.state === "Final" ? "final" : g.state === "Live" ? "live" : "up" })) });
 }
 function effHostWnba(root) {
   root.appendChild(el("div", "h1", `WNBA EFFICIENCY LANDSCAPE <small>· points scored vs allowed, rolling</small>`));
   const win = effWin(), b = effBuild(WS.results || [], WS.teams || {}, win);
-  effRender(root, { unit: "Points", rows: b.rows, lg: b.lg, win, rerender: renderWnba, dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (WS.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.date, status: g.completed ? "final" : g.live ? "live" : "up" })) });
+  effRender(root, { unit: "Points", rows: b.rows, lg: b.lg, win, rerender: renderWnba, scope: "wnba", dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (WS.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.date, status: g.completed ? "final" : g.live ? "live" : "up" })) });
 }
 function effTick() { // every 10 min while an efficiency tab is open: fold in the newest results without wiping the page
   try {
@@ -8232,6 +8447,74 @@ function renderDvp(root, sp) {
   root.appendChild(grid);
   root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Each line: how a defense ranks (1st = gives up the most) in what it allows per game to that position, ${win === "all" ? "season to date" : "over its last " + win + " games"}. Only the 8 softest spots per defense are shown, plus sacks / interceptions for NFL. Positions ${sp === "nfl" ? "come from team rosters (ESPN's NFL box scores don't list them)" : "come from team rosters, falling back to the box score's own label"}.</span>`));
 }
+function genGamesFrom(sb) { // schedule JSON → game objects with EVERY provider's lines (used the moment the schedule arrives, and again in the normal stage)
+  const side = cp => cp ? ({ id: +cp.id, abbr: cp.team?.abbreviation || (cp.athlete ? (cp.athlete.shortName || cp.athlete.displayName) : "?"), name: cp.team?.displayName || cp.athlete?.displayName || "?", logo: cp.team?.logo || cp.team?.logos?.[0]?.href || cp.athlete?.headshot || "", color: cp.team?.color ? "#" + String(cp.team.color).replace("#", "") : "", score: cp.score != null ? +cp.score : null, winner: !!cp.winner }) : null;
+  return (sb?.events || []).map(ev => {
+      const c = ev.competitions?.[0] || {};
+      const g = { id: ev.id, name: ev.name || "", date: ev.date, completed: !!c.status?.type?.completed, live: c.status?.type?.state === "in",
+        home: side((c.competitors || []).find(x => x.homeAway === "home") || (c.competitors || [])[0]),
+        away: side((c.competitors || []).find(x => x.homeAway === "away") || (c.competitors || [])[1]) };
+      for (const od of c.odds || []) genApplyOdds(g, od); // EVERY provider ESPN lists — the first one may carry only some of the numbers
+      return g;
+  }).filter(g => g.home && g.away);
+}
+/* ---------- BETTING LINES ---------- */
+function genApplyOdds(g, od) { // fill ONLY what is still missing on game g from one provider's odds object; true if it added anything
+  if (!od) return false; let any = false;
+  const set = (k, v) => { if (v != null && g[k] == null) { g[k] = v; any = true; } };
+  set("mlHome", parseAm(od.homeTeamOdds?.current?.moneyLine?.american ?? od.homeTeamOdds?.moneyLine ?? od.moneyline?.home?.close?.odds ?? od.moneyline?.home?.open?.odds)); // ESPN's newer odds shape (soccer moved first)
+  set("mlAway", parseAm(od.awayTeamOdds?.current?.moneyLine?.american ?? od.awayTeamOdds?.moneyLine ?? od.moneyline?.away?.close?.odds ?? od.moneyline?.away?.open?.odds));
+  set("mlDraw", parseAm(od.drawOdds?.moneyLine ?? od.drawOdds?.current?.moneyLine?.american ?? od.moneyline?.draw?.close?.odds ?? od.moneyline?.draw?.open?.odds));
+  set("spread", od.spread != null && isFinite(parseFloat(od.spread)) ? parseFloat(od.spread) : null); // junk like "N/A" stays "no line" (num() would have turned it into a bogus 0)
+  set("total", od.overUnder != null && isFinite(parseFloat(od.overUnder)) ? parseFloat(od.overUnder) : null);
+  if (any && !g.book) g.book = od.provider?.name || od.provider?.displayName || "book";
+  return any;
+}
+const genNoLines = g => g.mlHome == null && g.mlAway == null && g.spread == null && g.total == null;
+async function genOddsFill(sp) { // the schedule arrived WITHOUT lines for some upcoming games → find them elsewhere (background; the board is already on screen)
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || cfg.teamCap === -1) return;
+  const open = () => (s.games || []).filter(g => !g.completed && genNoLines(g));
+  s.oddsMissing = open().length; if (!s.oddsMissing) { if (!s.oddsSrc) s.oddsSrc = "ESPN scoreboard"; return; } if (s.oddsBusy) return; // (a second pass that finds nothing missing must not erase "filled from …")
+  s.oddsBusy = true; genRenderIf(sp);
+  const byId = {}; for (const g of s.games) byId[String(g.id)] = g;
+  const take = sb => { let n = 0; for (const ev of sb?.events || []) { const g = byId[String(ev.id)]; if (!g || g.completed) continue; for (const od of ev.competitions?.[0]?.odds || []) if (genApplyOdds(g, od)) n++; } return n; };
+  const url = genSbUrl(sp, s.dateLoaded || S.date); let src = null;
+  try {
+    // 1) the ORIGINAL scoreboard (the mirror host can answer without odds): direct, then each relay — they fetch the real ESPN URL
+    for (const [name, f] of [["ESPN direct", () => jFetch(url, 12000)], ["ESPN via relay", () => jFetch(RELAYS[1](url), 9000)], ["ESPN via relay 2", () => jFetch(RELAYS[2](url), 9000)]]) {
+      if (!open().length) break; try { if (take(await f())) src = src || name; } catch (e) {}
+    }
+    // 2) ESPN's own odds feed, one call per game still missing (capped)
+    const left = open().slice(0, 12);
+    for (let i = 0; i < left.length && open().length; i += 4) await Promise.all(left.slice(i, i + 4).map(async g => { try { const o = await j(`https://sports.core.api.espn.com/v2/sports/${cfg.path}/events/${g.id}/competitions/${g.id}/odds`); for (const od of o?.items || []) if (genApplyOdds(g, od)) src = src || "ESPN odds feed"; } catch (e) {} }));
+    // 3) The Odds API with the user's own key — one call prices the whole slate
+    if (open().length && cfg.oa && getKey()) {
+      try {
+        const arr = await jFetch(`https://api.the-odds-api.com/v4/sports/${cfg.oa}/odds?apiKey=${getKey()}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`, 12000);
+        const norm = t => String(t || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+        for (const g of open()) {
+          const ev = (arr || []).find(e => norm(e.home_team) === norm(g.home.name) && norm(e.away_team) === norm(g.away.name)); if (!ev) continue;
+          const bk = (ev.bookmakers || []).find(b => /draftkings/i.test(b.key || b.title)) || (ev.bookmakers || [])[0]; if (!bk) continue;
+          const mk = k => (bk.markets || []).find(m => m.key === k)?.outcomes || [];
+          const od = { provider: { name: bk.title || "The Odds API" }, homeTeamOdds: { moneyLine: mk("h2h").find(o => norm(o.name) === norm(ev.home_team))?.price }, awayTeamOdds: { moneyLine: mk("h2h").find(o => norm(o.name) === norm(ev.away_team))?.price },
+            spread: mk("spreads").find(o => norm(o.name) === norm(ev.home_team))?.point, overUnder: mk("totals")[0]?.point };
+          if (genApplyOdds(g, od)) src = src || "The Odds API";
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+  s.oddsMissing = open().length; s.oddsSrc = src; s.oddsBusy = false;
+  if (src) { for (const g of s.games || []) { try { genPredict(sp, g); } catch (e) {} } }
+  genRenderIf(sp);
+}
+function genLinesBanner(sp) { // say what happened with the lines — never a silent row of dashes
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || cfg.teamCap === -1 || !(s.loaded || s._gamesEarly)) return "";
+  const up = (s.games || []).filter(g => !g.completed); if (!up.length) return "";
+  const miss = up.filter(genNoLines).length;
+  if (s.oddsBusy) return `<div style="margin:0 0 8px;font-size:11px;color:var(--dim3);">⏳ ${miss} of ${up.length} games came without betting lines — looking for them elsewhere…</div>`;
+  if (miss) return `<div style="margin:0 0 10px;background:rgba(255,160,46,0.09);border:1px solid rgba(255,160,46,0.35);border-radius:9px;padding:7px 11px;font-size:11.5px;color:#ffc27a;font-weight:700;">⚠ No betting lines for ${miss} of ${up.length} games — ESPN's schedule came without them and the backup sources didn't answer${getKey() ? "" : " (add your Odds API key on MLB → MY MODEL for one more backup)"}. The models still run; edges can't be priced without a line. Press RELOAD ${cfg.name} DATA to retry.</div>`;
+  return s.oddsSrc && s.oddsSrc !== "ESPN scoreboard" ? `<div style="margin:0 0 8px;font-size:11px;color:var(--dim3);">✓ Betting lines filled from ${s.oddsSrc} (the schedule itself came without them).</div>` : "";
+}
 function genPredict(sp, g) {
   const cfg = GS_CFG[sp], s = gSlot(sp), st = s.bt?.state;
   if (!st) return;
@@ -8354,12 +8637,14 @@ function renderGen() {
     if (hard2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard2.join(" · ")}</span>`));
     if (soft2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft2.join(" · ")}</span>`));
   } else {
-    if (s.loading) {
+    const earlyBoard = s.loading && GX.view === "board" && (s.games || []).length > 0; // games + lines are in; only the models are still loading
+    if (s.loading && !earlyBoard) {
       root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading ${cfg.name} — ${s.stage || "…"}</div>`));
       const nb0 = genNextBtn(sp); if (nb0) { nb0.style.marginTop = "12px"; root.appendChild(nb0); root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">You can jump ahead while this loads.</span>`)); }
       return;
     }
-    if (!s.loaded) { const b = el("button", null, `LOAD ${cfg.name}`); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
+    if (!s.loaded && !earlyBoard) { const b = el("button", null, `LOAD ${cfg.name}`); b.className = "btn"; b.addEventListener("click", () => genEnsure(sp)); root.appendChild(b); return; }
+    if (earlyBoard) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">⏳ Today's games and lines are in — the model picks are still loading (${s.stage || "…"}) and fill in by themselves.</span>`));
     if (s.errors.length) {
       const soft = s.errors.filter(e2 => /saved copy|auto-retrying|ℹ/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
       if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span>`));
@@ -8492,9 +8777,14 @@ function renderGen() {
       else if (plR.length < 5) root.appendChild(el("div", "nobets", "Not enough player game logs in hand yet to backtest this prop honestly."));
       else {
         GX._pmbt = GX._pmbt || {};
-        const pmKeyR = spR + ":" + recDef.k + ":" + plR.length;
-        if (!GX._pmbt[pmKeyR]) { try { GX._pmbt[pmKeyR] = pmBacktest(plR, recDef.cls || "big"); } catch (e2) { GX._pmbt[pmKeyR] = {}; } }
+        const muSigR = muOn() ? (sR.dvp && sR.dvp.agg ? Object.keys(sR.dvp.agg).length : 0) : "off";
+        const pmKeyR = spR + ":" + recDef.k + ":" + plR.length + ":" + muSigR;
+        if (MU_STAT[spR] && muOn() && DVP_CFG[spR] && !sR._muKick) { sR._muKick = true; setTimeout(() => { try { dvpEnsure(spR); } catch (e) {} }, 800); } // the matchup engine needs the DEF VS POS box scores
+        pmDropStale(pmKeyR, spR + ":" + recDef.k + ":" + plR.length + ":");
+        if (!GX._pmbt[pmKeyR]) { try { GX._pmbt[pmKeyR] = pmBacktest(plR, recDef.cls || "big", MU_STAT[spR] ? { sp: spR, ps: recDef } : null); } catch (e2) { GX._pmbt[pmKeyR] = {}; } }
         const pmbR = GX._pmbt[pmKeyR], pmKeysR = Object.keys(pmbR);
+        if (pmbR.mu) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)"><b style="color:var(--txt)">BLEND + MATCHUP</b> = the BLEND engine scaled by what the opponent had allowed to that player's position <i>before</i> each game (shrunk for small samples, capped ±12%). If it doesn't beat plain BLEND below, the matchup isn't helping this prop — the record decides, not the theory.</span>`));
+        else if (MU_STAT[spR] && muOn()) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">🎯 Matchup engine: building the DEF VS POS box-score data it needs (one time, then saved)…</span>`));
         if (pmKeysR.length && pmKeysR.some(k2 => pmbR[k2].n > 0)) {
           root.appendChild(el("div", "recgrid", pmKeysR.map(k2 => { const r2 = pmbR[k2]; const t2 = r2.w + r2.l; return `<div class="reccard"><div class="recname">${r2.name}</div><div class="recwl">${t2 ? r2.w + "-" + r2.l : "—"}</div><div class="recsub">${r2.n} graded lines · win% ${t2 ? (r2.w / t2 * 100).toFixed(1) : "—"}</div></div>`; }).join("")));
           const pmSelR = (hasLS && localStorage.getItem("kb_pmcal_" + spR)) || pmKeysR[0];
@@ -8527,7 +8817,7 @@ function renderGen() {
     const winE = effWin(), bE = effBuild(sE.results || [], sE.teams || {}, winE);
     const dayISO = S.date || localISO(new Date()); let dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && localISO(new Date(g3.date)) === dayISO), dayLabel = dayISO === localISO(new Date()) ? "TODAY" : dayISO;
     if (!dayGames.length && cE.weekly) { dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && !g3.completed); dayLabel = "THIS WEEK"; } // a weekly sport on an off day: the week's biggest mismatch
-    effRender(root, { unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up" })) : null });
+    effRender(root, { unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, scope: lgE, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up" })) : null });
     return;
   }
   if (GX.view === "pstat") {
@@ -8655,22 +8945,27 @@ function renderGen() {
     if (pErrs.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Partial: ${pErrs.join(" · ")}</span>`));
     let arr = pSubs.flatMap(sub => (gSlot(sub).pdata?.[ps.k] || []).map(x => combo ? { ...x, team: (x.team ? x.team + " · " : "") + GS_CFG[sub].name } : x));
     if (!arr.length) { root.appendChild(el("div", "nobets", `No usable ${ps.n} logs right now (off-season, or this stat isn't in this sport's feed) — check back once the season runs.`)); return; }
+    if (!combo) arr = arr.filter(p2 => !genPlayerOut(GX.cur, p2)); // live check: ruled out → no card
     // best → worst: strongest, most agreed-on model calls first
     const enrich = arr.map(p2 => {
       const chron = p2.vals.slice().reverse();
-      const fits = pmDefs.map(m2 => { try { const f2 = m2.fit(chron); return { name: m2.name, proj: f2.proj, pOver: f2.pOver }; } catch (e2) { return null; } }).filter(Boolean);
+      let fits = pmDefs.map(m2 => { try { const f2 = m2.fit(chron); return { name: m2.name, proj: f2.proj, pOver: f2.pOver }; } catch (e2) { return null; } }).filter(Boolean);
+      const muR = !combo && fits.length ? muApply(GX.cur, p2, ps, fits) : { fits, mu: null }; fits = muR.fits; // matchup vs his position
       const consProj = fits.length ? mean(fits.map(f2 => f2.proj)) : p2.proj;
       const modelLine = Math.max(0.5, Math.round(consProj - 0.5) + 0.5);
       const agree = fits.length > 0 && fits.every(f2 => (f2.pOver(modelLine) >= 0.5) === (fits[0].pOver(modelLine) >= 0.5));
       const conf = fits.length ? mean(fits.map(f2 => { const po = clamp(f2.pOver(modelLine), 0.01, 0.99); return Math.max(po, 1 - po); })) : 0;
-      return { p2, fits, consProj, modelLine, agree, conf };
+      return { p2, fits, consProj, modelLine, agree, conf, mu: muR.mu };
     });
     const gpSort = (hasLS && localStorage.getItem("kb_gpsort")) || "call";
     const gpBar = el("div");
     gpBar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
     gpBar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` +
       [["call", "BEST CALL"], ["consist", "MOST CONSISTENT"]].map(([k2, l2]) => `<span class="fchip${gpSort === k2 ? " on" : ""}" data-gps="${k2}">${l2}</span>`).join("") +
+      ((MU_STAT[GX.cur] && !combo) ? `<span class="fchip${muOn() ? " on" : ""}" data-mu title="scale each projection by how much the opponent allows to the player's position (DEF VS POS data)">🎯 MATCHUP ${muOn() ? "ON" : "OFF"}</span>` : "") +
       `<span style="font-size:10px;color:var(--dim3);font-weight:600;">${gpSort === "consist" ? "smallest game-to-game swing relative to his average first" : "most confident, most unanimous engine calls first"}</span>`;
+    gpBar.querySelectorAll("[data-mu]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_matchup", muOn() ? "off" : "on"); GX._pmbt = {}; renderGen(); }));
+    if (MU_STAT[GX.cur] && !combo && muOn() && DVP_CFG[GX.cur] && !gSlot(GX.cur)._muKick) { gSlot(GX.cur)._muKick = true; setTimeout(() => { try { dvpEnsure(GX.cur); } catch (e) {} }, 800); } // the matchup needs the DEF VS POS box scores — build them in the background (saved after the first time)
     gpBar.querySelectorAll("[data-gps]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_gpsort", c2.dataset.gps); renderGen(); }));
     root.appendChild(gpBar);
     const gCvOf = en2 => { const m2 = mean(en2.p2.vals); return en2.p2.vals.length >= 8 && m2 > 0 ? sd(en2.p2.vals) / m2 : 9; };
@@ -8684,7 +8979,7 @@ function renderGen() {
     const pgrid = el("div", "grid wide");
     let pRank = 0;
     for (const en of enrich.slice(0, 15)) {
-      const { p2, fits, consProj, modelLine, agree, conf } = en;
+      const { p2, fits, consProj, modelLine, agree, conf, mu } = en;
       pRank++;
       const chartVals = p2.vals.slice(0, 10).reverse();
       const card = el("div", "card kcard" + (en.gs.state === "final" || en.gs.state === "none" ? " played" : ""));
@@ -8704,11 +8999,12 @@ function renderGen() {
         <div style="margin-top:8px;">${fits.map(f2 => { const po = clamp(f2.pOver(modelLine), 0.01, 0.99); const hp2 = po >= 0.5; return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:2px 0;"><span style="color:var(--dim);flex:0 0 132px;">${f2.name}</span><b>${f2.proj.toFixed(1)}</b><div class="spacer"></div><b style="color:${hp2 ? "var(--green)" : "var(--red)"};">${hp2 ? "OVER" : "UNDER"} ${modelLine} · ${(Math.max(po, 1 - po) * 100).toFixed(0)}%</b></div>`; }).join("")}</div>
         <div class="chips" style="margin-top:7px;">
           ${en.gs.state === "none" ? `<span class="chip red">${en.gs.label}</span>` : en.gs.state === "final" ? '<span class="finchip">FINAL</span>' : en.gs.state === "live" ? '<span class="livechip">● LIVE</span>' : en.gs.state === "up" ? `<span class="chip green">${en.gs.label}</span>` : ""}${p2.inj ? `<span class="chip red">⚠ ${p2.inj}</span>` : ""}<span class="chip">season ${p2.season.toFixed(1)}</span><span class="chip">last 5: ${p2.last5.toFixed(1)}</span>
-          <span class="chip">swing ±${p2.sigma.toFixed(1)}</span>
+          <span class="chip">swing ±${p2.sigma.toFixed(1)}</span>${mu ? `<span class="chip ${Math.abs(mu.f - 1) < 0.01 ? "" : mu.f > 1 ? "green" : "red"}" title="${muEsc(muText(mu))}">MATCHUP ${muPct(mu)}</span>` : ""}
         </div>
         ${whyBox([
           ["Last 5 vs season", `${p2.last5.toFixed(1)} vs ${p2.season.toFixed(1)}`, p2.last5 > p2.season * 1.08 ? "trending UP — recency engines lean over" : p2.last5 < p2.season * 0.92 ? "trending DOWN — recency engines lean under" : "steady — the engines mostly agree"],
           ["Night-to-night swing", "±" + p2.sigma.toFixed(1), p2.grade === "A" || p2.grade === "B" ? "consistent — calls earn confidence" : "volatile — every call gets discounted"],
+          ...(mu ? [["Matchup vs " + mu.pos, muText(mu), `league-relative ×${mu.raw.toFixed(2)} over ${mu.n} games → projection ${muPct(mu)} (shrunk for small samples, capped ±12%)`]] : []),
           ["Model line", String(modelLine), "consensus projection rounded to the nearest half"],
           ["Engines' verdicts", fits.map(f2 => (f2.pOver(modelLine) >= 0.5 ? "OVER" : "UNDER")).join(" · "), agree ? "unanimous — that's what buys the rank" : "split — one engine sees it differently, so this drops"],
           ["Conviction", (conf * 100).toFixed(0) + "%", "average certainty of the engines at the model line"],
@@ -8726,9 +9022,9 @@ function renderGen() {
     }
     root.appendChild(pgrid);
     // ---- PROP MODEL BACKTEST + TRUTH CHECK for this stat ----
-    const pmKey = sp + ":" + ps.k;
-    GX._pmbt = GX._pmbt || {};
-    if (!GX._pmbt[pmKey]) { try { GX._pmbt[pmKey] = pmBacktest(arr, cls); } catch (e2) { GX._pmbt[pmKey] = {}; } }
+    const pmKey = sp + ":" + ps.k + "~mu" + (muOn() ? (gSlot(sp).dvp && gSlot(sp).dvp.agg ? Object.keys(gSlot(sp).dvp.agg).length : 0) : "off");
+    GX._pmbt = GX._pmbt || {}; pmDropStale(pmKey, sp + ":" + ps.k + "~mu");
+    if (!GX._pmbt[pmKey]) { try { GX._pmbt[pmKey] = pmBacktest(arr, cls, MU_STAT[sp] ? { sp, ps } : null); } catch (e2) { GX._pmbt[pmKey] = {}; } }
     const pmb = GX._pmbt[pmKey];
     const pmKeys = Object.keys(pmb);
     if (pmKeys.length && pmKeys.some(k2 => pmb[k2].n > 0)) {
@@ -8862,11 +9158,13 @@ function renderGen() {
       ${!g.completed && (g.dc || g.mlDraw != null) ? `<div style="font-size:11px;color:var(--dim);margin-top:4px;">${g.dc ? `<b style="color:var(--txt)">DIXON–COLES 3-WAY:</b> ${g.home.abbr} ${(g.dc.pW * 100).toFixed(0)}% · <b style="color:var(--gold)">DRAW ${(g.dc.pD * 100).toFixed(0)}% (fair ${fmtML(probToAmerican(g.dc.pD))})</b> · ${g.away.abbr} ${(g.dc.pL * 100).toFixed(0)}%` : ""}${g.mlDraw != null ? ` · book draw ${fmtML(g.mlDraw)}${g.dc && americanToProb(g.mlDraw) < g.dc.pD ? ' <span style="color:var(--green)">— pays better than fair</span>' : ""}` : ""}</div>` : ""}
       ${spBan}
       ${genInjRow(sub, g)}
-      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS${cfgG.spFirst ? ' <span style="color:var(--dim3);letter-spacing:0;font-weight:600;">· win prob — the SPREAD PICK above is the headline here</span>' : ""}</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10 (opp-adj)", g.mForm)}${g.mDC != null ? mrow2("Dixon–Coles", g.mDC) : ""}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
+      ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS${cfgG.spFirst ? ' <span style="color:var(--dim3);letter-spacing:0;font-weight:600;">· win prob — the SPREAD PICK above is the headline here</span>' : ""}</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10 (opp-adj)", g.mForm)}${g.mDC != null ? mrow2("Dixon–Coles", g.mDC) : ""}${mrow2("Consensus", g.cons)}${genChainNote(sub, g)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
       ${stp}`;
     grid.appendChild(card);
   }
+  for (const sub0 of subsOf()) { const bl = genLinesBanner(sub0); if (bl) root.insertAdjacentHTML("beforeend", bl); }
   for (const sub0 of subsOf()) { const bn = genInjBanner(sub0); if (bn) root.insertAdjacentHTML("beforeend", bn); }
+  root.querySelectorAll("[data-injscale]").forEach(c2 => c2.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_injscale", c2.dataset.injscale); } catch (e) {} for (const sub of subsOf()) for (const g3 of gSlot(sub).games || []) { try { genPredict(sub, g3); } catch (e) {} } renderGen(); }));
   if (!combo && cfg.weekly) { const ww = weekWindow(S.date || localISO(new Date())); root.insertAdjacentHTML("beforeend", `<div style="margin:0 0 10px;font-size:11px;color:var(--dim3);">📅 Showing <b>every ${cfg.name} game this week</b> (Tue ${ww[0]} → Mon ${ww[1]}) — Thursday, Sunday and Monday together. Games already played are dimmed; sort by GAME TIME to read them in order.</div>`); }
   root.appendChild(grid);
   const btnRow = el("div");
