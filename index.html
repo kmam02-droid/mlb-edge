@@ -420,6 +420,7 @@
   <section id="tab-tb" style="display:none"></section>
   <section id="tab-hrr" style="display:none"></section>
   <section id="tab-nrfi" style="display:none"></section>
+  <section id="tab-eff" style="display:none"></section>
   <section id="tab-wnba" style="display:none"></section>
   <section id="tab-locks" style="display:none"></section>
   <section id="tab-value" style="display:none"></section>
@@ -438,7 +439,40 @@
    ================================================================ */
 "use strict";
 
-const BUILD = "v5.12 · 10a";
+/* ===================================================================================================================
+   CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
+   over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
+
+   v5.34  This changelog, written into the file.
+   v5.33  NBA / NFL / NHL team records (ELO · PYTHAG · FORM-10, spread, totals) no longer empty early in a season: last season's
+          results are fetched ONCE, saved for good, and warm the walk-forward fit; the page says the record includes the replay.
+   v5.32  Injury report only on a dropdown (counts-only line when closed) — NFL, NBA, NHL and WNBA cards.
+   v5.31  Startup priority: the sport you're on loads first, same-family sports next, tennis always last, off-season WNBA skipped;
+          the warm-up waits for the current sport; prop loading waits for the board; dead ESPN routes are remembered 60 s.
+   v5.30  EFFICIENCY: "biggest differential of the day" highlight (card + ranked list + ringed teams on the chart).
+   v5.29  NFL ⏭ NEXT GAME DAY is the next game DAY again (Wed → Thu → Sun → Mon → next Thu), from the week's own schedule.
+   v5.28  Next-game-day search never counts a failed check as "no games" (no more wandering); clear message when ESPN can't be asked.
+   v5.27  ESPN mirror host (site.web.api) tried before slow relays; scoreboard fallback chain; fixed team-id bootstrap for NFL/NBA;
+          Defense-vs-Position refuses to cache box scores parsed without roster positions.
+   v5.26  An off day lists no prop bets (schedule answered-but-empty ≠ unknown); team seeding falls back to nearby game days.
+   v5.25  Team-list failures no longer starve every model: garbage answers fall through to relays, alternate team-list URLs,
+          teams discovered through opponents, coverage warnings ("results for only N of 32 teams").
+   v5.24  NFL board shows the whole Tue→Mon week (Thursday visible on a Wednesday); weekday on each card.
+   v5.23  ⏭ NEXT GAME DAY verified against the real scoreboard (no guessed offsets / UTC dates); Odds API "today" = your local day.
+   v5.22  EFFICIENCY redesign: logos on clean disks, nothing printed over a logo, top-3 strip, sortable table (best offense / defense).
+   v5.21  DEFENSE VS POSITION tab (NFL + NBA): what each defense gives up to each position, from real box scores + rosters.
+   v5.20  EFFICIENCY LANDSCAPE tab for every sport (points / runs / goals scored vs allowed over the last 5 / 10 / 20 / season).
+   v5.19  BEST PROP BETS on the board: strongest calls across every prop for games still to play.
+   v5.18  Faster NBA/NFL/NHL loads: scoreboard + injuries start in parallel; saved results power instant numbers; MLB waits its turn.
+   v5.17  Prop cards follow the schedule: still-to-play first, finals dimmed, no-game players last (NFL by the whole week).
+   v5.16  Injury report for NBA / NFL / NHL: NBA outs priced into the numbers (capped), NFL/NHL shown; Out players removed from props.
+   v5.15  "Open the app on:" selector (default NBA, or the last sport you used).
+   v5.14  NBA props: P+R, R+A, P+A combos; PLAYER PROP MODELS records (walk-forward on real game logs) on MODEL RECORDS.
+   v5.13  Saved MY MODEL weights now load after a reload; WNBA MODEL RECORDS no longer freezes the page; hidden tabs refresh when
+          opened; first fixes found by the automated QA.
+   v5.12  The original file.
+   =================================================================================================================== */
+const BUILD = "v5.34 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -485,6 +519,7 @@ const SLIDERS = [
 ];
 
 /* ---------------- STATE ---------------- */
+const hasLS = typeof localStorage !== "undefined";
 const S = {
   date: null,
   weights: loadWeights(),
@@ -568,13 +603,13 @@ function zMap(items, getter) { const vals = items.map(getter); const m = mean(va
   const out = {}; items.forEach((it, i) => out[it.team.id] = (vals[i] - m) / s); return out; }
 function localISO(d) { const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0"); return `${y}-${m}-${dd}`; }
 function addDays(iso, n) { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return localISO(d); }
-const hasLS = typeof localStorage !== "undefined";
+// (hasLS is declared above `const S`: loadWeights() runs while S is built, and reading a const before its declaration is a swallowed ReferenceError that silently reset saved weights)
 // quota guard: when localStorage fills up, evict the biggest rebuildable caches instead of failing silently
 function kbSet(k2, v2) {
   if (!hasLS) return false;
   try { localStorage.setItem(k2, v2); return true; } catch (e) {
     try {
-      const bigs = Object.keys(localStorage).filter(x => /^kb_(gbox_|gres_|hot$|wx$|ksplit$|wboxhist|gteams_)/.test(x) && x !== k2)
+      const bigs = Object.keys(localStorage).filter(x => /^kb_(gbox_|gres_|hot$|wx$|ksplit$|wboxhist|gteams_|dvpg_|dvppos_)/.test(x) && x !== k2)
         .sort((a, b) => (localStorage.getItem(b)?.length || 0) - (localStorage.getItem(a)?.length || 0));
       for (const bk of bigs) { localStorage.removeItem(bk); try { localStorage.setItem(k2, v2); return true; } catch (e2) {} }
     } catch (e3) {}
@@ -609,8 +644,8 @@ function routed(url, local = IS_LOCAL_SERVER) {
   for (const h of Object.keys(PROXY_MAP)) if (url.startsWith(h)) return PROXY_MAP[h] + url.slice(h.length);
   return url;
 }
-async function jFetch(url) {
-  const c = new AbortController(); const t = setTimeout(() => c.abort(), 15000);
+async function jFetch(url, ms) {
+  const c = new AbortController(); const t = setTimeout(() => c.abort(), ms || 15000);
   try {
     const r = await fetch(url, { signal: c.signal });
     if (/api\.the-odds-api\.com|\/px\/oddsapi\//.test((() => { try { return decodeURIComponent(url); } catch (e2) { return url; } })())) { // credit meter — the API reports your remaining quota on every call
@@ -620,23 +655,34 @@ async function jFetch(url) {
     if (!r.ok) throw new Error("HTTP " + r.status + " — " + url.split("?")[0].replace("https://", ""));
     return r.json();
   } catch (e) {
-    if (e.name === "AbortError") throw new Error("timeout (15s) — " + url.split("?")[0].replace("https://", ""));
+    if (e.name === "AbortError") throw new Error("timeout (" + Math.round((ms || 15000) / 1000) + "s) — " + url.split("?")[0].replace("https://", ""));
     if (e instanceof TypeError) throw new Error("network/CORS blocked — " + url.split("?")[0].replace("https://", ""));
     throw e;
   } finally { clearTimeout(t); }
 }
+function espnMirror(u) { return u.startsWith("https://site.api.espn.com/apis/site/v2/") ? u.replace("https://site.api.espn.com/", "https://site.web.api.espn.com/") : u.startsWith("https://site.web.api.espn.com/apis/site/v2/") ? u.replace("https://site.web.api.espn.com/", "https://site.api.espn.com/") : null; }
+const ROUTE_HEALTH = {}; // route family → { fails, until }: after 2 soft failures a route is skipped for 60 s (then tried again), so a dead route costs seconds once — not 15 s on EVERY request
+function routeKey(u) { const m = /^https?:\/\/([^/]+)(\/apis\/[^/]+\/v\d\/sports\/)[^/]+\/[^/]+\/([^/?]+)/.exec(u); return m ? m[1] + m[2] + "*/*/" + m[3] : (/^https?:\/\/([^/]+)/.exec(u) || [0, u])[1]; }
+const routeCooling = k => { const h = ROUTE_HEALTH[k]; return !!h && h.fails >= 2 && Date.now() < h.until; };
+function routeMark(k, ok) { if (ok) { delete ROUTE_HEALTH[k]; return; } const h = ROUTE_HEALTH[k] = ROUTE_HEALTH[k] || { fails: 0, until: 0 }; h.fails++; if (h.fails >= 2) h.until = Date.now() + 60000; }
 async function j(url) {
   const r = routed(url);
   if (r !== url) return jFetch(r); // local helper proxy handles it
   // never relay the Odds API (your key is in the URL); everything else falls back through relays if blocked
   if (url.startsWith("https://api.the-odds-api.com/")) return jFetch(url);
+  const mirror = espnMirror(url); // ESPN serves the same /apis/site/v2/ data from site.api AND site.web.api — when one host is blocked for you (CORS / network), the other often isn't
+  const attempts = [{ k: routeKey(url), u: url, ms: 15000 }];
+  if (mirror) attempts.push({ k: routeKey(mirror), u: mirror, ms: 12000 });
+  for (let i = 1; i < RELAYS.length; i++) attempts.push({ k: "relay" + i, u: RELAYS[i](url), ms: 9000, relay: i });
+  const live = attempts.filter(a => !routeCooling(a.k)), run = live.length ? live : attempts; // everything cooling → try it all again rather than give up
   let lastErr = null;
-  for (let i = 0; i < RELAYS.length; i++) { // always try direct first, then each relay
-    try { const out = await jFetch(RELAYS[i](url)); if (i > 0) relayIdx = Math.max(relayIdx, i); return out; }
+  for (const a of run) {
+    try { const out = await jFetch(a.u, a.ms); routeMark(a.k, true); if (a.relay) relayIdx = Math.max(relayIdx, a.relay); return out; }
     catch (e) {
       lastErr = e;
-      // an HTTP error from the source itself (direct) is real; an error from a RELAY just means try the next route
-      if (i === 0 && !/network\/CORS|timeout/.test(e.message)) throw e;
+      const soft = /network\/CORS|timeout|JSON|unexpected|SyntaxError|parse/i.test(e.message);
+      if (!a.relay && !soft) throw e; // a real HTTP error from the source is final; a garbage / blocked body or a network block may still arrive through the next route
+      routeMark(a.k, false);
     }
   }
   throw lastErr;
@@ -2233,7 +2279,7 @@ function edgeCls(e) { return e >= 0 ? "var(--green)" : "var(--red)"; }
 function renderAll() {
   const anyBook = Object.values(S.odds)[0]?.book || "DraftKings";
   $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`;
-  renderBoard(); renderKs(); renderHR(); renderHits(); renderBasesTab("tb"); renderBasesTab("hrr"); try { renderNrfi(); } catch (e) {} renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
+  renderBoard(); renderKs(); renderHR(); renderHits(); renderBasesTab("tb"); renderBasesTab("hrr"); try { renderNrfi(); } catch (e) {} try { if ($("#tab-eff") && $("#tab-eff").style.display !== "none") renderEffMlb(); } catch (e) {} renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
 }
 
 /* ---------- BEST BETS + SLATE ---------- */
@@ -3483,6 +3529,9 @@ function wxRecompute() { // any late-arriving signal (weather, hot form, K split
   if (vis("ks")) rr(renderKs);
   if (vis("hits")) rr(renderHits);
   if (vis("hr")) rr(renderHR);
+  // tabs that were hidden when this late signal landed keep their old HTML — mark them stale so switchTab() re-renders them on open
+  S._stale = S._stale || {};
+  for (const id of ["board", "ks", "hr", "hits", "tb", "hrr"]) if (!vis(id)) S._stale[id] = true;
 }
 /* ---------- TOTAL BASES + H+R+RBI: per-game-log models with the full honesty stack ---------- */
 const TBP_CFG = {
@@ -6342,6 +6391,7 @@ function renderWnba() {
     if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some WNBA sources failed: ${hard.join(" · ")}</span>`));
     if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
   }
+  if (WS.view === "eff") { effHostWnba(root); return; }
   if (WS.view === "model") { renderWnbaModel(root); return; }
   // model records (walk-forward backtest)
   const bt = WS.bt;
@@ -6481,8 +6531,11 @@ function renderWnba() {
       wbBox.innerHTML = calRowsHTML(calibrate((by[wStatKey]?.cal || []), "p", CAL_BUCKETS, true).filter(b => b.n > 0), 4, 25) || '<div style="color:var(--dim);font-size:13px;">No predictions for this prop yet.</div>';
       root.appendChild(wbBox);
     } else {
+      if (S._pbt && !S._pbtRunning) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">No WNBA player logs are loaded yet, so there is nothing to backtest. This fills in by itself once the player-log feed answers (or hit Refresh).</span>`));
+      else {
       root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">⏱ Runs automatically once player logs are in — results appear here in a few seconds…</span>`));
       if (!S._pbtRunning) { S._pbtRunning = true; propBacktest().then(() => { S._pbtRunning = false; renderWnba(); renderRecords(); }).catch(() => { S._pbtRunning = false; }); }
+      }
     }
   }
   if (WS.view === "rec" && (!bt || !bt.n)) root.appendChild(el("div", "nobets", "Model records need the season's results, which didn't load this time — the red note above names the source that failed. Hit RELOAD WNBA DATA below to try again."));
@@ -6565,7 +6618,8 @@ function renderWnba() {
         const netTxt = Math.abs(net2) < 0.05
           ? `→ washes out (both sides lose about the same) — number unchanged`
           : `→ net ${Math.abs(net2).toFixed(1)} margin pts to ${net2 > 0 ? g.home.abbr : g.away.abbr}${moved ? ` · ${(g.cons * 100).toFixed(0)}%→${(g.consInj * 100).toFixed(0)}% ${g.consInj >= 0.5 ? g.home.abbr : g.away.abbr}` : ""}`;
-        injRow = `<div style="margin-top:8px;background:rgba(255,71,87,0.07);border:1px solid rgba(255,71,87,0.25);border-radius:9px;padding:6px 10px;font-size:10.5px;color:#ff97a0;font-weight:700;">⚠ INJURY REPORT · ${sA}${sA && sH ? " · " : ""}${sH} <span style="color:var(--amber);font-weight:700;">${netTxt}</span> <span style="color:var(--dim3);font-weight:600;">(−pts = that player's recent production as margin points, capped)</span></div>`;
+        const nOut = (g.injA?.det?.length || 0) + (g.injH?.det?.length || 0);
+        injRow = `<button class="whybtn" data-why data-injbtn="1" style="color:#ff97a0;">▸ ⚠ INJURY REPORT — ${nOut} OUT</button><div class="whybox"><div data-injbox="1" style="background:rgba(255,71,87,0.07);border:1px solid rgba(255,71,87,0.25);border-radius:9px;padding:6px 10px;font-size:10.5px;color:#ff97a0;font-weight:700;">${sA}${sA && sH ? " · " : ""}${sH} <span style="color:var(--amber);font-weight:700;">${netTxt}</span> <span style="color:var(--dim3);font-weight:600;">(−pts = that player's recent production as margin points, capped)</span></div></div>`;
       }
     } catch (e) {}
     if (!g.completed && !g.live && g.cons != null) { // 10a team slip — the pick's color washes the card, same as MLB
@@ -6790,10 +6844,10 @@ async function oddsTick() {
    truth-checked) + spread & total models + the most common props per sport.
    ================================================================ */
 const GS_CFG = {
-  nfl: { name: "NFL", emoji: "🏈", path: "football/nfl", teamCap: 40, mSig: 13.5, tSig: 13.8, eloHFA: 48, eloK: 20, pyx: 2.37, hb: 0.055, btMin: 3, props: [["player_pass_yds", "PASS YDS"], ["player_pass_tds", "PASS TDs"], ["player_rush_yds", "RUSH YDS"], ["player_receptions", "RECEPTIONS"], ["player_reception_yds", "REC YDS"], ["player_anytime_td", "ANYTIME TD"]], oa: "americanfootball_nfl" },
-  nba: { name: "NBA", emoji: "🏀", path: "basketball/nba", teamCap: 40, mSig: 12, tSig: 18.5, eloHFA: 70, eloK: 14, pyx: 13.91, hb: 0.045, btMin: 8, props: [["player_points", "POINTS"], ["player_rebounds", "REBOUNDS"], ["player_assists", "ASSISTS"], ["player_threes", "3-POINTERS"], ["player_points_rebounds_assists", "PRA"]], oa: "basketball_nba" },
+  nfl: { name: "NFL", emoji: "🏈", path: "football/nfl", inj: "flag", weekly: true, expTeams: 32, priSeason: true, priMin: 200, seedIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 33, 34], teamCap: 40, mSig: 13.5, tSig: 13.8, eloHFA: 48, eloK: 20, pyx: 2.37, hb: 0.055, btMin: 3, props: [["player_pass_yds", "PASS YDS"], ["player_pass_tds", "PASS TDs"], ["player_rush_yds", "RUSH YDS"], ["player_receptions", "RECEPTIONS"], ["player_reception_yds", "REC YDS"], ["player_anytime_td", "ANYTIME TD"]], oa: "americanfootball_nfl" },
+  nba: { name: "NBA", emoji: "🏀", path: "basketball/nba", propRec: true, inj: "price", expTeams: 30, priSeason: true, seasonEnd: true, priMin: 800, seedIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30], teamCap: 40, mSig: 12, tSig: 18.5, eloHFA: 70, eloK: 14, pyx: 13.91, hb: 0.045, btMin: 8, props: [["player_points", "POINTS"], ["player_rebounds", "REBOUNDS"], ["player_assists", "ASSISTS"], ["player_threes", "3-POINTERS"], ["player_points_rebounds_assists", "PRA"]], oa: "basketball_nba" },
   cbb: { name: "CBB", emoji: "🎓", path: "basketball/mens-college-basketball", teamCap: 0, mSig: 11, tSig: 16.5, eloHFA: 90, eloK: 16, pyx: 11.5, hb: 0.06, btMin: 6, props: [["player_points", "POINTS"], ["player_rebounds", "REBOUNDS"], ["player_assists", "ASSISTS"]], oa: "basketball_ncaab" },
-  nhl: { name: "NHL", emoji: "🏒", path: "hockey/nhl", teamCap: 40, mSig: 2.25, tSig: 2.0, eloHFA: 33, eloK: 8, pyx: 2.15, hb: 0.045, btMin: 8, props: [["player_shots_on_goal", "SHOTS ON GOAL"], ["player_points", "POINTS"], ["player_goals", "GOALS"], ["player_total_saves", "GOALIE SAVES"]], oa: "icehockey_nhl" },
+  nhl: { name: "NHL", emoji: "🏒", path: "hockey/nhl", inj: "flag", expTeams: 32, priSeason: true, seasonEnd: true, priMin: 800, teamCap: 40, mSig: 2.25, tSig: 2.0, eloHFA: 33, eloK: 8, pyx: 2.15, hb: 0.045, btMin: 8, props: [["player_shots_on_goal", "SHOTS ON GOAL"], ["player_points", "POINTS"], ["player_goals", "GOALS"], ["player_total_saves", "GOALIE SAVES"]], oa: "icehockey_nhl" },
   cfb: { name: "CFB", emoji: "🏟️", path: "football/college-football", teamCap: 0, grp: 80, wkRe: true, spFirst: true, mSig: 16, tSig: 15.5, eloHFA: 90, eloK: 22, pyx: 2.37, hb: 0.065, btMin: 3, props: [["player_pass_yds", "PASS YDS"], ["player_rush_yds", "RUSH YDS"], ["player_reception_yds", "REC YDS"], ["player_anytime_td", "ANYTIME TD"]], oa: "americanfootball_ncaaf" },
   epl: { name: "EPL", emoji: "⚽", path: "soccer/eng.1", teamCap: 30, soccer: true, mSig: 1.75, tSig: 1.7, eloHFA: 55, eloK: 18, pyx: 1.35, hb: 0.06, btMin: 4, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"], ["player_shots", "SHOTS"]], oa: "soccer_epl" },
   mls: { name: "MLS", emoji: "🇺🇸", path: "soccer/usa.1", teamCap: 40, soccer: true, mSig: 1.85, tSig: 1.8, eloHFA: 60, eloK: 18, pyx: 1.35, hb: 0.065, btMin: 4, props: [["player_goal_scorer_anytime", "ANYTIME GOALSCORER"], ["player_shots_on_target", "SHOTS ON TARGET"]], oa: "soccer_usa_mls" },
@@ -6818,7 +6872,10 @@ const GS_PSTATS = {
     { k: "REB", n: "REBOUNDS", sort: "offensive.avgRebounds", lab: "REB", fl: 2.2, cls: "count" },
     { k: "AST", n: "ASSISTS", sort: "offensive.avgAssists", lab: "AST", fl: 1.7, cls: "count" },
     { k: "TPM", n: "3-POINTERS", sort: "offensive.avgPoints", lab: "3PT", made: true, fl: 0.9, cls: "count" },
-    { k: "PRA", n: "PRA", sort: "offensive.avgPoints", labs: ["PTS", "REB", "AST"], fl: 5.5, cls: "big" }
+    { k: "PRA", n: "PRA", sort: "offensive.avgPoints", labs: ["PTS", "REB", "AST"], fl: 5.5, cls: "big" },
+    { k: "PR", n: "P+R", sort: "offensive.avgPoints", labs: ["PTS", "REB"], fl: 4.8, cls: "big" },
+    { k: "RA", n: "R+A", sort: "offensive.avgRebounds", labs: ["REB", "AST"], fl: 3.4, cls: "big" },
+    { k: "PA", n: "P+A", sort: "offensive.avgPoints", labs: ["PTS", "AST"], fl: 4.4, cls: "big" }
   ],
   cbb: [
     { k: "PTS", n: "POINTS", sort: "offensive.avgPoints", lab: "PTS", fl: 4, cls: "big" },
@@ -6920,7 +6977,7 @@ function pmBacktest(players, cls) { // walk-forward per player at rolling-median
 }
 function genTabs(sp) {
   const ps = GS_PSTATS[sp] || [];
-  return [["gen:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
+  return [["gen:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ...ps.map(p => ["gen:pstat:" + p.k, p.n]), ...(DVP_CFG[sp] ? [["gen:dvp", "DEF VS POS"]] : []), ["gen:eff", "EFFICIENCY"], ["gen:rec", "MODEL RECORDS"], ["gen:how", "HOW IT WORKS"]];
 }
 function glParse(gl) { // shared ESPN gamelog shape: combined labels + per-category offsets (football) or flat labels (everything else)
   const labels = gl?.labels || [];
@@ -6945,7 +7002,7 @@ function glIdx(parsed, ps) { // resolve which stats-column a prop stat lives in
   if (ps.labs) return ps.labs.map(l2 => find1(l2));
   return tryLabs(ps.lab);
 }
-function glVals(parsed, ps) { // per-game values, most recent first
+function glVals(parsed, ps, full) { // per-game values, most recent first (full=true: whole season, for backtests)
   const idx = glIdx(parsed, ps);
   const pick = (row, i2) => { const v = row.stats[i2]; if (v == null) return NaN; const s2 = String(v); const m2 = ps.made ? s2.match(/^(\d+)[-–]/) : null; return m2 ? +m2[1] : num(s2); };
   const out = [];
@@ -6955,7 +7012,7 @@ function glVals(parsed, ps) { // per-game values, most recent first
     else { if (idx < 0) return []; v = pick(row, idx); }
     if (isFinite(v)) out.push(v);
   }
-  return out.slice(0, 18);
+  return full ? out : out.slice(0, 18);
 }
 async function genPropsLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
@@ -7012,6 +7069,7 @@ async function genPropsLoad(sp) {
       }
       s.pReady = true; s.pLoading = false; renderGen(); return;
     }
+    if (cfg.inj && s.injAt == null) { try { await genInjuries(sp); } catch (e2) {} }
     const lists = {};
     for (const ps of GS_PSTATS[sp] || []) {
       if (lists[ps.sort]) continue;
@@ -7033,16 +7091,24 @@ async function genPropsLoad(sp) {
       const arr = [];
       for (const src of (lists[ps.sort] && lists[ps.sort].length ? lists[ps.sort] : players)) {
         const g2 = s._gl[src.id]; if (!g2) continue;
+        const ij = cfg.inj ? genInjOf(sp, src) : null;
+        if (ij && /^out/i.test(ij.status || "")) continue; // ruled out — no projection, no card
         const vals = glVals(g2.parsed, ps);
         if (vals.length < 5) continue;
         const recent = vals.slice(0, 5);
         const proj = 0.6 * mean(recent) + 0.4 * mean(vals);
         const sigma = Math.max(ps.fl, sd(vals));
         const cv = mean(vals) > 0 ? sd(vals) / mean(vals) : 9;
-        arr.push({ id: src.id, name: src.name, team: src.team, hs: src.hs, vals, proj, sigma, last5: mean(recent), season: mean(vals), grade: cv <= 0.35 ? "A" : cv <= 0.55 ? "B" : cv <= 0.8 ? "C" : "D" });
+        arr.push({ id: src.id, name: src.name, team: src.team, hs: src.hs, vals, proj, sigma, last5: mean(recent), season: mean(vals), grade: cv <= 0.35 ? "A" : cv <= 0.55 ? "B" : cv <= 0.8 ? "C" : "D", inj: ij && /^(doubt|quest|day)/i.test(ij.status || "") ? ij.status : null });
       }
       arr.sort((a2, b2) => (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
       s.pdata[ps.k] = arr;
+    }
+    s.pFull = {}; // whole-season logs per prop (newest first) → feeds the PLAYER PROP MODELS backtest on MODEL RECORDS
+    for (const ps of GS_PSTATS[sp] || []) {
+      const full = [];
+      for (const id2 in s._gl) { const v3 = glVals(s._gl[id2].parsed, ps, true); if (v3.length >= 8) full.push({ id: +id2, name: s._gl[id2].p.name, vals: v3 }); }
+      s.pFull[ps.k] = full;
     }
     s.pReady = true;
   } catch (e2) { s.pErr = e2.message; }
@@ -7062,24 +7128,18 @@ function genEnsure(sp) {
   const s = gSlot(sp); if (need(s)) genLoad(sp);
 }
 const socLg = () => (hasLS && localStorage.getItem("kb_soclg")) || "ALL";
-function genNextBtn(sp) { // ⏭ jump to the next date this sport plays — works from cache even mid-load
-  const subs = GS_CFG[sp].combo || [sp];
-  let list = subs.flatMap(k2 => { const s3 = gSlot(k2); const a2 = (s3.calendar || []).slice(); if (s3.nextDay) a2.push(s3.nextDay); return a2; });
-  if (hasLS) for (const k2 of subs) {
-    try { const sv = JSON.parse(localStorage.getItem("kb_gcaldr_" + k2) || "null"); if (sv) list = list.concat(sv); } catch (e) {}
-    try { const nv = JSON.parse(localStorage.getItem("kb_gnext_" + k2) || "null"); if (nv) list.push(nv); } catch (e) {}
-  }
-  const dates = [...new Set(list)].sort();
-  const nx = dates.find(d2 => d2 > S.date);
-  if (!nx) return null;
-  const nb = el("button", null, `⏭ NEXT ${GS_CFG[sp].name} GAME DAY — ${nx}`);
-  nb.className = "btn";
-  nb.addEventListener("click", () => {
+function genNextBtn(sp) { // ⏭ jump to the next date this sport REALLY plays — verified against the scoreboard when tapped, never a guess
+  const nb = el("button", null, `⏭ NEXT ${GS_CFG[sp].name} GAME DAY`); nb.className = "btn";
+  nb.addEventListener("click", async () => {
+    nb.disabled = true; const old = nb.textContent; nb.textContent = "⏭ finding…";
+    const nx = await nextGameDay().catch(() => null);
+    nb.disabled = false; nb.textContent = old;
+    if (!nx) { setStatus(`Couldn't confirm the next ${GS_CFG[sp].name} game day — ESPN's schedule didn't answer for every day it needed to check (or there are none for months). Nothing was changed; try again in a moment.`, true); return; }
     const dp = $("#datePick");
     if (dp) { dp.value = nx; dp.dispatchEvent(new Event("change")); } else { S.date = nx; }
-    for (const sub of subs) gSlot(sub).loaded = false;
+    for (const sub of GS_CFG[sp].combo || [sp]) gSlot(sub).loaded = false;
     genEnsure(sp);
-    setStatus(`Jumped to ${nx} — the whole app now shows that date (date picker up top to come back).`);
+    setStatus(`Jumped to ${nx} — the next ${GS_CFG[sp].name} game day. The date picker up top brings you back.`);
   });
   return nb;
 }
@@ -7088,37 +7148,100 @@ async function genFetchResults(sp) { // season results in gentle chunks — para
   const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
   const tms = Object.values(s.teams);
   if (!tms.length || !(cfg.teamCap > 0) || tms.length > cfg.teamCap) return;
-  let failed = 0;
-  const CH = 6;
-  for (let i = 0; i < tms.length; i += CH) {
-    await Promise.all(tms.slice(i, i + CH).map(async tm => {
-      for (let att = 0; att < 2; att++) {
-        try {
-          const sc = await j(`${base}/teams/${tm.id}/schedule`);
-          tm.res = [];
-          for (const ev of sc?.events || []) {
-            const c = ev.competitions?.[0]; if (!c || !c.status?.type?.completed) continue;
-            const home = (c.competitors || []).find(x => x.homeAway === "home"), away = (c.competitors || []).find(x => x.homeAway === "away");
-            if (!home || !away || home.score?.value == null || away.score?.value == null) continue;
-            tm.res.push({ id: ev.id, d: (ev.date || "").slice(0, 10), hId: +home.id, aId: +away.id, hs: +home.score.value, as: +away.score.value });
+  let failed = 0, expanded = false;
+  const CH = 6, found = {};
+  const fetchOne = async tm => {
+    for (let att = 0; att < 2; att++) {
+      try {
+        const sc = await j(`${base}/teams/${tm.id}/schedule`);
+        const tt0 = sc?.team; if (tt0?.id) { tm.abbr = tt0.abbreviation || tm.abbr; tm.name = tt0.displayName || tm.name; tm.logo = tt0.logo || tt0.logos?.[0]?.href || tm.logo; if (tt0.color) tm.color = "#" + String(tt0.color).replace("#", ""); }
+        if (tm._seed && !(sc?.events || []).length) { tm._bad = true; return; } // a fixed-id seed with no schedule isn't a team
+        tm.res = [];
+        for (const ev of sc?.events || []) {
+          const c = ev.competitions?.[0];
+          for (const cp of c?.competitors || []) { // every team named in a schedule is a team we should have (the team-list feed may have failed or been thin)
+            const tt = cp.team || {}, id = +(tt.id ?? cp.id);
+            if (id && !s.teams[id] && !found[id]) found[id] = { id, abbr: tt.abbreviation || (tt.shortDisplayName || "").slice(0, 4).toUpperCase(), name: tt.displayName || tt.shortDisplayName || String(id), logo: tt.logo || tt.logos?.[0]?.href || "", color: tt.color ? "#" + String(tt.color).replace("#", "") : "" };
           }
-          return;
-        } catch (e) { if (att === 1) failed++; else await new Promise(r => setTimeout(r, 700)); }
-      }
-    }));
-    if (i + CH < tms.length) await new Promise(r => setTimeout(r, 220));
+          if (!c || !c.status?.type?.completed) continue;
+          const home = (c.competitors || []).find(x => x.homeAway === "home"), away = (c.competitors || []).find(x => x.homeAway === "away");
+          if (!home || !away || home.score?.value == null || away.score?.value == null) continue;
+          tm.res.push({ id: ev.id, d: (ev.date || "").slice(0, 10), hId: +home.id, aId: +away.id, hs: +home.score.value, as: +away.score.value });
+        }
+        return;
+      } catch (e) { if (att === 1) failed++; else await new Promise(r => setTimeout(r, 700)); }
+    }
+  };
+  let pending = tms;
+  for (let pass = 0; pass < 4 && pending.length; pass++) {
+    for (let i = 0; i < pending.length; i += CH) {
+      await Promise.all(pending.slice(i, i + CH).map(fetchOne));
+      if (i + CH < pending.length) await new Promise(r => setTimeout(r, 220));
+    }
+    pending = []; const room = cfg.teamCap - Object.keys(s.teams).length;
+    for (const id in found) { if (pending.length >= room) break; if (!s.teams[id]) { s.teams[id] = found[id]; pending.push(s.teams[id]); expanded = true; } delete found[id]; }
   }
+  for (const id in s.teams) if (s.teams[id]._bad) delete s.teams[id];
+  if ((expanded || tms.some(t3 => t3._seed)) && hasLS) { try { kbSet("kb_gteams_" + sp, JSON.stringify(Object.values(s.teams).map(t3 => ({ id: t3.id, abbr: t3.abbr, name: t3.name, logo: t3.logo, color: t3.color })))); } catch (e) {} }
   const seen = {}; s.results = [];
-  for (const tm of tms) for (const r of tm.res || []) if (!seen[r.id]) { seen[r.id] = 1; s.results.push(r); }
+  for (const tm of Object.values(s.teams)) for (const r of tm.res || []) if (!seen[r.id]) { seen[r.id] = 1; s.results.push(r); }
   s.results.sort((a, b) => a.d < b.d ? -1 : 1);
   if (failed) s.errors.push(`results: ${failed} schedule(s) failed`);
   if (s.results.length >= 12) { if (hasLS) try { kbSet("kb_gres_" + sp, JSON.stringify({ d: S.date, res: s.results })); } catch (e) {} }
   else if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null"); if (sv?.res?.length > s.results.length) { s.results = sv.res; s.errors.push(`results served from your saved copy (${sv.d})`); } } catch (e) {} }
+  genFitNow(sp);
+}
+/* ---------- LAST SEASON'S REPLAY (NBA · NFL · NHL) ----------
+   The team-model backtest only grades a game once BOTH teams have `btMin` prior games, so early in a season the moneyline / spread / total
+   records are empty ("records build as seasons run"). Last season's completed games fix that: fetched ONCE (every team's ?season=<last year>
+   schedule), saved for good in kb_gpri_<sport> (a finished season never changes), and fed to the same walk-forward fit — genFit already
+   regresses Elo / scoring / form at the season boundary. They warm the models and fill the records; every other tab still sees only THIS season. */
+function genSeasonYears(sp) { const cfg = GS_CFG[sp], d = (gSlot(sp).dateLoaded || S.date || localISO(new Date())), y = +d.slice(0, 4), m = +d.slice(5, 7); const cur = cfg.seasonEnd ? (m >= 7 ? y + 1 : y) : (m < 6 ? y - 1 : y); return { cur, pri: cur - 1 }; }
+function genPriorLoad(sp) { // saved copy → s.pri (cheap, synchronous)
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.priSeason || (s.pri && s.pri.length) || !hasLS) return;
+  try { const sv = JSON.parse(localStorage.getItem("kb_gpri_" + sp) || "null"), yr = genSeasonYears(sp).pri;
+    if (sv && sv.yr === yr && sv.res && sv.res.length >= cfg.priMin) { s.pri = sv.res.map(a => ({ id: "p" + a[0], d: a[1], hId: a[2], aId: a[3], hs: a[4], as: a[5] })); s.priYr = yr; s.priN = s.pri.length; } } catch (e) {}
+}
+async function genPriorSeason(sp) { // one-time fetch of last season (background; never blocks the board)
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.priSeason || s._priBusy || (s.pri && s.pri.length)) return;
+  genPriorLoad(sp); if (s.pri && s.pri.length) return;
+  if (!Object.keys(s.teams || {}).length) return;
+  s._priBusy = true; const yr = genSeasonYears(sp).pri, base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`, seen = {}, res = [];
+  try {
+    const ids = Object.keys(s.teams);
+    for (let i = 0; i < ids.length; i += 6) {
+      await Promise.all(ids.slice(i, i + 6).map(async id => {
+        try {
+          const sc = await j(`${base}/teams/${id}/schedule?season=${yr}`);
+          for (const ev of sc?.events || []) {
+            const c = ev.competitions?.[0]; if (!c?.status?.type?.completed || seen[ev.id]) continue;
+            const h = (c.competitors || []).find(x => x.homeAway === "home"), a = (c.competitors || []).find(x => x.homeAway === "away");
+            if (!h || !a || h.score?.value == null || a.score?.value == null) continue;
+            seen[ev.id] = 1; res.push([String(ev.id), (ev.date || "").slice(0, 10), +h.id, +a.id, +h.score.value, +a.score.value]);
+          }
+        } catch (e) {}
+      }));
+      if (i + 6 < ids.length) await new Promise(r => setTimeout(r, 220));
+    }
+    if (res.length >= cfg.priMin) { // a partial answer is NOT used or saved (it would give a lopsided warm-up) — it is simply retried next time
+      res.sort((x, y) => (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0));
+      kbSet("kb_gpri_" + sp, JSON.stringify({ yr, res }));
+      s.pri = res.map(a => ({ id: "p" + a[0], d: a[1], hId: a[2], aId: a[3], hs: a[4], as: a[5] })); s.priYr = yr; s.priN = s.pri.length; s.curN = s.results.length;
+      genFitNow(sp); for (const g of s.games || []) { try { genPredict(sp, g); } catch (e) {} } genRenderIf(sp);
+    } else s._priPartial = res.length;
+  } catch (e) {}
+  s._priBusy = false;
+}
+function genFitNow(sp) { // fit the models on s.results (seeded from last season), then calibrate — used after a live fetch AND for the instant saved-copy start
+  const s = gSlot(sp);
   // prior-season Elo seed: last season's final ratings, half-regressed, so early-season boards aren't blind
   let seed = null;
   const seasonYr = s.results.length ? +String(s.results[s.results.length - 1].d).slice(0, 4) : null;
   if (hasLS && seasonYr) { try { const sv2 = JSON.parse(localStorage.getItem("kb_geloseed_" + sp) || "null"); if (sv2?.elo && sv2.yr < seasonYr) seed = sv2.elo; } catch (e) {} }
-  try { s.bt = genFit(sp, s.results, seed); } catch (e) { s.errors.push("models: " + e.message); }
+  genPriorLoad(sp); // last season's saved results (if any) — they only warm the models; s.results stays THIS season
+  const fitRes = s.pri && s.pri.length ? s.pri.concat(s.results) : s.results;
+  if (s.pri && s.pri.length) { s.priN = s.pri.length; s.curN = s.results.length; }
+  try { s.bt = genFit(sp, fitRes, s.pri && s.pri.length ? null : seed); } catch (e) { s.errors.push("models: " + e.message); }
   if (hasLS && seasonYr && s.results.length >= 60 && s.bt?.state?.elo) { try { kbSet("kb_geloseed_" + sp, JSON.stringify({ yr: seasonYr, elo: s.bt.state.elo })); } catch (e) {} }
   genPostFit(sp);
 }
@@ -7241,9 +7364,16 @@ function genRenderIf(sp) { // background loads must never repaint the page you'r
 }
 async function genLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
-  s.loading = true; s._t0 = Date.now(); s.dateLoaded = S.date || localISO(new Date()); s.errors = []; s.games = []; s.results = []; s.teams = {};
+  s.loading = true; s._t0 = Date.now(); s.dateLoaded = S.date || localISO(new Date()); s.errors = []; s.games = []; s.results = []; s.teams = {}; s.sbOK = false;
   s.stage = "team list…"; genRenderIf(sp);
   const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`;
+  // these don't depend on the season-results stage (30 team schedules, the slow part) — start them NOW so they overlap with it instead of queueing behind it
+  const sbEarly = genSbChain(sp, S.date).catch(() => null);
+  const injEarly = cfg.inj ? (async () => {
+    await genInjuries(sp);
+    if (cfg.inj === "price") { const sbj = await sbEarly; const ids = new Set(); for (const ev of sbj?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) if (cp.team?.id) ids.add(+cp.team.id); await genInjProd(sp, ids); }
+  })().catch(() => {}) : null;
+  const weekEarly = cfg.weekly ? genWeekGames(sp).catch(() => {}) : null;
   // hydrate from cache FIRST — the page is useful (and the ⏭ jump button live) before the network even answers
   if (hasLS) {
     try { const sv = JSON.parse(localStorage.getItem("kb_gteams_" + sp) || "null"); if (sv) for (const t of sv) s.teams[t.id] = t; } catch (e) {}
@@ -7255,7 +7385,7 @@ async function genLoad(sp) {
     const tlLimit = cfg.teamCap === 0 ? 500 : Math.max(40, cfg.teamCap + 8); // small payloads survive flaky relays far better
     const tlTries = hadCache ? 1 : 4; // with a cache in hand, don't make the user wait on retries
     for (let att = 0; att < tlTries && !tl; att++) {
-      try { tl = await j(`${base}/teams?limit=${tlLimit}`); }
+      try { tl = await j([`${base}/teams?limit=${tlLimit}`, `${base}/teams`, `https://site.web.api.espn.com/apis/site/v2/sports/${cfg.path}/teams`, `${base}/teams?limit=${tlLimit}`][att % 4]); }
       catch (e) { tlErr = e.message; if (att < tlTries - 1) await new Promise(r => setTimeout(r, 1200 + att * 900)); }
     }
     if (!tl && hadCache) tlErr = null; // cache carries the day silently
@@ -7270,18 +7400,33 @@ async function genLoad(sp) {
     }
     if (!Object.keys(s.teams).length) { // team list AND cache both gone — seed from the scoreboard BEFORE the per-team stages so results & models still run
       try {
-        const sb0 = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=300&groups=${cfg.grp || 50}` : ""}`);
-        for (const ev of sb0?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) {
+        const seedFrom = sbx => { for (const ev of sbx?.events || []) for (const cp of ev.competitions?.[0]?.competitors || []) {
           const t = cp.team; if (!t?.id) continue;
           s.teams[+t.id] = { id: +t.id, abbr: t.abbreviation || (t.shortDisplayName || "").slice(0, 4).toUpperCase(), name: t.displayName, logo: t.logo || t.logos?.[0]?.href || "", color: t.color ? "#" + String(t.color).replace("#", "") : "" };
+        } };
+        seedFrom((await sbEarly) || await genSbChain(sp, S.date).catch(() => null));
+        if (!Object.keys(s.teams).length) { // nothing is scheduled that day (an off day) → the nearest days that have games; one team is enough, its schedule names every opponent
+          const d0 = S.date || localISO(new Date());
+          const near = await Promise.all([-1, 1, -2, 2, -3, 3, -5, 5].map(o => j(`${base}/scoreboard?dates=${addDays(d0, o).replace(/-/g, "")}`).catch(() => null)));
+          for (const sbn of near) seedFrom(sbn);
+        }
+        if (!Object.keys(s.teams).length && cfg.seedIds) { // still nothing: bootstrap from the league's fixed ids — real names/logos come from each team's own schedule below
+          for (const id of cfg.seedIds) s.teams[id] = { id, abbr: "T" + id, name: "Team " + id, logo: "", color: "", _seed: true };
+          s.errors.push("ℹ team list unreachable — started from the league's fixed team ids");
         }
         if (Object.keys(s.teams).length) s.errors = s.errors.map(e2 => /^team list:/.test(e2) ? "ℹ team list feed hiccuped — teams seeded from today's scoreboard, models still run" : e2);
       } catch (e) {}
     }
     const nT = Object.keys(s.teams).length;
     if (cfg.teamCap > 0 && nT > 0 && nT <= cfg.teamCap) { // full season results only for small leagues
-      s.stage = "season results (every team's schedule)…"; genRenderIf(sp);
-      await genFetchResults(sp);
+      let fast = false;
+      if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gres_" + sp) || "null"); if (sv?.res?.length >= 30 && sv.d && sv.d >= addDays(S.date || localISO(new Date()), -2)) { s.results = sv.res; genFitNow(sp); fast = !!s.bt?.n; } } catch (e) {} }
+      if (fast) { // numbers on screen now; today's finished games are folded in when the live copy lands
+        s._swr = genFetchResults(sp).then(() => { for (const g of s.games || []) { try { genPredict(sp, g); } catch (e2) {} } s._swr = null; genRenderIf(sp); }).catch(() => { s._swr = null; });
+      } else {
+        s.stage = "season results (every team's schedule)…"; genRenderIf(sp);
+        await genFetchResults(sp);
+      }
     }
     // safety net: if the team list itself never arrived (hostile networks), a saved results copy still powers models & records
     if (cfg.teamCap > 0 && (!s.bt || !s.bt.n) && hasLS) {
@@ -7299,12 +7444,13 @@ async function genLoad(sp) {
   }
   s.stage = "today's games & odds…"; genRenderIf(sp);
   try {
-    let sb = null, sbErr = null;
+    let sb = await sbEarly, sbErr = null;
     for (let att = 0; att < 2 && !sb; att++) {
-      try { sb = await j(`${base}/scoreboard?dates=${(S.date || localISO(new Date())).replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=300&groups=${cfg.grp || 50}` : ""}`); }
+      try { sb = await genSbChain(sp, S.date); }
       catch (e) { sbErr = e; if (att === 0) await new Promise(r => setTimeout(r, 1200)); }
     }
     if (!sb) throw sbErr || new Error("scoreboard unavailable");
+    s.sbOK = true; // the schedule answered — if it lists nothing, there really are no games
     // capture the league calendar → powers the "next game day" jump (NFL nests weeks inside entries)
     try {
       const flat = [];
@@ -7332,6 +7478,8 @@ async function genLoad(sp) {
       }
       return g;
     }).filter(g => g.home && g.away);
+    try { if (injEarly) await injEarly; } catch (e2) {}
+    try { if (weekEarly) await weekEarly; } catch (e2) {}
     if (s.bt?.state) for (const g of s.games) genPredict(sp, g);
   } catch (e) { s.errors.push("scoreboard: " + e.message); }
   // NEXT-GAME-DAY guarantee, three layers deep:
@@ -7354,22 +7502,7 @@ async function genLoad(sp) {
       if (evD.length) s.nextDay = evD[0];
     } catch (e) {}
   }
-  if (!hasFuture()) {
-    let cachedNx = null;
-    if (hasLS) try { const sv = JSON.parse(localStorage.getItem("kb_gnext_" + sp) || "null"); if (sv && sv > S.date) cachedNx = sv; } catch (e) {}
-    if (cachedNx) s.nextDay = cachedNx;
-    else {
-      for (const off of [7, 14, 21, 30, 45, 60, 90]) {
-        try {
-          const dd = addDays(S.date, off);
-          const sb3 = await j(`${base}/scoreboard?dates=${dd.replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=50&groups=${cfg.grp || 50}` : ""}`);
-          const dts = (sb3?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(Boolean).sort();
-          if (dts.length) { s.nextDay = dts[0] > S.date ? dts[0] : dd; break; }
-        } catch (e) {}
-      }
-    }
-  }
-  if (s.nextDay && hasLS) { try { localStorage.setItem("kb_gnext_" + sp, JSON.stringify(s.nextDay)); } catch (e) {} }
+  // (no guessed +7/+14/+30-day probes here any more — nextGameDay() verifies a real game day against the scoreboard when you ask for it)
   if (s.calendar?.length && hasLS) { try { localStorage.setItem("kb_gcaldr_" + sp, JSON.stringify(s.calendar)); } catch (e) {} }
   else if (hasLS) { try { const sv = JSON.parse(localStorage.getItem("kb_gcaldr_" + sp) || "null"); if (sv?.length) s.calendar = sv; } catch (e) {} }
   // self-healing: a totally failed load retries itself — no button-pressing required
@@ -7385,6 +7518,7 @@ async function genLoad(sp) {
     setTimeout(async () => { if (s.bt?.n) return; await (cfg.wkRe ? genSeasonReplay(sp) : genFetchResults(sp)); if (s.bt?.state) for (const g of s.games) genPredict(sp, g); if (whyOpenNow()) { GX._dirty = 1; } else genRenderIf(sp); }, 14000);
   }
   s.loaded = true; s.loading = false;
+  if (cfg.priSeason && !s._priTried && !(s.pri && s.pri.length) && (!s.bt || s.bt.n < 300)) { s._priTried = true; setTimeout(() => { try { genPriorSeason(sp); } catch (e) {} }, 3500); } // thin record → warm it with last season (once, saved)
   sportDots();
   if (whyOpenNow()) { GX._dirty = 1; } else genRenderIf(sp);
   // LOCKS/VALUE live on their own tabs — refresh them when a sport lands so its plays appear without a re-tap
@@ -7536,6 +7670,568 @@ function genFit(sp, results, seed) { // generic walk-forward: Elo + Pythag + For
   bt.state = { elo, cum, hist, lastP };
   return bt;
 }
+/* ---------- INJURY REPORT (generic sports) — mirrors the WNBA design ----------
+   inj:"price" (NBA): ESPN's league injury report is fetched every load; a player ruled OUT (Doubtful counts 75%) costs his team
+   margin points = K × his recent PRA (from his own game log), capped per player and per team, then the calibrated win probability
+   is shifted through the same margin bell the spread model uses. Questionable is shown but never priced.
+   inj:"flag" (NFL / NHL): the report is fetched and SHOWN on the cards, the model is NOT adjusted (no production proxy yet) — and says so.
+   The constants are judgment, not fitted (there is no historical injury data to replay) — hard caps keep any one name from dominating. */
+const GS_INJ = { nba: { k: 0.15, capP: 5.5, capT: 9, doubtful: 0.75 } };
+async function genInjuries(sp) {
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.inj) return;
+  try {
+    const js = await j(`https://site.api.espn.com/apis/site/v2/sports/${cfg.path}/injuries`);
+    if (!Array.isArray(js?.injuries)) throw new Error("the injury feed answered in a shape I don't recognise");
+    const inj = {}, byTeam = {}; let n = 0;
+    for (const t of js.injuries) {
+      const tid = +t.id;
+      for (const e of t.injuries || []) {
+        const ath = e.athlete || {};
+        let aid = ath.id != null ? String(ath.id) : null;
+        if (!aid) { const m = JSON.stringify(ath.links || "").match(/\/id\/(\d+)\//); if (m) aid = m[1]; }
+        const ent = { id: aid, status: e.status || "?", note: e.shortComment || "", name: ath.displayName || "", team: tid };
+        if (aid) inj[aid] = ent;
+        if (ent.name) inj["n:" + ent.name.toLowerCase()] = ent;
+        (byTeam[tid] = byTeam[tid] || []).push(ent); n++;
+      }
+    }
+    s.inj = inj; s.injTeam = byTeam; s.injN = n; s.injOK = true; s.injStale = false; s.injAt = Date.now();
+    kbSet("kb_ginj_" + sp, JSON.stringify({ t: Date.now(), inj, byTeam, n }));
+  } catch (e) {
+    s.injOK = false;
+    try { const sv = hasLS ? JSON.parse(localStorage.getItem("kb_ginj_" + sp) || "null") : null; if (sv && Date.now() - sv.t < 6 * 36e5) { s.inj = sv.inj; s.injTeam = sv.byTeam; s.injN = sv.n; s.injOK = true; s.injStale = true; } } catch (e2) {}
+    s.injAt = Date.now(); s.injErr = String(e.message || e);
+  }
+}
+function genInjOf(sp, p) { const s = gSlot(sp); return (s.inj && (s.inj[String(p.id)] || s.inj["n:" + (p.name || "").toLowerCase()])) || null; }
+async function genInjProd(sp, playingIds) { // production of every OUT/DOUBTFUL player on tonight's teams — his own recent PRA, so a star costs more than a bench piece
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || cfg.inj !== "price" || !s.injTeam) return;
+  s.injProd = s.injProd || {};
+  try { const sv = hasLS ? JSON.parse(localStorage.getItem("kb_ginjp_" + sp) || "null") : null; if (sv && sv.d === S.date) for (const k2 in sv.v) if (!s.injProd[k2]) s.injProd[k2] = sv.v[k2]; } catch (e) {}
+  const playing = playingIds || new Set(); if (!playingIds) for (const g of s.games || []) if (!g.completed) { playing.add(+g.home.id); playing.add(+g.away.id); }
+  const want = []; for (const tid of playing) for (const e of s.injTeam[tid] || []) if (/^(out|doubt)/i.test(e.status || "") && e.id && !s.injProd[e.id]) want.push(e);
+  const praDef = (GS_PSTATS[sp] || []).find(x => x.k === "PRA"); if (!praDef) return;
+  const web = `https://site.web.api.espn.com/apis/common/v3/sports/${cfg.path}`;
+  for (let i = 0; i < Math.min(want.length, 30); i += 6) {
+    await Promise.all(want.slice(i, i + 6).map(async e => {
+      try { const v = glVals(glParse(await j(`${web}/athletes/${e.id}/gamelog`)), praDef, false).slice(0, 10); if (v.length >= 3) s.injProd[e.id] = { pra: mean(v), n: v.length }; } catch (e2) {}
+    }));
+  }
+  if (hasLS) { try { const keep = {}; for (const k2 in s.injProd) if (s.injProd[k2]) keep[k2] = s.injProd[k2]; localStorage.setItem("kb_ginjp_" + sp, JSON.stringify({ d: S.date, v: keep })); } catch (e) {} }
+}
+async function genInjStage(sp) { const cfg = GS_CFG[sp]; if (!cfg || !cfg.inj) return; await genInjuries(sp); await genInjProd(sp); }
+function genInjShift(sp, teamId) { // margin points a team loses tonight to ruled-out players
+  const s = gSlot(sp), P = GS_INJ[sp]; if (!P) return { shift: 0, det: [] };
+  let shift = 0; const det = [];
+  for (const o of (s.injTeam || {})[+teamId] || []) {
+    const out = /^out/i.test(o.status || ""), dbt = /^doubt/i.test(o.status || ""); if (!out && !dbt) continue;
+    const pra = (s.injProd && s.injProd[o.id] && s.injProd[o.id].pra) ?? ((s.pdata?.PRA || []).find(x => String(x.id) === String(o.id))?.season ?? null);
+    const unk = pra == null;
+    let pts = unk ? 1 : clamp(P.k * pra, 0.4, P.capP); // unknown rotation piece — one nominal point, flagged with a "?"
+    if (dbt) pts *= P.doubtful;
+    shift += pts; det.push({ name: (o.name || "").split(" ").slice(-1)[0] || "?", pts, st: out ? "O" : "D", unk });
+  }
+  return { shift: Math.min(P.capT, shift), det };
+}
+function genInjBanner(sp) { // one honest line: did the injury report load, and what does the model do with it
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.inj || s.injAt == null) return "";
+  if (s.injOK === false) return `<div style="margin:0 0 10px;background:rgba(255,71,87,0.09);border:1px solid rgba(255,71,87,0.35);border-radius:9px;padding:7px 11px;font-size:11.5px;color:#ff97a0;font-weight:700;">⚠ The injury report did NOT load — right now this model is blind to who is out (a star could be missing and the number won't know). Tap RELOAD ${cfg.name} DATA below to retry.</div>`;
+  return `<div style="margin:0 0 10px;font-size:11px;color:var(--dim3);">✓ Injury report loaded (${s.injN || 0} players listed${s.injStale ? " · saved copy from earlier — live one didn't answer" : ""}) — ${cfg.inj === "price" ? "players ruled <b>OUT</b> (and <b>doubtful</b> at 75%) are priced into every number below; questionable players are flagged but not priced" : `shown on the game cards, but the ${cfg.name} model does <b>NOT</b> adjust its numbers for them`}.</div>`;
+}
+function genInjRow(sp, g) { // red warning strip on a game card
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.inj || g.completed || !s.injTeam) return "";
+  const sev = x => /^out/i.test(x.status) ? 0 : /^doubt/i.test(x.status) ? 1 : /^(quest|day)/i.test(x.status) ? 2 : 3;
+  const last = x => (x.name || "").split(" ").slice(-1)[0] || "?";
+  const part = (side, det) => {
+    const all = (s.injTeam[+side.id] || []).filter(x => sev(x) <= 2).sort((a, b) => sev(a) - sev(b));
+    if (!all.length) return "";
+    if (cfg.inj === "price" && det) {
+      const pr = det.det.map(d => `${d.name}${d.st === "D" ? " (doubtful)" : ""} (−${d.pts.toFixed(1)}${d.unk ? "?" : ""})`);
+      const q = all.filter(x => sev(x) === 2).map(last);
+      return `${side.abbr} ${pr.length ? "out: " + pr.slice(0, 3).join(", ") + (pr.length > 3 ? " +" + (pr.length - 3) : "") : ""}${q.length ? (pr.length ? " · " : "") + "questionable: " + q.slice(0, 3).join(", ") + (q.length > 3 ? " +" + (q.length - 3) : "") : ""}`;
+    }
+    return `${side.abbr}: ${all.slice(0, 4).map(x => `${last(x)} (${sev(x) === 0 ? "OUT" : sev(x) === 1 ? "DOUBTFUL" : "QUESTIONABLE"})`).join(", ")}${all.length > 4 ? " +" + (all.length - 4) : ""}`;
+  };
+  const a = part(g.away, g.injA), h = part(g.home, g.injH);
+  if (!a && !h) return "";
+  let tail;
+  if (cfg.inj === "price") {
+    const net = (g.injA?.shift || 0) - (g.injH?.shift || 0);
+    const moved = g.consBase != null && g.cons != null && Math.abs(g.cons - g.consBase) >= 0.005;
+    tail = Math.abs(net) < 0.05 ? (g.injA?.det.length || g.injH?.det.length ? "→ washes out (both sides lose about the same) — number unchanged" : "→ only questionable players listed — not priced, the number can still move at tip-off")
+      : `→ net ${Math.abs(net).toFixed(1)} margin pts to ${net > 0 ? g.home.abbr : g.away.abbr}${moved ? ` · ${(g.consBase * 100).toFixed(0)}%→${(g.cons * 100).toFixed(0)}% ${g.cons >= 0.5 ? g.home.abbr : g.away.abbr}` : ""}`;
+  } else tail = `→ shown for awareness — the ${cfg.name} model does NOT adjust for these`;
+  const cnt = { out: 0, doubt: 0, quest: 0 };
+  for (const side0 of [g.away, g.home]) for (const x of s.injTeam[+side0.id] || []) { const v = sev(x); if (v === 0) cnt.out++; else if (v === 1) cnt.doubt++; else if (v === 2) cnt.quest++; }
+  const summary = [cnt.out ? cnt.out + " OUT" : "", cnt.doubt ? cnt.doubt + " DOUBTFUL" : "", cnt.quest ? cnt.quest + " QUESTIONABLE" : ""].filter(Boolean).join(" · ");
+  // hidden until you ask: one counts-only line, the full report opens in the same dropdown style as ALT SPREADS
+  return `<button class="whybtn" data-why data-injbtn="1" style="color:#ff97a0;">▸ ⚠ INJURY REPORT — ${summary}</button>
+    <div class="whybox"><div data-injbox="1" style="background:rgba(255,71,87,0.07);border:1px solid rgba(255,71,87,0.25);border-radius:9px;padding:6px 10px;font-size:10.5px;color:#ff97a0;font-weight:700;">${a}${a && h ? " · " : ""}${h} <span style="color:var(--dim3);font-weight:600;">${tail}</span></div></div>`;
+}
+/* ---------- PLAYER ↔ GAME STATUS (prop cards) ----------
+   A prop card means nothing if the player's team already played, is off, or is on a bye — so every card gets its team's real game status:
+   upcoming → live → final (dimmed) → no game (dimmed, last). Daily sports compare against the selected date's slate;
+   weekly sports (NFL) against the whole Tue→Mon week, so Thursday / Monday teams aren't mistaken for byes. A team we can't identify
+   is left alone (state "unk") — never demoted on a guess. */
+function weekWindow(iso) { // NFL weeks run Tuesday → Monday: the window that contains `iso`
+  const dow = new Date(iso + "T12:00:00").getDay(), back = (dow - 2 + 7) % 7, start = addDays(iso, -back);
+  return [start, addDays(start, 6)];
+}
+function genSbUrl(sp, iso) { // the board's scoreboard call: ONE day — except weekly sports (NFL), where the board shows the WHOLE week so Thursday is visible on a Wednesday
+  const cfg = GS_CFG[sp], base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`, d = iso || localISO(new Date());
+  if (cfg.weekly) { const [a, b] = weekWindow(d); return `${base}/scoreboard?dates=${a.replace(/-/g, "")}-${b.replace(/-/g, "")}`; }
+  return `${base}/scoreboard?dates=${d.replace(/-/g, "")}${cfg.teamCap === 0 ? `&limit=300&groups=${cfg.grp || 50}` : ""}`;
+}
+async function genSbChain(sp, iso) { // never come back empty-handed if ANY form of the scoreboard answers
+  const cfg = GS_CFG[sp], base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}`, d = iso || localISO(new Date());
+  let sb = null; try { sb = await j(genSbUrl(sp, d)); } catch (e) {}
+  if (cfg.weekly && !(sb?.events || []).length) {
+    if (weekWindow(d)[0] === weekWindow(localISO(new Date()))[0]) { try { const s2 = await j(`${base}/scoreboard`); if ((s2?.events || []).length) sb = s2; } catch (e) {} } // no params = the current week, the call that has always worked
+    if (!(sb?.events || []).length) { try { const s3 = await j(`${base}/scoreboard?dates=${d.replace(/-/g, "")}`); if (s3 && ((s3.events || []).length || !sb)) sb = s3; } catch (e) {} }
+  }
+  if (!sb) throw new Error("scoreboard unavailable");
+  return sb;
+}
+async function genWeekGames(sp) {
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.weekly) return;
+  try {
+    const iso = S.date || localISO(new Date()), [start, end] = weekWindow(iso);
+    const js = await j(genSbUrl(sp, iso));
+    if (!Array.isArray(js?.events)) throw new Error("week scoreboard in an unknown shape");
+    s.weekGames = js.events.map(ev => { const c = ev.competitions?.[0] || {}; const cp = h => (c.competitors || []).find(x => x.homeAway === h)?.team || {};
+      return { date: ev.date, completed: !!c.status?.type?.completed, live: c.status?.type?.state === "in", home: (cp("home").abbreviation || "").toUpperCase(), away: (cp("away").abbreviation || "").toUpperCase() }; });
+    s.weekRange = [start, end];
+  } catch (e) { s.weekGames = null; }
+}
+function genPlayerGame(sp, p) {
+  const cfg = GS_CFG[sp], s = gSlot(sp); const ab = String(p.team || "").toUpperCase();
+  const slate = cfg.weekly && s.weekGames ? s.weekGames : (s.games || []).map(g => ({ date: g.date, completed: g.completed, live: g.live, home: String(g.home.abbr || "").toUpperCase(), away: String(g.away.abbr || "").toUpperCase() }));
+  const mine = ab ? slate.filter(g => g.home === ab || g.away === ab) : [];
+  const known = ab && (Object.values(s.teams || {}).some(t => String(t.abbr || "").toUpperCase() === ab) || slate.some(g => g.home === ab || g.away === ab));
+  const scope = cfg.weekly && s.weekGames ? "THIS WEEK" : "TODAY";
+  if (!slate.length) { // the schedule answered and lists nothing → no player has a game (never "still to play"); a schedule that FAILED stays unknown
+    const answered = cfg.weekly ? Array.isArray(s.weekGames) : s.sbOK === true && s.dateLoaded === (S.date || localISO(new Date()));
+    return answered ? { state: "none", label: "NO GAME " + (cfg.weekly ? "THIS WEEK" : "TODAY") } : { state: "unk" };
+  }
+  if (!known) return { state: "unk" };
+  if (!mine.length) return cfg.weekly && !s.weekGames ? { state: "unk" } : { state: "none", label: "NO GAME " + scope }; // weekly sport without its week slate can't tell a bye from another day — leave the card alone
+  const live = mine.find(g => g.live), up = mine.filter(g => !g.completed && !g.live).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+  if (up) return { state: "up", g: up, label: (cfg.weekly ? new Date(up.date).toLocaleDateString([], { weekday: "short" }) + " " : "") + timeLabel(up.date) };
+  if (live) return { state: "live", g: live, label: "LIVE" };
+  return { state: "final", g: mine[0], label: "FINAL" };
+}
+const GEN_GS_ORDER = { up: 0, unk: 0, live: 1, final: 2, none: 3 };
+/* ---------- BEST PROP BETS (board) ----------
+   One list across EVERY prop in the sport (points, rebounds, assists, combos…): the calls where all the research engines agree on the same
+   side and the consensus is at least BP_MINP. Only players whose game is still to play (finished / live / no-game are skipped), Out players
+   are already gone, questionable ones carry a ⚠. The line shown is the engines' own (consensus projection rounded to a half) — NOT a book
+   price — so each row also says how far the book's line can move against you before the bet drops under BP_MINP. */
+const BP_MINP = 0.55; // judgment threshold: the engines' consensus must be at least this on the side listed
+function genBestProps(sp) {
+  const s = gSlot(sp), out = [];
+  for (const ps of GS_PSTATS[sp] || []) {
+    const defs = pmModels(ps.cls || "big");
+    for (const p2 of (s.pdata && s.pdata[ps.k]) || []) {
+      const gs = genPlayerGame(sp, p2); if (gs.state !== "up" && gs.state !== "unk") continue; // still to play only
+      let fits;
+      try { const chron = p2.vals.slice().reverse(); fits = defs.map(m2 => { try { const f2 = m2.fit(chron); return { proj: f2.proj, pOver: f2.pOver }; } catch (e) { return null; } }).filter(Boolean); } catch (e) { continue; }
+      if (fits.length < 2) continue;
+      const proj = mean(fits.map(f2 => f2.proj)), line = Math.max(0.5, Math.round(proj - 0.5) + 0.5);
+      const pAt = L => mean(fits.map(f2 => clamp(f2.pOver(L), 0.01, 0.99)));
+      const side0 = fits.map(f2 => f2.pOver(line) >= 0.5);
+      if (!side0.every(x => x === side0[0])) continue; // engines must agree
+      const over = side0[0], pSide = over ? pAt(line) : 1 - pAt(line);
+      if (pSide < BP_MINP) continue;
+      const conf = mean(fits.map(f2 => { const po = clamp(f2.pOver(line), 0.01, 0.99); return Math.max(po, 1 - po); }));
+      let edgeLine = line;
+      if (over) { for (let L = line + 0.5, n = 0; n < 60; L += 0.5, n++) { if (pAt(L) >= BP_MINP) edgeLine = L; else break; } }
+      else { for (let L = line - 0.5, n = 0; n < 60 && L >= 0.5; L -= 0.5, n++) { if (1 - pAt(L) >= BP_MINP) edgeLine = L; else break; } }
+      out.push({ k: ps.k, stat: ps.n, id: p2.id, name: p2.name, team: p2.team || "", hs: p2.hs || "", over, line, edgeLine, conf, pSide, inj: p2.inj || null, gs, season: p2.season, last5: p2.last5, sigma: p2.sigma });
+    }
+  }
+  out.sort((a2, b2) => b2.conf - a2.conf || (b2.proj / b2.sigma) - (a2.proj / a2.sigma));
+  return out;
+}
+function genBestPropsSection(root, sp) {
+  const cfg = GS_CFG[sp]; if (!cfg || cfg.soccer || !(GS_PSTATS[sp] || []).length) return;
+  const s = gSlot(sp);
+  if (!s.pReady && !s.pLoading && !s.pErr && !s._bpKick && s.loaded && !s.loading) { s._bpKick = true; setTimeout(() => { try { genPropsLoad(sp); } catch (e) {} }, 2500); } // only AFTER the board's own data has loaded — never competing with it
+  const box = el("div"); box.dataset.bestprops = sp;
+  box.appendChild(el("div", "h1", `BEST PROP BETS <small>· every prop in ${cfg.name}, strongest call first</small>`));
+  if (s.pLoading || (!s.pReady && !s.pErr)) { box.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">⏳ Pulling player game logs to rank every prop — this fills in by itself in a few seconds…</span>`)); root.appendChild(box); return; }
+  if (!s.pReady) { box.appendChild(el("div", "nobets", `Player logs unavailable (${s.pErr || "no answer"}) — nothing is invented. They load again when you open a prop tab or reload ${cfg.name}.`)); root.appendChild(box); return; }
+  let bets = []; try { bets = genBestProps(sp); } catch (e) {}
+  if (!bets.length && s.loaded && s.sbOK && !(cfg.weekly ? (s.weekGames || []).some(g3 => !g3.completed) : (s.games || []).some(g3 => !g3.completed))) { box.appendChild(el("div", "nobets", `No ${cfg.name} games ${cfg.weekly ? "left this week" : "on " + (S.date || "this date")} — so there are no prop bets to make. Use ⏭ NEXT ${cfg.name} GAME DAY or the date picker.`)); root.appendChild(box); return; }
+  if (!bets.length) { box.appendChild(el("div", "nobets", `No prop clears ${(BP_MINP * 100).toFixed(0)}% with every engine on the same side for a game still to play right now.`)); root.appendChild(box); return; }
+  const card = el("div", "card"); card.style.cssText = "padding:6px 14px;";
+  card.innerHTML = bets.slice(0, 6).map((b, i) => `
+    <div data-bpi="${i}" style="display:flex;align-items:center;gap:12px;padding:10px 0;${i ? "border-top:1px solid var(--line2, #1c2230);" : ""}cursor:pointer;">
+      <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;background:var(--panel3);flex:0 0 36px;">${b.hs ? `<img src="${b.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
+      <div style="min-width:0;flex:1;"><div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${b.name} <span style="font-size:11px;color:var(--dim);font-weight:600;">${b.team}${b.gs.label ? " · " + b.gs.label : ""}</span></div>
+        <div style="margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><span style="font-family:var(--cond);font-weight:800;font-size:15px;letter-spacing:.3px;color:${b.over ? "var(--green)" : "var(--red)"};">${b.over ? "OVER" : "UNDER"} ${b.line} ${b.stat}</span>
+          <span class="chip green">ENGINES AGREE</span>${b.inj ? `<span class="chip red">⚠ ${b.inj}</span>` : ""}<span class="chip">season ${b.season.toFixed(1)} · last 5 ${b.last5.toFixed(1)}</span></div></div>
+      <div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:20px;color:var(--gold);">${(b.conf * 100).toFixed(0)}%</div>
+        <div style="font-size:10px;color:var(--dim3);font-weight:700;max-width:150px;">${b.edgeLine === b.line ? "only at this line" : `still ≥${(BP_MINP * 100).toFixed(0)}% at book lines ${b.over ? "up to" : "down to"} ${b.edgeLine}`}</div></div>
+    </div>`).join("");
+  card.querySelectorAll("[data-bpi]").forEach(r2 => r2.addEventListener("click", () => { const b = bets[+r2.dataset.bpi]; if (!b) return; selectTab("gen:pstat:" + b.k); jumpToCard(`#tab-gen [data-gpid="${b.id}"]`); }));
+  box.appendChild(card);
+  box.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Model calls, not book prices: the line shown is the engines' own consensus rounded to a half. Compare it with your book — the right-hand note says how far the book's line can move against you before the call drops under ${(BP_MINP * 100).toFixed(0)}%. Games still to play only; every engine must pick the same side. ${bets.length > 6 ? `Showing 6 of ${bets.length} qualifying props.` : ""}</span>`));
+  root.appendChild(box);
+}
+/* ---------- EFFICIENCY LANDSCAPE ----------
+   Every team plotted by what it scores (→ right is better) against what it allows (↑ up is better), over its LAST N GAMES (default 10,
+   rolling — recomputed from the completed results every time they refresh). Centre = league average; the dashed diagonal is net 0.
+   A faint line shows where the team stood one window ago. Honest unit: points / runs / goals PER GAME — the feeds carry scores, not
+   possessions, so this is NOT pace-adjusted (a fast team's offence reads a little high, its defence a little low). */
+const EFF_WINS = [["5", "LAST 5"], ["10", "LAST 10"], ["20", "LAST 20"], ["all", "SEASON"]];
+function effWin() { let v = null; try { v = hasLS ? localStorage.getItem("kb_effwin") : null; } catch (e) {} return EFF_WINS.some(w => w[0] === v) ? v : "10"; }
+function effBuild(results, teams, win) {
+  const per = {};
+  for (const r of results || []) {
+    if (r == null || r.hs == null || r.as == null || !isFinite(r.hs) || !isFinite(r.as)) continue;
+    (per[r.hId] = per[r.hId] || []).push({ d: r.d || "", pf: +r.hs, pa: +r.as });
+    (per[r.aId] = per[r.aId] || []).push({ d: r.d || "", pf: +r.as, pa: +r.hs });
+  }
+  const N = win === "all" ? 1e9 : +win, rows = [], avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+  for (const id in per) {
+    const meta = teams[id] || teams[+id]; if (!meta) continue;
+    const gms = per[id].slice().sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+    const cur = gms.slice(-N); if (cur.length < Math.min(5, N)) continue; // fewer than 5 games is noise, not a trend
+    const off = avg(cur.map(g => g.pf)), def = avg(cur.map(g => g.pa));
+    let prior = null; if (win !== "all" && gms.length >= 2 * N) { const pg = gms.slice(-2 * N, -N); prior = { off: avg(pg.map(g => g.pf)), def: avg(pg.map(g => g.pa)) }; }
+    rows.push({ id: +id, abbr: meta.abbr || String(id), name: meta.name || meta.abbr || String(id), logo: meta.logo || "", color: meta.color || "#5b9dff", n: cur.length, off, def, net: off - def,
+      w: cur.filter(g => g.pf > g.pa).length, l: cur.filter(g => g.pf < g.pa).length, prior });
+  }
+  if (rows.length < 4) return { rows: [], lg: 0 };
+  const lg = avg(rows.map(r => r.off)); // league mean points scored (= allowed on average)
+  rows.slice().sort((a, b) => b.off - a.off).forEach((r, i) => r.rOff = i + 1);
+  rows.slice().sort((a, b) => a.def - b.def).forEach((r, i) => r.rDef = i + 1);
+  rows.slice().sort((a, b) => b.net - a.net).forEach((r, i) => r.rNet = i + 1);
+  return { rows, lg };
+}
+const EFF_SORTS = [["net", "BEST NET"], ["off", "BEST OFFENSE"], ["def", "BEST DEFENSE"], ["trend", "TREND"], ["wl", "W-L"]];
+function effRender(root, o) { // o: { unit, rows, lg, win, rerender }
+  const rows = o.rows, lg = o.lg, f1 = x => x.toFixed(1);
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+  bar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">WINDOW</span>` + EFF_WINS.map(([k, l]) => `<span class="fchip${o.win === k ? " on" : ""}" data-effw="${k}">${l}</span>`).join("") +
+    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">rolls forward by itself as new results land</span>`;
+  bar.querySelectorAll("[data-effw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effwin", c.dataset.effw); } catch (e) {} o.rerender(); }));
+  root.appendChild(bar);
+  if (!rows.length) { root.appendChild(el("div", "nobets", `Not enough completed games with scores yet — this needs at least 4 teams with 5+ results. It fills in by itself once the season (and its results feed) is running.${o.note ? "<br><br>" + o.note : ""}`)); return; }
+  const dnOf = r => (r.prior ? r.net - (r.prior.off - r.prior.def) : null);
+  // ---- BIGGEST DIFFERENTIAL OF THE DAY: today's games ranked by the gap between the two teams' nets (same window as the chart)
+  const byId = {}; rows.forEach(r => { byId[r.id] = r; });
+  const pairs = (o.games || []).map(g => { const a = byId[g.away], h = byId[g.home]; if (!a || !h) return null; const fav = h.net >= a.net ? h : a, dog = fav === h ? a : h;
+    return { key: g.away + "-" + g.home, g, a, h, fav, dog, diff: fav.net - dog.net }; }).filter(Boolean).sort((x, y) => y.diff - x.diff);
+  const hlKey = pairs.some(p3 => p3.key === GX.effHl) ? GX.effHl : (pairs[0] && pairs[0].key), hl = pairs.find(p3 => p3.key === hlKey) || null;
+  const hlIds = hl ? new Set([hl.a.id, hl.h.id]) : new Set();
+  const whenOf = g3 => (g3.status === "final" ? "FINAL" : g3.status === "live" ? "LIVE" : timeLabel(g3.date));
+  const logoTagPre = (r, px) => (r.logo ? `<img src="${esc(r.logo)}" onerror="this.style.visibility='hidden'" style="width:${px}px;height:${px}px;object-fit:contain;border-radius:50%;background:rgba(255,255,255,.94);padding:2px;box-sizing:border-box;flex:0 0 auto;" alt="">` : `<span style="width:${px}px;height:${px}px;border-radius:50%;background:${r.color};color:#fff;font-size:${Math.round(px * 0.36)}px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;">${esc(String(r.abbr).slice(0, 3))}</span>`);
+  if (hl) {
+    const sg = v => (v >= 0 ? "+" : "") + f1(v), fav = hl.fav, dog = hl.dog;
+    const hlCard = el("div", "card"); hlCard.dataset.effhl = hl.key; hlCard.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
+    hlCard.innerHTML = `<div style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);">🔥 BIGGEST DIFFERENTIAL ${o.dayLabel || "TODAY"} · ${whenOf(hl.g)} · ${esc(hl.a.abbr)} @ ${esc(hl.h.abbr)}</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 6px;">
+        <span style="display:inline-flex;align-items:center;gap:8px;">${logoTagPre(fav, 34)}<span><b style="font-size:17px;">${esc(fav.abbr)}</b> <b style="color:var(--green);font-size:15px;">${sg(fav.net)}</b><br><span style="font-size:10.5px;color:var(--dim3);">#${fav.rNet} net · ${fav.w}-${fav.l} last ${fav.n}</span></span></span>
+        <span style="text-align:center;flex:1 1 90px;"><span style="font-family:var(--cond);font-weight:800;font-size:26px;color:var(--gold);">${f1(hl.diff)}</span><br><span style="font-size:9.5px;letter-spacing:1px;color:var(--dim3);font-weight:700;">POINTS APART</span></span>
+        <span style="display:inline-flex;align-items:center;gap:8px;flex-direction:row-reverse;text-align:right;">${logoTagPre(dog, 34)}<span><b style="font-size:17px;">${esc(dog.abbr)}</b> <b style="color:${dog.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg(dog.net)}</b><br><span style="font-size:10.5px;color:var(--dim3);">#${dog.rNet} net · ${dog.w}-${dog.l} last ${dog.n}</span></span></span>
+      </div>
+      <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">${esc(fav.abbr)} scores <b style="color:var(--txt)">${f1(fav.off)}</b> (#${fav.rOff}) against a ${esc(dog.abbr)} defense allowing <b style="color:var(--txt)">${f1(dog.def)}</b> (#${dog.rDef}) · ${esc(dog.abbr)} scores <b style="color:var(--txt)">${f1(dog.off)}</b> (#${dog.rOff}) against a ${esc(fav.abbr)} defense allowing <b style="color:var(--txt)">${f1(fav.def)}</b> (#${fav.rDef}).</div>
+      <div style="font-size:10px;color:var(--dim3);margin-top:6px;">Differential = the gap between the two teams' nets over their last ${o.win === "all" ? "season" : o.win} games — a measure of form, not a prediction (no home court, injuries or rest). Both teams are ringed on the chart below.</div>`;
+    root.appendChild(hlCard);
+    if (pairs.length > 1) {
+      const lst = el("div", "card"); lst.style.cssText = "max-width:680px;margin:0 auto 12px;padding:4px 12px;";
+      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span><span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span></div>`).join("");
+      lst.querySelectorAll("[data-effgame]").forEach(r3 => r3.addEventListener("click", () => { GX.effHl = r3.dataset.effgame; o.rerender(); }));
+      root.appendChild(lst);
+    }
+  } else if (o.games && o.games.length === 0) {
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3);display:block;max-width:680px;margin:0 auto 8px;">No games ${o.dayLabel === "TODAY" ? "today" : "on " + (o.dayLabel || "this date")} — the biggest-differential highlight appears on a game day.</span>`));
+  }
+  const logoTag = (r, px) => (r.logo ? `<img src="${esc(r.logo)}" onerror="this.style.visibility='hidden'" style="width:${px}px;height:${px}px;object-fit:contain;border-radius:50%;background:rgba(255,255,255,.94);padding:2px;box-sizing:border-box;flex:0 0 auto;" alt="">` : `<span style="width:${px}px;height:${px}px;border-radius:50%;background:${r.color};color:#fff;font-size:${Math.round(px * 0.36)}px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;">${esc(String(r.abbr).slice(0, 3))}</span>`);
+  const byNet = rows.slice().sort((a, b) => a.rNet - b.rNet), top3 = byNet.slice(0, 3), worst = byNet[byNet.length - 1];
+  const best = (key, dir) => rows.slice().sort((a, b) => dir * (a[key] - b[key]))[0];
+  const chip = (lab, r, extra) => `<span data-effchip="${r.id}" style="display:inline-flex;align-items:center;gap:7px;background:var(--panel3);border:1px solid var(--line2, #1c2230);border-radius:11px;padding:5px 10px 5px 6px;font-size:11px;cursor:pointer;">${logoTag(r, 22)}<span><b style="color:var(--txt);font-size:12px;">${esc(r.abbr)}</b> <span style="color:var(--dim3);font-weight:700;letter-spacing:.5px;">${lab}</span>${extra ? `<br><span style="color:var(--dim);">${extra}</span>` : ""}</span></span>`;
+  const strip = el("div"); strip.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px;max-width:680px;margin-left:auto;margin-right:auto;";
+  strip.innerHTML = top3.map((r, i) => `<span style="display:inline-flex;align-items:center;gap:7px;background:rgba(255,160,46,.08);border:1px solid rgba(255,160,46,.35);border-radius:11px;padding:5px 10px 5px 6px;font-size:11px;cursor:pointer;" data-effchip="${r.id}">${logoTag(r, 22)}<span><b style="color:var(--gold);font-size:12px;">#${i + 1} NET</b> <b style="color:var(--txt)">${esc(r.abbr)}</b><br><span style="color:var(--dim);">#${r.rOff} offense · #${r.rDef} defense</span></span></span>`).join("") +
+    chip("BEST OFFENSE", best("off", -1), f1(best("off", -1).off) + " scored") + chip("BEST DEFENSE", best("def", 1), f1(best("def", 1).def) + " allowed") + chip("WORST OFFENSE", best("off", 1), f1(best("off", 1).off) + " scored") + chip("WORST DEFENSE", best("def", -1), f1(best("def", -1).def) + " allowed") + chip("WORST NET", worst, (worst.net >= 0 ? "+" : "") + f1(worst.net));
+  root.appendChild(strip);
+  // ---- geometry (equal scale on both axes so the diagonal is a true net-0 line); data uses ≤ 83% of the box so the corners stay clear
+  const W = 620, H = 600, cx = 310, cy = 292, half = 250, DISK = 14;
+  let mx = 1; for (const r of rows) for (const pt of [r, r.prior]) if (pt) mx = Math.max(mx, Math.abs(pt.off - lg), Math.abs(lg - pt.def));
+  const k = half / (mx * 1.2), X = off => cx + (off - lg) * k, Y = def => cy - (lg - def) * k;
+  // ---- light de-overlap: nudge crowded logos apart (never more than 22 px from the true spot; a thin line + dot marks the true spot)
+  const pts = rows.map(r => ({ r, ox: X(r.off), oy: Y(r.def), x: X(r.off), y: Y(r.def) })), MIN = DISK * 2 + 3;
+  for (let it = 0; it < 80; it++) {
+    let moved = false;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      let dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y, d = Math.hypot(dx, dy);
+      if (d >= MIN) continue; if (d < 0.01) { dx = Math.cos(i + 1); dy = Math.sin(i + 1); d = 1; }
+      const push = (MIN - d) / 2 + 0.05, ux = dx / d, uy = dy / d; pts[i].x -= ux * push; pts[i].y -= uy * push; pts[j].x += ux * push; pts[j].y += uy * push; moved = true;
+    }
+    for (const p of pts) { const ddx = p.x - p.ox, ddy = p.y - p.oy, dd = Math.hypot(ddx, ddy); if (dd > 22) { p.x = p.ox + ddx / dd * 22; p.y = p.oy + ddy / dd * 22; } p.x = Math.max(cx - half + DISK, Math.min(cx + half - DISK, p.x)); p.y = Math.max(cy - half + DISK, Math.min(cy + half - DISK, p.y)); }
+    if (!moved) break;
+  }
+  let g = `<rect x="0" y="0" width="${W}" height="${H}" rx="16" style="fill:var(--panel2)"/>
+    <rect x="${cx}" y="${cy - half}" width="${half}" height="${half}" fill="rgba(52,211,153,.06)"/><rect x="${cx - half}" y="${cy}" width="${half}" height="${half}" fill="rgba(255,71,87,.06)"/>
+    <line x1="${cx - half}" y1="${cy - half}" x2="${cx + half}" y2="${cy + half}" stroke="#4a5670" stroke-width="1.5" stroke-dasharray="6 6"/>
+    <line x1="${cx - half}" y1="${cy}" x2="${cx + half}" y2="${cy}" stroke="#5b6680" stroke-width="1.5"/><line x1="${cx}" y1="${cy - half}" x2="${cx}" y2="${cy + half}" stroke="#5b6680" stroke-width="1.5"/>
+    <text x="${cx + half - 10}" y="${cy - half + 24}" text-anchor="end" font-size="14" font-weight="800" letter-spacing="2" fill="#34d399" opacity=".75">QUADRANT OF WOW</text>
+    <text x="${cx - half + 10}" y="${cy + half - 14}" font-size="14" font-weight="800" letter-spacing="2" fill="#ff6b78" opacity=".75">QUADRANT OF WOE</text>
+    <text x="${cx - half + 10}" y="${cy - half + 24}" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#8a94ab" opacity=".7">ALL DEFENSE, NO OFFENSE</text>
+    <text x="${cx + half - 10}" y="${cy + half - 14}" text-anchor="end" font-size="10.5" font-weight="700" letter-spacing="1.4" fill="#8a94ab" opacity=".7">ALL OFFENSE, NO DEFENSE</text>
+    <text x="${cx}" y="${H - 12}" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#9aa5bd">OFFENSIVE EFFICIENCY  →  scores more</text>
+    <text transform="translate(16 ${cy}) rotate(-90)" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" fill="#9aa5bd">DEFENSIVE EFFICIENCY  →  allows less</text>`;
+  for (const r of rows) if (r.prior) g += `<line x1="${X(r.prior.off).toFixed(1)}" y1="${Y(r.prior.def).toFixed(1)}" x2="${X(r.off).toFixed(1)}" y2="${Y(r.def).toFixed(1)}" stroke="${r.color}" stroke-width="2" opacity=".4"/><circle cx="${X(r.prior.off).toFixed(1)}" cy="${Y(r.prior.def).toFixed(1)}" r="3" fill="${r.color}" opacity=".45"/>`;
+  for (const p of pts) if (Math.hypot(p.x - p.ox, p.y - p.oy) > 3) g += `<line x1="${p.ox.toFixed(1)}" y1="${p.oy.toFixed(1)}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="${p.r.color}" stroke-width="1.2" opacity=".8"/><circle cx="${p.ox.toFixed(1)}" cy="${p.oy.toFixed(1)}" r="2.2" fill="${p.r.color}"/>`;
+  if (hl) { const A = pts.find(q => q.r.id === hl.a.id), B = pts.find(q => q.r.id === hl.h.id);
+    if (A && B) g += `<line data-hlline="1" x1="${A.x.toFixed(1)}" y1="${A.y.toFixed(1)}" x2="${B.x.toFixed(1)}" y2="${B.y.toFixed(1)}" stroke="#ffa02e" stroke-width="3" stroke-dasharray="2 6" stroke-linecap="round" opacity=".95"/>` + [A, B].map(q => `<circle data-hlring="${q.r.id}" cx="${q.x.toFixed(1)}" cy="${q.y.toFixed(1)}" r="${DISK + 5}" fill="rgba(255,160,46,.12)" stroke="#ffa02e" stroke-width="2.5"/>`).join(""); }
+  for (const p of pts) {
+    const r = p.r, x = p.x.toFixed(1), y = p.y.toFixed(1), rankNo = top3.indexOf(r) + 1;
+    g += `<g data-eff="${r.id}" data-tx="${p.ox.toFixed(1)}" data-ty="${p.oy.toFixed(1)}"${hlIds.has(r.id) ? ' data-hl="1"' : ""} style="cursor:pointer"><title>${esc(r.name)} — net ${r.net >= 0 ? "+" : ""}${f1(r.net)}</title>
+      <circle cx="${x}" cy="${y}" r="${DISK}" fill="${r.logo ? "rgba(255,255,255,.94)" : r.color}" stroke="${r.color}" stroke-width="2"/>
+      ${r.logo ? `<image href="${esc(r.logo)}" x="${(p.x - 10.5).toFixed(1)}" y="${(p.y - 10.5).toFixed(1)}" width="21" height="21" style="pointer-events:none"/>` : `<text x="${x}" y="${(p.y + 3.2).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="800" fill="#fff" style="pointer-events:none">${esc(String(r.abbr).slice(0, 3))}</text>`}
+      ${rankNo ? `<circle cx="${(p.x + 11).toFixed(1)}" cy="${(p.y - 11).toFixed(1)}" r="7" fill="var(--gold)" stroke="#0b0e16" stroke-width="1.2" style="pointer-events:none"/><text x="${(p.x + 11).toFixed(1)}" y="${(p.y - 7.8).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="800" fill="#1a1204" style="pointer-events:none">${rankNo}</text>` : ""}</g>`;
+  }
+  const wrap = el("div"); wrap.style.cssText = "max-width:680px;margin:0 auto 10px;";
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;border:1px solid var(--line2, #1c2230);border-radius:16px;" role="img" aria-label="Efficiency landscape">${g}</svg>`;
+  root.appendChild(wrap);
+  root.appendChild(el("div", "subhead", `<span style="color:var(--dim3);display:block;max-width:680px;margin:0 auto 6px;">Dashed line = net 0: teams above-right of it are <b>POSITIVE TEAMS</b>, below-left are negative. Gold badges mark the top 3 by net; the orange ring and dotted line join the biggest-differential game. Faint line = where the team stood one ${o.win === "all" ? "window" : o.win + "-game window"} ago. A thin line from a logo to a dot means the logo was nudged a few pixels so it doesn't cover its neighbour — the dot is the true spot.</span>`));
+  const tip = el("div", "card"); tip.style.cssText = "max-width:680px;margin:0 auto 12px;padding:10px 14px;font-size:12.5px;color:var(--dim);";
+  tip.innerHTML = `Tap a team (logo, chip or table row) for its numbers.`;
+  root.appendChild(tip);
+  const show = id => { const r = rows.find(x => x.id === +id); if (!r) return; const dn = dnOf(r);
+    tip.innerHTML = `<b style="color:var(--txt);font-size:14px;">${esc(r.name)}</b> · last ${r.n} games: <b style="color:var(--txt)">${r.w}-${r.l}</b><br>NET <b style="color:${r.net >= 0 ? "var(--green)" : "var(--red)"}">${r.net >= 0 ? "+" : ""}${f1(r.net)}</b> (#${r.rNet}) · OFFENSE <b style="color:var(--txt)">${f1(r.off)}</b> (#${r.rOff}) · DEFENSE <b style="color:var(--txt)">${f1(r.def)}</b> allowed (#${r.rDef})${dn != null ? `<br><span style="color:var(--dim3)">vs the previous ${r.n} games: net ${dn >= 0 ? "+" : ""}${f1(dn)} (${dn >= 0 ? "improving" : "slipping"})</span>` : ""}`; };
+  wrap.querySelectorAll("[data-eff]").forEach(n2 => n2.addEventListener("click", () => show(n2.dataset.eff)));
+  strip.querySelectorAll("[data-effchip]").forEach(n2 => n2.addEventListener("click", () => show(n2.dataset.effchip)));
+  // ---- sortable table
+  let sortK = null; try { sortK = hasLS ? localStorage.getItem("kb_effsort") : null; } catch (e) {} if (!EFF_SORTS.some(x => x[0] === sortK)) sortK = "net";
+  const keyOf = { net: r => -r.net, off: r => -r.off, def: r => r.def, trend: r => -(dnOf(r) == null ? -1e9 : dnOf(r)), wl: r => -(r.w / Math.max(1, r.w + r.l)) }[sortK];
+  const sorted = rows.slice().sort((a, b) => keyOf(a) - keyOf(b) || a.rNet - b.rNet);
+  const sbar = el("div"); sbar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;max-width:680px;margin:0 auto 8px;";
+  sbar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">SORT BY</span>` + EFF_SORTS.map(([k2, l]) => `<span class="fchip${sortK === k2 ? " on" : ""}" data-effs="${k2}">${l}</span>`).join("");
+  root.appendChild(sbar);
+  const th = (k2, label, al) => `<th data-effs="${k2}" style="text-align:${al};padding:6px;cursor:pointer;color:${sortK === k2 ? "var(--gold)" : "var(--dim3)"};">${label}${sortK === k2 ? " ▼" : ""}</th>`;
+  const trs = sorted.map((r, i) => { const dn = dnOf(r);
+    return `<tr data-effrow="${r.id}" style="cursor:pointer;border-top:1px solid var(--line2, #1c2230);"><td style="padding:7px 6px;color:var(--dim3);font-weight:800;">${i + 1}</td><td style="padding:7px 6px;font-weight:700;"><span style="display:inline-flex;align-items:center;gap:8px;">${logoTag(r, 20)}<span>${esc(r.abbr)} <span style="color:var(--dim);font-weight:500;font-size:11px;">${esc(r.name)}</span></span></span></td>
+      <td style="padding:7px 6px;text-align:right;${sortK === "off" ? "color:var(--gold);font-weight:800;" : ""}">${f1(r.off)}</td><td style="padding:7px 6px;text-align:right;${sortK === "def" ? "color:var(--gold);font-weight:800;" : ""}">${f1(r.def)}</td><td style="padding:7px 6px;text-align:right;font-weight:800;color:${r.net >= 0 ? "var(--green)" : "var(--red)"};">${r.net >= 0 ? "+" : ""}${f1(r.net)}</td>
+      <td style="padding:7px 6px;text-align:right;color:var(--dim);">${r.w}-${r.l}</td><td style="padding:7px 6px;text-align:right;color:${dn == null ? "var(--dim3)" : dn >= 0 ? "var(--green)" : "var(--red)"};">${dn == null ? "—" : (dn >= 0 ? "▲ " : "▼ ") + f1(Math.abs(dn))}</td></tr>`; }).join("");
+  const tbl = el("div", "card"); tbl.style.cssText = "max-width:680px;margin:0 auto;padding:6px 10px;overflow-x:auto;";
+  tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;"><thead><tr style="font-size:10px;letter-spacing:1px;"><th style="text-align:left;padding:6px;color:var(--dim3);">#</th><th style="text-align:left;padding:6px;color:var(--dim3);">TEAM</th>${th("off", "OFF", "right")}${th("def", "DEF", "right")}${th("net", "NET", "right")}${th("wl", "W-L", "right")}${th("trend", "TREND", "right")}</tr></thead><tbody>${trs}</tbody></table>`;
+  tbl.querySelectorAll("[data-effrow]").forEach(tr => tr.addEventListener("click", () => show(tr.dataset.effrow)));
+  root.appendChild(tbl);
+  root.querySelectorAll("[data-effs]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effsort", c.dataset.effs); } catch (e) {} o.rerender(); }));
+  if (o.note) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">${o.note}</span>`));
+  root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">${o.unit} scored (OFF) and allowed (DEF) per game over each team's last ${o.win === "all" ? "season" : o.win} games · NET = OFF − DEF · centre of the chart = league average · TREND = net now vs the previous window · <b>BEST DEFENSE = fewest allowed</b>. Per-game totals, not pace-adjusted — the results feeds carry scores, not possessions.</span>`));
+}
+function renderEffMlb() {
+  const root = $("#tab-eff"); if (!root) return; root.innerHTML = "";
+  root.appendChild(el("div", "h1", `MLB EFFICIENCY LANDSCAPE <small>· runs scored vs allowed, rolling</small>`));
+  if (!(S.seasonGames || []).length) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Waiting for the season's results — this fills in by itself.</div>`)); return; }
+  const meta = {}; for (const gm of S.seasonGames) for (const id of [gm.hId, gm.aId]) if (!meta[id]) meta[id] = { abbr: String(ESPN_ABBR[id] || id).toUpperCase(), name: String(ESPN_ABBR[id] || id).toUpperCase(), logo: teamLogo(id), color: TEAM_COLORS[id] || "#5b9dff" };
+  const win = effWin(), b = effBuild(S.seasonGames, meta, win);
+  effRender(root, { unit: "Runs", rows: b.rows, lg: b.lg, win, rerender: renderEffMlb, dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (S.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.time, status: g.state === "Final" ? "final" : g.state === "Live" ? "live" : "up" })) });
+}
+function effHostWnba(root) {
+  root.appendChild(el("div", "h1", `WNBA EFFICIENCY LANDSCAPE <small>· points scored vs allowed, rolling</small>`));
+  const win = effWin(), b = effBuild(WS.results || [], WS.teams || {}, win);
+  effRender(root, { unit: "Points", rows: b.rows, lg: b.lg, win, rerender: renderWnba, dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (WS.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.date, status: g.completed ? "final" : g.live ? "live" : "up" })) });
+}
+function effTick() { // every 10 min while an efficiency tab is open: fold in the newest results without wiping the page
+  try {
+    if (APP_SPORT && GS_CFG[APP_SPORT] && GX.view === "eff" && $("#tab-gen") && $("#tab-gen").style.display !== "none") {
+      for (const sub of GS_CFG[APP_SPORT].combo || [APP_SPORT]) { const s2 = gSlot(sub); if (s2.loaded && !s2.loading && !s2._swr) { s2._swr = genFetchResults(sub).then(() => { s2._swr = null; genRenderIf(APP_SPORT); }).catch(() => { s2._swr = null; }); } }
+    }
+  } catch (e) {}
+}
+/* ---------- DEFENSE VS POSITION (NFL · NBA) ----------
+   For every defense: how much does it give up, per game, to each OPPOSING position — and where does that rank among all teams (1st = most).
+   Built from real box scores: every finished game's summary is fetched once, the opposing offence's player lines are summed by position,
+   and the compact result is saved (kb_dvpg_<sport>) so it's instant next time and only new games are fetched. NFL box scores carry no
+   positions, so positions come from each team's roster (kb_dvppos_<sport>); a player not on any roster is skipped and counted. */
+const DVP_NFL_REC = [["rec", "RECEPTIONS"], ["tgt", "RECEIVING TARGETS"], ["cyds", "RECEIVING YARDS"], ["ctd", "RECEIVING TDs"]];
+const DVP_NBA_ST = [["pts", "POINTS"], ["reb", "REBOUNDS"], ["ast", "ASSISTS"], ["tpm", "3-POINTERS"], ["pra", "PRA"]];
+const DVP_CFG = {
+  nfl: { name: "NFL", positions: ["QB", "RB", "WR", "TE"], stats: {
+      QB: [["pyds", "PASS YARDS"], ["pcmp", "COMPLETIONS"], ["ptd", "PASS TDs"], ["ryds", "RUSH YARDS"], ["rtd", "RUSH TDs"]],
+      RB: [["ryds", "RUSH YARDS"], ["ratt", "RUSH ATTEMPTS"], ["rtd", "RUSH TDs"], ["rec", "RECEPTIONS"], ["tgt", "RECEIVING TARGETS"], ["cyds", "RECEIVING YARDS"], ["ctd", "RECEIVING TDs"]],
+      WR: DVP_NFL_REC, TE: DVP_NFL_REC }, team: [["sk", "SACKS", true], ["in", "INTERCEPTIONS", true], ["fg", "FIELD GOALS", false]] },
+  nba: { name: "NBA", positions: ["PG", "SG", "G", "SF", "PF", "F", "C"], stats: { PG: DVP_NBA_ST, SG: DVP_NBA_ST, G: DVP_NBA_ST, SF: DVP_NBA_ST, PF: DVP_NBA_ST, F: DVP_NBA_ST, C: DVP_NBA_ST }, team: [] }
+};
+const dvpNum = x => { const m = String(x == null ? "" : x).match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0; }; // "2-15" → 2 · "20/30" → 20
+const dvpAdd = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+function dvpPack(sp, P) { const C = DVP_CFG[sp], out = {}; for (const pos of C.positions) { const o = P[pos]; if (o && Object.keys(o).length) out[pos] = C.stats[pos].map(([k]) => Math.round((o[k] || 0) * 10) / 10); } return out; }
+function dvpNflRec(sm, posMap) {
+  const blocks = sm?.boxscore?.players || []; if (blocks.length < 2) return null;
+  const out = { t: {}, unk: 0 }; let seen = 0;
+  for (const b of blocks) {
+    const tid = +(b.team?.id || 0); if (!tid) continue;
+    const P = { QB: {}, RB: {}, WR: {}, TE: {} }, T = { sk: 0, in: 0, fg: 0 };
+    for (const grp of b.statistics || []) {
+      const labels = grp.labels || [], ix = l => labels.indexOf(l), nm = String(grp.name || grp.text || "").toLowerCase();
+      for (const a of grp.athletes || []) {
+        const st = a.stats || []; if (!st.length) continue; seen++;
+        const v = l => (ix(l) >= 0 ? dvpNum(st[ix(l)]) : 0);
+        let pos = posMap[String(a.athlete?.id ?? "")] || a.athlete?.position?.abbreviation || null; if (pos === "FB") pos = "RB";
+        if (nm.indexOf("pass") === 0) { T.sk += v("SACKS"); T.in += v("INT"); if (pos === "QB" || !pos) { dvpAdd(P.QB, "pyds", v("YDS")); dvpAdd(P.QB, "pcmp", v("C/ATT")); dvpAdd(P.QB, "ptd", v("TD")); } }
+        else if (nm.indexOf("rush") === 0) { if (pos === "QB" || pos === "RB") { dvpAdd(P[pos], "ryds", v("YDS")); dvpAdd(P[pos], "ratt", v("CAR")); dvpAdd(P[pos], "rtd", v("TD")); } else if (!pos) out.unk++; }
+        else if (nm.indexOf("receiv") === 0) { if (pos === "RB" || pos === "WR" || pos === "TE") { dvpAdd(P[pos], "rec", v("REC")); dvpAdd(P[pos], "cyds", v("YDS")); dvpAdd(P[pos], "ctd", v("TD")); dvpAdd(P[pos], "tgt", v("TGTS")); } else if (!pos) out.unk++; }
+        else if (nm.indexOf("kick") === 0 && nm.indexOf("ret") < 0) { T.fg += v("FG"); }
+      }
+    }
+    out.t[tid] = { p: dvpPack("nfl", P), sk: T.sk, in: T.in, fg: T.fg };
+  }
+  return Object.keys(out.t).length === 2 && seen >= 10 ? out : null;
+}
+function dvpNbaRec(sm, posMap) {
+  const blocks = sm?.boxscore?.players || []; if (blocks.length < 2) return null;
+  const out = { t: {}, unk: 0 }; let seen = 0;
+  for (const b of blocks) {
+    const tid = +(b.team?.id || 0); if (!tid) continue; const P = {};
+    for (const grp of b.statistics || []) {
+      const labels = grp.labels || [], ix = l => labels.indexOf(l);
+      for (const a of grp.athletes || []) {
+        const st = a.stats || []; if (st.length < 5 || a.didNotPlay) continue;
+        if (ix("MIN") >= 0 && !(dvpNum(st[ix("MIN")]) > 0)) continue; seen++;
+        const pos = posMap[String(a.athlete?.id ?? "")] || a.athlete?.position?.abbreviation || null;
+        if (!pos || DVP_CFG.nba.positions.indexOf(pos) < 0) { out.unk++; continue; }
+        const o = P[pos] = P[pos] || {}, pts = ix("PTS") >= 0 ? dvpNum(st[ix("PTS")]) : 0, reb = ix("REB") >= 0 ? dvpNum(st[ix("REB")]) : 0, ast = ix("AST") >= 0 ? dvpNum(st[ix("AST")]) : 0;
+        dvpAdd(o, "pts", pts); dvpAdd(o, "reb", reb); dvpAdd(o, "ast", ast); dvpAdd(o, "tpm", ix("3PT") >= 0 ? dvpNum(st[ix("3PT")]) : 0); dvpAdd(o, "pra", pts + reb + ast);
+      }
+    }
+    out.t[tid] = { p: dvpPack("nba", P) };
+  }
+  return Object.keys(out.t).length === 2 && seen >= 8 ? out : null;
+}
+async function dvpRosters(sp) {
+  const s = gSlot(sp), D = s.dvp, base = `https://site.api.espn.com/apis/site/v2/sports/${GS_CFG[sp].path}`, ids = Object.keys(s.teams || {});
+  for (let i = 0; i < ids.length; i += 6) {
+    await Promise.all(ids.slice(i, i + 6).map(async id => {
+      try {
+        const js = await j(`${base}/teams/${id}/roster`);
+        const take = a => { const ab = String(a?.position?.abbreviation || "").toUpperCase(); if (a?.id != null && ab) D.pos[String(a.id)] = ab; };
+        for (const g of js?.athletes || []) { if (Array.isArray(g.items)) g.items.forEach(take); else take(g); }
+      } catch (e) {}
+    }));
+  }
+  D.posAt = Date.now(); if (Object.keys(D.pos).length) kbSet("kb_dvppos_" + sp, JSON.stringify({ t: D.posAt, pos: D.pos }));
+}
+async function dvpEnsure(sp) {
+  const C = DVP_CFG[sp], s = gSlot(sp); if (!C || !s.loaded) return;
+  const D = s.dvp = s.dvp || { agg: {}, pos: {}, bad: {}, skip: {}, tries: {}, busy: false, unk: 0, total: 0, done: 0, err: null, posAt: 0 };
+  if (D.busy) return;
+  if (!D._init) { D._init = true; try { const a = hasLS ? JSON.parse(localStorage.getItem("kb_dvpg_" + sp) || "null") : null; if (a?.agg) { D.agg = a.agg; D.bad = a.bad || {}; D.unk = a.unk || 0; } const p = hasLS ? JSON.parse(localStorage.getItem("kb_dvppos_" + sp) || "null") : null; if (p?.pos) { D.pos = p.pos; D.posAt = p.t || 0; } } catch (e) {} }
+  const visible = () => GX.cur === sp && GX.view === "dvp", repaint = () => { if (visible()) { try { renderGen(); } catch (e) {} } };
+  const finals = (s.results || []).filter(r => r.id); D.total = finals.length;
+  const todo = finals.filter(r => !D.agg[r.id] && !D.bad[r.id] && !D.skip[r.id]); D.done = finals.length - todo.length;
+  const needPos = Object.keys(D.pos).length ? Date.now() - D.posAt > 3 * 864e5 : Date.now() - D.posAt > 5 * 6e4; // no roster answer yet → retry at most every 5 min, never in a loop
+  if (!todo.length && !needPos) return;
+  if (D.noPos && !needPos) return; // rosters didn't answer a moment ago — don't hammer, and don't parse games without positions
+  D.busy = true; const base = `https://site.api.espn.com/apis/site/v2/sports/${GS_CFG[sp].path}`;
+  try {
+    if (needPos) { await dvpRosters(sp); D.noPos = !Object.keys(D.pos).length; repaint(); }
+    if (!Object.keys(D.pos).length) { D.err = "rosters didn't answer"; D.busy = false; D.noPos = true; repaint(); return; } // box scores parsed without positions would be saved with the wrong/generic positions forever
+    for (let i = 0; i < todo.length && visible(); i += 6) {
+      await Promise.all(todo.slice(i, i + 6).map(async r => {
+        try { const sm = await j(`${base}/summary?event=${r.id}`); const rec = sp === "nfl" ? dvpNflRec(sm, D.pos) : dvpNbaRec(sm, D.pos); if (rec) { D.agg[r.id] = rec; D.unk += rec.unk || 0; } else D.bad[r.id] = 1; }
+        catch (e) { D.err = String(e.message || e); D.tries[r.id] = (D.tries[r.id] || 0) + 1; if (D.tries[r.id] >= 2) D.skip[r.id] = 1; }
+      }));
+      D.done = finals.filter(r => D.agg[r.id] || D.bad[r.id] || D.skip[r.id]).length;
+      kbSet("kb_dvpg_" + sp, JSON.stringify({ agg: D.agg, bad: D.bad, unk: D.unk })); repaint();
+    }
+  } catch (e) { D.err = String(e.message || e); }
+  D.busy = false; if (visible() && finals.some(r => !D.agg[r.id] && !D.bad[r.id] && !D.skip[r.id])) setTimeout(() => dvpEnsure(sp), 50); else repaint();
+}
+function genCoverageNote(sp) { // never let a thin data set look like a full season
+  const cfg = GS_CFG[sp], s = gSlot(sp); if (!cfg || !cfg.expTeams) return "";
+  const have = new Set((s.results || []).flatMap(r => [r.hId, r.aId])).size;
+  return have < cfg.expTeams * 0.9 ? `⚠ Results are loaded for only ${have} of ${cfg.expTeams} ${cfg.name} teams (${(s.results || []).length} finished games) — the team-list feed didn't fully answer, so everything here covers only those teams. Press RELOAD ${cfg.name} DATA on the BOARD to retry.` : "";
+}
+function dvpTable(sp, win) {
+  const C = DVP_CFG[sp], s = gSlot(sp), D = s.dvp; if (!D) return null;
+  const per = {};
+  for (const r of s.results || []) {
+    const rec = D.agg[r.id]; if (!rec || !rec.t) continue; const ids = Object.keys(rec.t); if (ids.length !== 2) continue;
+    for (const id of ids) (per[id] = per[id] || []).push({ d: r.d || "", off: rec.t[ids.find(x => x !== id)] }); // what the OPPONENT's offence did against this defence
+  }
+  const N = win === "all" ? 1e9 : +win, tbl = {}, mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  for (const id in per) {
+    const gm = per[id].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0)).slice(-N); if (gm.length < 3) continue;
+    const o = { n: gm.length, pos: {}, team: {} };
+    for (const pos of C.positions) { const sts = C.stats[pos]; if (!gm.some(g => g.off.p && g.off.p[pos])) continue; o.pos[pos] = {}; sts.forEach(([k], i) => { o.pos[pos][k] = { v: mean(gm.map(g => (g.off.p && g.off.p[pos] ? g.off.p[pos][i] || 0 : 0))) }; }); }
+    for (const [k] of C.team) o.team[k] = { v: mean(gm.map(g => g.off[k] || 0)) };
+    tbl[id] = o;
+  }
+  const ids = Object.keys(tbl), rankIt = (get, set) => { const arr = ids.map(id => ({ id, v: get(tbl[id]) })).filter(x => x.v != null).sort((a, b) => b.v - a.v); arr.forEach((x, i) => set(tbl[x.id], i + 1, arr.length)); };
+  for (const pos of C.positions) for (const [k] of C.stats[pos]) rankIt(o => (o.pos[pos] ? o.pos[pos][k].v : null), (o, r, n) => { if (o.pos[pos]) { o.pos[pos][k].rank = r; o.pos[pos][k].of = n; } });
+  for (const [k] of C.team) rankIt(o => o.team[k].v, (o, r, n) => { o.team[k].rank = r; o.team[k].of = n; });
+  return tbl;
+}
+const dvpOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "TH" : ["TH", "ST", "ND", "RD"][n % 10 > 3 ? 0 : n % 10] || "TH");
+const dvpMost = r => (r === 1 ? "MOST" : dvpOrd(r) + " MOST");
+function dvpLines(sp, tid, tbl, maxRank) { // the headline lines for one defence: where it is most exploitable (and what it's good at)
+  const C = DVP_CFG[sp], o = tbl[tid]; if (!o) return [];
+  const nm = String(gSlot(sp).teams[tid]?.name || "").split(" ").slice(-1)[0].toUpperCase() || "TEAM", out = [];
+  for (const pos of C.positions) for (const [k, lab] of C.stats[pos]) { const c = o.pos[pos] && o.pos[pos][k]; if (c && c.rank <= maxRank) out.push({ rank: c.rank, pre: `${nm} ALLOW `, hot: dvpMost(c.rank), post: ` ${lab} TO ${pos}`, v: c.v }); }
+  for (const [k, lab, good] of C.team) { const c = o.team[k]; if (!c) continue; if (good && c.rank <= 5) out.push({ rank: c.rank + 0.5, pre: `${nm} RANK `, hot: "#" + c.rank, post: ` IN ${lab}`, v: c.v }); else if (!good && c.rank <= maxRank) out.push({ rank: c.rank + 0.5, pre: `${nm} ALLOW `, hot: dvpMost(c.rank), post: ` ${lab}`, v: c.v }); }
+  return out.sort((a, b) => a.rank - b.rank).slice(0, 8);
+}
+const DVP_WINS = [["all", "SEASON"], ["10", "LAST 10"], ["5", "LAST 5"]];
+function renderDvp(root, sp) {
+  const C = DVP_CFG[sp], s = gSlot(sp); if (!C) return;
+  root.appendChild(el("div", "h1", `DEFENSE VS POSITION <small>· what each ${C.name} defense gives up to each position</small>`));
+  dvpEnsure(sp); const D = s.dvp;
+  let win = null; try { win = hasLS ? localStorage.getItem("kb_dvpwin") : null; } catch (e) {} if (!DVP_WINS.some(w => w[0] === win)) win = "all";
+  const view = GX.dvpView || "game";
+  const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
+  bar.innerHTML = [["game", "BY GAME"], ["teams", "ALL TEAMS"]].map(([k, l]) => `<span class="fchip${view === k ? " on" : ""}" data-dvpv="${k}">${l}</span>`).join("") + `<span style="width:10px"></span>` + DVP_WINS.map(([k, l]) => `<span class="fchip${win === k ? " on" : ""}" data-dvpw="${k}">${l}</span>`).join("");
+  bar.querySelectorAll("[data-dvpv]").forEach(c => c.addEventListener("click", () => { GX.dvpView = c.dataset.dvpv; renderGen(); }));
+  bar.querySelectorAll("[data-dvpw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_dvpwin", c.dataset.dvpw); } catch (e) {} renderGen(); }));
+  root.appendChild(bar);
+  const nAgg = D ? Object.keys(D.agg).length : 0;
+  const status = el("div", "subhead"); status.innerHTML = `<span style="color:var(--dim3)">${D ? `Built from ${nAgg} of ${D.total} finished ${C.name} games${D.busy ? " — loading more, this fills in as you watch…" : ""}${D.unk ? ` · ${D.unk} player lines skipped (not on a roster)` : ""}${genCoverageNote(sp) ? " · " + genCoverageNote(sp) : ""}${!Object.keys(D.pos).length ? " · ⚠ rosters didn't answer, so positions are unknown — only passing can be read until they load" : ""}${D.err && !nAgg ? ` · last error: ${D.err}` : ""}` : "Loading…"}</span>`;
+  root.appendChild(status);
+  if (!D || nAgg < 8) { root.appendChild(el("div", D && !D.busy ? "nobets" : "loadingBox", D && !D.busy ? `No usable box-score player lines yet (${D.total} finished games found, ${Object.keys(D.bad).length} unreadable). Nothing is invented — this needs ESPN's game summaries to answer.` : `<div class="spinner"></div><div>Pulling box scores and rosters to see how every defense plays each position…</div>`)); return; }
+  const T = dvpTable(sp, win); if (!T || Object.keys(T).length < 4) { root.appendChild(el("div", "nobets", `Not enough games per team yet (needs 3+ per defense) — ${Object.keys(T || {}).length} teams qualify so far. ${genCoverageNote(sp)}`)); return; }
+  const esc = t => String(t).replace(/[&<>"]/g, c2 => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c2]));
+  if (view === "teams") {
+    GX.dvpPos = C.positions.includes(GX.dvpPos) && T[Object.keys(T)[0]].pos[GX.dvpPos] ? GX.dvpPos : C.positions.find(p2 => Object.values(T).some(o => o.pos[p2])) || C.positions[0];
+    const stats = C.stats[GX.dvpPos]; GX.dvpStat = stats.some(x => x[0] === GX.dvpStat) ? GX.dvpStat : stats[0][0];
+    const pb = el("div"); pb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;";
+    pb.innerHTML = C.positions.filter(p2 => Object.values(T).some(o => o.pos[p2])).map(p2 => `<span class="fchip${GX.dvpPos === p2 ? " on" : ""}" data-dvpp="${p2}">${p2}</span>`).join("");
+    pb.querySelectorAll("[data-dvpp]").forEach(c => c.addEventListener("click", () => { GX.dvpPos = c.dataset.dvpp; renderGen(); }));
+    const sb = el("div"); sb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+    sb.innerHTML = stats.map(([k, l]) => `<span class="fchip${GX.dvpStat === k ? " on" : ""}" data-dvps="${k}">${l}</span>`).join("") + (C.team.length && GX.dvpPos === C.positions[0] ? "" : "");
+    sb.querySelectorAll("[data-dvps]").forEach(c => c.addEventListener("click", () => { GX.dvpStat = c.dataset.dvps; renderGen(); }));
+    root.appendChild(pb); root.appendChild(sb);
+    const rows = Object.keys(T).filter(id => T[id].pos[GX.dvpPos]).map(id => ({ id, o: T[id], c: T[id].pos[GX.dvpPos][GX.dvpStat] })).sort((a, b) => a.c.rank - b.c.rank);
+    const card = el("div", "card"); card.style.cssText = "padding:6px 12px;max-width:640px;";
+    card.innerHTML = rows.map((r, i) => `<div data-dvprow="${r.id}" style="display:flex;align-items:center;gap:10px;padding:7px 0;${i ? "border-top:1px solid var(--line2, #1c2230);" : ""}"><span style="width:26px;color:var(--dim3);font-weight:800;">${r.c.rank}</span><span style="flex:1;font-weight:700;">${esc(s.teams[r.id]?.abbr || r.id)} <span style="color:var(--dim);font-weight:500;font-size:11px;">${esc(s.teams[r.id]?.name || "")}</span></span><span style="font-family:var(--cond);font-weight:800;font-size:16px;color:${r.c.rank <= 8 ? "var(--green)" : r.c.rank > r.c.of - 8 ? "var(--red)" : "var(--txt)"};">${r.c.v.toFixed(1)}</span><span style="width:46px;text-align:right;color:var(--dim3);font-size:10px;">${r.o.n} gm</span></div>`).join("");
+    root.appendChild(card);
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">${C.stats[GX.dvpPos].find(x => x[0] === GX.dvpStat)[1]} allowed to ${GX.dvpPos} per game · 1st = most allowed (the soft matchup, green) · ${win === "all" ? "season to date" : "each defense's last " + win + " games"}.</span>`));
+    return;
+  }
+  // BY GAME — one card per game still to play: both defenses' juiciest lines, graphic-style
+  const byAbbr = {}; for (const id in s.teams) byAbbr[String(s.teams[id].abbr || "").toUpperCase()] = +id;
+  let games = [];
+  if (sp === "nfl" && s.weekGames) games = s.weekGames.filter(g => !g.completed).map(g => ({ date: g.date, h: byAbbr[g.home], a: byAbbr[g.away] }));
+  else games = (s.games || []).filter(g => !g.completed).map(g => ({ date: g.date, h: +g.home.id, a: +g.away.id }));
+  games = games.filter(g => g.h && g.a).sort((x, y) => (x.date < y.date ? -1 : 1));
+  if (!games.length) { root.appendChild(el("div", "nobets", `No ${C.name} games still to play ${sp === "nfl" ? "this week" : "on " + (S.date || "this date")} — try ALL TEAMS for the full rankings.`)); return; }
+  const grid = el("div", "grid wide");
+  for (const g of games) {
+    const nameOf = id => esc(s.teams[id]?.name || id), abbr = id => esc(s.teams[id]?.abbr || id);
+    const col = id => { const ls = dvpLines(sp, String(id), T, 8); return `<div style="min-width:0;flex:1 1 230px;">${ls.length ? ls.map(l => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}<span style="color:var(--green)">${esc(l.hot)}</span>${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`).join("") : `<div style="padding:8px 0;color:var(--dim3);font-size:12px;">${abbr(id)}: no position is in the 8 softest right now.</div>`}</div>`; };
+    const card = el("div", "card"); card.dataset.dvpgame = g.a + "-" + g.h;
+    card.innerHTML = `<div class="chead"><span class="time">${(sp === "nfl" ? new Date(g.date).toLocaleDateString([], { weekday: "short" }) + " " : "") + timeLabel(g.date)}</span><div class="spacer"></div></div>
+      <div style="font-family:var(--cond);font-weight:800;font-size:18px;margin:2px 0 6px;">${nameOf(g.a).toUpperCase()} @ ${nameOf(g.h).toUpperCase()}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:0 18px;">${col(g.a)}${col(g.h)}</div>`;
+    grid.appendChild(card);
+  }
+  root.appendChild(grid);
+  root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Each line: how a defense ranks (1st = gives up the most) in what it allows per game to that position, ${win === "all" ? "season to date" : "over its last " + win + " games"}. Only the 8 softest spots per defense are shown, plus sacks / interceptions for NFL. Positions ${sp === "nfl" ? "come from team rosters (ESPN's NFL box scores don't list them)" : "come from team rosters, falling back to the box score's own label"}.</span>`));
+}
 function genPredict(sp, g) {
   const cfg = GS_CFG[sp], s = gSlot(sp), st = s.bt?.state;
   if (!st) return;
@@ -7568,13 +8264,21 @@ function genPredict(sp, g) {
   }
   g.consRaw = raw;
   g.cons = calApply("g:" + sp + ":c", raw);
+  g.consBase = g.cons; g.injH = g.injA = null; g.injNet = 0;
+  if (cfg.inj === "price" && !g.completed && !g.live && g.cons != null) { // price tonight's absences INTO the number
+    try {
+      const hs = genInjShift(sp, g.home.id), as2 = genInjShift(sp, g.away.id);
+      g.injH = hs; g.injA = as2; g.injNet = as2.shift - hs.shift; // away absences help the home side
+      if (g.injNet) g.cons = clamp(phi(invPhi(clamp(g.cons, 0.03, 0.97)) + g.injNet / cfg.mSig), 0.03, 0.97);
+    } catch (e) { g.cons = g.consBase; g.injNet = 0; }
+  }
   if (ch?.gp && ca?.gp) {
     const ids = Object.keys(st.cum).filter(id => st.cum[id].gp >= Math.max(3, cfg.btMin));
     if (ids.length >= 6) {
       const lg = mean(ids.map(id => st.cum[id].pf / st.cum[id].gp));
       const eH2 = lg * ((ch.pf / ch.gp) / lg) * ((ca.pa / ca.gp) / lg), eA2 = lg * ((ca.pf / ca.gp) / lg) * ((ch.pa / ch.gp) / lg);
       g.expT = eH2 + eA2;
-      g.expM = (eH2 - eA2) + cfg.eloHFA / 28; // score-rate margin + home edge in points — reaches 40+ where the win-prob clamp can't
+      g.expM = (eH2 - eA2) + cfg.eloHFA / 28 + (g.injNet || 0); // score-rate margin + home edge in points — reaches 40+ where the win-prob clamp can't; + the injury shift
     }
   }
 }
@@ -7604,7 +8308,7 @@ async function genFetchProps(sp) {
   s.propBusy = true; renderGen();
   try {
     const evs = await j(`https://api.the-odds-api.com/v4/sports/${cfg.oa}/events?apiKey=${key}`);
-    const todays = (evs || []).filter(e2 => (e2.commence_time || "").slice(0, 10) === S.date).slice(0, 8);
+    const todays = (evs || []).filter(e2 => e2.commence_time && localISO(new Date(e2.commence_time)) === S.date).slice(0, 8); // local day: an evening kickoff is already "tomorrow" in UTC
     const rows = [];
     const mkts = cfg.props.map(p => p[0]).filter(m2 => m2 !== "h2h").join(",");
     for (const e2 of todays) {
@@ -7671,11 +8375,14 @@ function renderGen() {
     return;
   }
   if (GX.view === "rec") {
+    if (cfg.inj === "price") root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">These records replay the BASE model on past games. There is no historical injury data to replay, so tonight's injury adjustment is not part of the track record.</span>`));
     for (const sub of subsOf()) {
       const c3 = GS_CFG[sub], s3 = gSlot(sub), bt = s3.bt;
       if (combo) root.appendChild(el("div", "h1", `${c3.emoji} ${c3.name}`));
       if (c3.teamCap === -1 || (c3.teamCap === 0 && !c3.wkRe) || !bt || !bt.n) {
+        if (c3.priSeason && !s3._priBusy && !(s3.pri && s3.pri.length)) setTimeout(() => { try { genPriorSeason(sub); } catch (e) {} }, 300);
         root.appendChild(el("div", "nobets", c3.teamCap === -1 ? "UFC has no team models — nothing to backtest honestly." : !s3.results.length ? (c3.soccer ? `No completed ${c3.name} matches loaded. EPL &amp; UCL sit between seasons in summer (new seasons start Aug/Sep). MLS runs right now — its records usually just need the season-results fetch to land; use the button below.` : `No completed ${c3.name} games loaded yet — off-season or the season hasn't started. Models, records and truth checks light up automatically once real games exist.`) : "Not enough completed games yet for a backtest."));
+        if (s3._priBusy) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">⏳ Warming the ${c3.name} models with last season's results (one time, then saved) — this fills in by itself in a moment…</span>`));
         if (c3.teamCap > 0 && Object.keys(s3.teams).length) {
           const fb = el("button", null, `⟳ FETCH ${c3.name} RESULTS AGAIN`); fb.className = "btn ghost"; fb.style.margin = "0 0 14px";
           fb.addEventListener("click", async () => { fb.disabled = true; fb.textContent = "⟳ fetching " + c3.name + " season results…"; await genFetchResults(sub); renderGen(); });
@@ -7768,7 +8475,59 @@ function renderGen() {
         rbx3.addEventListener("click", () => { for (const sub of subs3) { const ss = gSlot(sub); if (ss.results?.length) { ss.boxReady = false; ss.boxLoading = false; socBoxEnsure(sub); } } renderGen(); });
         root.appendChild(rbx3);
       }
+    } else if (cfg.propRec) {
+      // ---- NBA PLAYER PROP MODELS: every prop (incl. the P+R / R+A / P+A / PRA combos) replayed walk-forward on real game logs ----
+      const spR = GX.cur, sR = gSlot(spR), psR = GS_PSTATS[spR] || [];
+      if (!sR.pReady && !sR.pLoading && !sR.pErr) genPropsLoad(spR);
+      const recStatR = (hasLS && localStorage.getItem("kb_proprecstat_" + spR)) || psR[0].k;
+      const recDef = psR.find(x => x.k === recStatR) || psR[0];
+      root.appendChild(el("div", "h1", `PLAYER PROP MODELS <small>· every prop replayed walk-forward on each player's real game log this season — pick a prop</small>`));
+      const rsBarR = el("div"); rsBarR.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+      rsBarR.innerHTML = psR.map(x => `<span class="fchip${recDef.k === x.k ? " on" : ""}" data-prs="${x.k}">${x.n}</span>`).join("");
+      rsBarR.querySelectorAll("[data-prs]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_proprecstat_" + spR, c2.dataset.prs); renderGen(); }));
+      root.appendChild(rsBarR);
+      const plR = (sR.pFull && sR.pFull[recDef.k]) || [];
+      if (sR.pLoading) root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Pulling each player's season game log — the backtest builds from it…</div>`));
+      else if (sR.pErr) root.appendChild(el("div", "nobets", `Player game logs didn't load (${sR.pErr}). Nothing is invented — try again once the feed answers.`));
+      else if (plR.length < 5) root.appendChild(el("div", "nobets", "Not enough player game logs in hand yet to backtest this prop honestly."));
+      else {
+        GX._pmbt = GX._pmbt || {};
+        const pmKeyR = spR + ":" + recDef.k + ":" + plR.length;
+        if (!GX._pmbt[pmKeyR]) { try { GX._pmbt[pmKeyR] = pmBacktest(plR, recDef.cls || "big"); } catch (e2) { GX._pmbt[pmKeyR] = {}; } }
+        const pmbR = GX._pmbt[pmKeyR], pmKeysR = Object.keys(pmbR);
+        if (pmKeysR.length && pmKeysR.some(k2 => pmbR[k2].n > 0)) {
+          root.appendChild(el("div", "recgrid", pmKeysR.map(k2 => { const r2 = pmbR[k2]; const t2 = r2.w + r2.l; return `<div class="reccard"><div class="recname">${r2.name}</div><div class="recwl">${t2 ? r2.w + "-" + r2.l : "—"}</div><div class="recsub">${r2.n} graded lines · win% ${t2 ? (r2.w / t2 * 100).toFixed(1) : "—"}</div></div>`; }).join("")));
+          const pmSelR = (hasLS && localStorage.getItem("kb_pmcal_" + spR)) || pmKeysR[0];
+          const pmBarR = el("div"); pmBarR.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px;";
+          pmBarR.innerHTML = pmKeysR.map(k2 => `<span class="fchip${pmSelR === k2 ? " on" : ""}" data-pmr="${k2}">${pmbR[k2].name} (${pmbR[k2].cal.length})</span>`).join("");
+          pmBarR.querySelectorAll("[data-pmr]").forEach(c2 => c2.addEventListener("click", () => { if (hasLS) localStorage.setItem("kb_pmcal_" + spR, c2.dataset.pmr); renderGen(); }));
+          root.appendChild(pmBarR);
+          root.appendChild(el("div", "h1", `TRUTH CHECK <small>· ${recDef.n.toLowerCase()} — when it says 60%, does it deliver 60%?</small>`));
+          const pmBoxR = el("div", "card");
+          const selDatR = pmbR[pmSelR] || pmbR[pmKeysR[0]];
+          pmBoxR.innerHTML = calRowsHTML(calibrate(selDatR.cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || '<div style="color:var(--dim);font-size:13px;">Not enough history yet.</div>';
+          root.appendChild(pmBoxR);
+          root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">${plR.length} players' real season game logs · reference lines = rolling median ± a step · win% counts only 60%+ calls. These are today's season leaders, so history leans a little flattering — read it as a sanity check of the model's calibration, not as ROI.</span>`));
+        } else root.appendChild(el("div", "nobets", "Logs loaded but too short to grade a walk-forward backtest yet."));
+      }
     }
+    return;
+  }
+  if (GX.view === "dvp") { renderDvp(root, sp); return; }
+  if (GX.view === "eff") { // ---- EFFICIENCY LANDSCAPE
+    const subsE = subsOf(); if (combo) GX.effLg = subsE.includes(GX.effLg) ? GX.effLg : subsE[0];
+    const lgE = combo ? GX.effLg : sp, cE = GS_CFG[lgE], sE = gSlot(lgE);
+    root.appendChild(el("div", "h1", `EFFICIENCY LANDSCAPE <small>· ${cE.name} · ${cE.soccer || lgE === "nhl" ? "goals" : "points"} scored vs allowed, rolling</small>`));
+    if (combo) {
+      const lb = el("div"); lb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
+      lb.innerHTML = subsE.map(k2 => `<span class="fchip${GX.effLg === k2 ? " on" : ""}" data-efflg="${k2}">${GS_CFG[k2].name}</span>`).join("");
+      lb.querySelectorAll("[data-efflg]").forEach(c2 => c2.addEventListener("click", () => { GX.effLg = c2.dataset.efflg; renderGen(); }));
+      root.appendChild(lb);
+    }
+    const winE = effWin(), bE = effBuild(sE.results || [], sE.teams || {}, winE);
+    const dayISO = S.date || localISO(new Date()); let dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && localISO(new Date(g3.date)) === dayISO), dayLabel = dayISO === localISO(new Date()) ? "TODAY" : dayISO;
+    if (!dayGames.length && cE.weekly) { dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && !g3.completed); dayLabel = "THIS WEEK"; } // a weekly sport on an off day: the week's biggest mismatch
+    effRender(root, { unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up" })) : null });
     return;
   }
   if (GX.view === "pstat") {
@@ -7918,18 +8677,22 @@ function renderGen() {
     if (gpSort === "consist") enrich.sort((a2, b2) => gCvOf(a2) - gCvOf(b2) || b2.conf - a2.conf);
     else enrich.sort((a2, b2) => (b2.conf + (b2.agree ? 0.035 : 0)) - (a2.conf + (a2.agree ? 0.035 : 0)) || (b2.p2.proj / b2.p2.sigma) - (a2.p2.proj / a2.p2.sigma));
     root.appendChild(el("div", "subhead", gpSort === "consist" ? `Ordered <b style="color:var(--txt)">steadiest → swingiest</b> by each player's own game-to-game variation.` : `Ordered <b style="color:var(--txt)">best → worst</b>: the calls the engines are most confident in — and most unanimous on — come first.`));
+    for (const en of enrich) en.gs = genPlayerGame(GX.cur, en.p2);
+    enrich.sort((a2, b2) => GEN_GS_ORDER[a2.gs.state] - GEN_GS_ORDER[b2.gs.state]); // unplayed first, finals dimmed below, no-game last (stable)
+    const nPlayed = enrich.slice(0, 15).filter(e2 => e2.gs.state === "final" || e2.gs.state === "none").length;
+    if (nPlayed) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Players whose team already played${enrich.slice(0, 15).some(e2 => e2.gs.state === "none") ? " or has no game " + (cfg.weekly ? "this week" : "today") : ""} are dimmed and sit below everyone still to play.</span>`));
     const pgrid = el("div", "grid wide");
     let pRank = 0;
     for (const en of enrich.slice(0, 15)) {
       const { p2, fits, consProj, modelLine, agree, conf } = en;
       pRank++;
       const chartVals = p2.vals.slice(0, 10).reverse();
-      const card = el("div", "card kcard");
-      card.dataset.gpid = p2.id;
+      const card = el("div", "card kcard" + (en.gs.state === "final" || en.gs.state === "none" ? " played" : ""));
+      card.dataset.gpid = p2.id; card.dataset.gstate = en.gs.state;
       card.innerHTML = `
         <div class="ktop"><div class="hs big">${p2.hs ? `<img src="${p2.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
           <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p2.name}</div>
-          <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.vals.length} games logged</div></div>
+          <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.vals.length} games logged${en.gs.label ? " · " + en.gs.label : ""}</div></div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;"><div style="display:flex;gap:5px;align-items:center;"><span style="font-size:10px;font-weight:800;color:${pRank === 1 ? "var(--gold)" : "var(--dim3)"};letter-spacing:.5px;">#${pRank}</span>${gBadge(p2.grade)}</div><div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">MODEL ${modelLine}</div><div style="font-size:9.5px;color:${agree ? "var(--green)" : "var(--dim3)"};font-weight:700;">${(conf * 100).toFixed(0)}% conviction</div></div></div>
         <div class="kmid">
           <div class="kstat"><div class="v">${consProj.toFixed(1)}</div><div class="l">CONSENSUS PROJ</div></div>
@@ -7940,7 +8703,7 @@ function renderGen() {
         </div>
         <div style="margin-top:8px;">${fits.map(f2 => { const po = clamp(f2.pOver(modelLine), 0.01, 0.99); const hp2 = po >= 0.5; return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:2px 0;"><span style="color:var(--dim);flex:0 0 132px;">${f2.name}</span><b>${f2.proj.toFixed(1)}</b><div class="spacer"></div><b style="color:${hp2 ? "var(--green)" : "var(--red)"};">${hp2 ? "OVER" : "UNDER"} ${modelLine} · ${(Math.max(po, 1 - po) * 100).toFixed(0)}%</b></div>`; }).join("")}</div>
         <div class="chips" style="margin-top:7px;">
-          <span class="chip">season ${p2.season.toFixed(1)}</span><span class="chip">last 5: ${p2.last5.toFixed(1)}</span>
+          ${en.gs.state === "none" ? `<span class="chip red">${en.gs.label}</span>` : en.gs.state === "final" ? '<span class="finchip">FINAL</span>' : en.gs.state === "live" ? '<span class="livechip">● LIVE</span>' : en.gs.state === "up" ? `<span class="chip green">${en.gs.label}</span>` : ""}${p2.inj ? `<span class="chip red">⚠ ${p2.inj}</span>` : ""}<span class="chip">season ${p2.season.toFixed(1)}</span><span class="chip">last 5: ${p2.last5.toFixed(1)}</span>
           <span class="chip">swing ±${p2.sigma.toFixed(1)}</span>
         </div>
         ${whyBox([
@@ -8022,6 +8785,7 @@ function renderGen() {
   }
   // BOARD
   try { genBento(root, sp); } catch (e) {}
+  try { genBestPropsSection(root, sp); } catch (e) {}
   let boardGames;
   if (combo) {
     const lgSel = socLg();
@@ -8036,7 +8800,7 @@ function renderGen() {
   } else {
     boardGames = s.games.map(g2 => ({ g: g2, sub: sp }));
   }
-  if (!boardGames.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games on ${S.date} — off day or off-season. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
+  if (!boardGames.length) { root.appendChild(el("div", "nobets", `No ${cfg.name} games ${cfg.weekly ? "loaded for the week of " + weekWindow(S.date)[0] : "on " + S.date} — ${cfg.weekly ? "either the schedule feed didn't answer (press RELOAD " + cfg.name + " DATA) or it's the off-season" : "off day or off-season"}. PROPS and MODEL RECORDS still work when data exists; try the date picker up top.`)); }
   if (boardGames.length > 1) {
     const gSortK = (hasLS && localStorage.getItem("kb_gsort_" + sp)) || (cfg.spFirst ? "spread" : "cons"); // spread-first sports open sorted by BEST SPREAD
     const gsBar = el("div");
@@ -8090,17 +8854,20 @@ function renderGen() {
       if (rows2.length) stp = `<div style="margin-top:9px;background:var(--panel3);border-radius:10px;padding:7px 11px;"><div style="font-size:9px;font-weight:800;letter-spacing:1px;color:var(--dim);margin-bottom:2px;">SPREAD &amp; TOTAL${sG.bt ? "" : " · book lines only"}</div>${rows2.join("")}${altSp}${altTot}</div>`;
     }
     card.innerHTML = `
-      <div class="chead"><span class="time">${timeLabel(g.date)}</span>
+      <div class="chead"><span class="time">${cfgG.weekly ? new Date(g.date).toLocaleDateString([], { weekday: "short" }) + " " : ""}${timeLabel(g.date)}</span>
         ${g.completed ? '<span class="finchip">FINAL</span>' : g.live ? '<span class="livechip">● LIVE</span>' : ""}
         ${g.book && !g.completed ? `<span class="bookchip">${g.book}</span>` : ""}${combo ? `<span class="chip">${cfgG.emoji} ${cfgG.name}</span>` : ""}<div class="spacer"></div></div>
       <div class="trow" style="margin-top:3px;">${logo2(g.away)}<div style="min-width:0;flex:1;"><div class="tname">${g.away.abbr} <span>${(g.away.name || g.away.abbr || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(gSlot(sub).results, +g.away.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.away.winner ? "var(--green)" : "var(--dim)"}">${g.away.score ?? ""}</div>` : cfgG.spFirst && g.spread != null ? `<div class="tml" style="color:var(--txt);">${-g.spread > 0 ? "+" : ""}${-g.spread}</div>` : `<div class="tml">${fmtML(g.mlAway)}</div>`}</div>
       <div class="trow" style="margin-top:3px;">${logo2(g.home)}<div style="min-width:0;flex:1;"><div class="tname">${g.home.abbr} <span>${(g.home.name || g.home.abbr || "").split(" ").slice(-1)[0]}</span>${!g.completed && !g.live ? llgChip(lastFinalInfo(gSlot(sub).results, +g.home.id)) : ""}</div></div>${g.completed || g.live ? `<div class="tscore" style="color:${g.home.winner ? "var(--green)" : "var(--dim)"}">${g.home.score ?? ""}</div>` : cfgG.spFirst && g.spread != null ? `<div class="tml" style="color:var(--txt);">${g.spread > 0 ? "+" : ""}${g.spread}</div>` : `<div class="tml">${fmtML(g.mlHome)}</div>`}</div>
       ${!g.completed && (g.dc || g.mlDraw != null) ? `<div style="font-size:11px;color:var(--dim);margin-top:4px;">${g.dc ? `<b style="color:var(--txt)">DIXON–COLES 3-WAY:</b> ${g.home.abbr} ${(g.dc.pW * 100).toFixed(0)}% · <b style="color:var(--gold)">DRAW ${(g.dc.pD * 100).toFixed(0)}% (fair ${fmtML(probToAmerican(g.dc.pD))})</b> · ${g.away.abbr} ${(g.dc.pL * 100).toFixed(0)}%` : ""}${g.mlDraw != null ? ` · book draw ${fmtML(g.mlDraw)}${g.dc && americanToProb(g.mlDraw) < g.dc.pD ? ' <span style="color:var(--green)">— pays better than fair</span>' : ""}` : ""}</div>` : ""}
       ${spBan}
+      ${genInjRow(sub, g)}
       ${g.cons != null && !g.completed ? `<div class="xstats" style="margin-top:10px;"><div><div class="xh">WHO EACH MODEL PICKS${cfgG.spFirst ? ' <span style="color:var(--dim3);letter-spacing:0;font-weight:600;">· win prob — the SPREAD PICK above is the headline here</span>' : ""}</div>${mrow2("Elo", g.mElo)}${mrow2("Pythag", g.mPyth)}${mrow2("Form-10 (opp-adj)", g.mForm)}${g.mDC != null ? mrow2("Dixon–Coles", g.mDC) : ""}${mrow2("Consensus", g.cons)}</div></div>` : (!g.completed && !g.live && cfgG.teamCap !== -1 && !sG.bt ? `<div class="fnote" style="margin-top:8px;">models activate once this season has enough completed games</div>` : "")}
       ${stp}`;
     grid.appendChild(card);
   }
+  for (const sub0 of subsOf()) { const bn = genInjBanner(sub0); if (bn) root.insertAdjacentHTML("beforeend", bn); }
+  if (!combo && cfg.weekly) { const ww = weekWindow(S.date || localISO(new Date())); root.insertAdjacentHTML("beforeend", `<div style="margin:0 0 10px;font-size:11px;color:var(--dim3);">📅 Showing <b>every ${cfg.name} game this week</b> (Tue ${ww[0]} → Mon ${ww[1]}) — Thursday, Sunday and Monday together. Games already played are dimmed; sort by GAME TIME to read them in order.</div>`); }
   root.appendChild(grid);
   const btnRow = el("div");
   btnRow.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;";
@@ -8366,15 +9133,21 @@ function renderTennis() {
 }
 function switchTab(name) {
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
-  for (const id of ["board", "ks", "hr", "hits", "tb", "hrr", "nrfi", "wnba", "locks", "value", "rec", "model", "how", "gen", "ten"]) $("#tab-" + id).style.display = id === name ? "" : "none";
+  for (const id of ["board", "ks", "hr", "hits", "tb", "hrr", "nrfi", "eff", "wnba", "locks", "value", "rec", "model", "how", "gen", "ten"]) $("#tab-" + id).style.display = id === name ? "" : "none";
+  if (S._stale && S._stale[name]) { // a late signal (weather / hot form / K splits) landed while this tab was hidden
+    S._stale[name] = false;
+    const again = { board: renderBoard, ks: renderKs, hr: renderHR, hits: renderHits, tb: () => renderBasesTab("tb"), hrr: () => renderBasesTab("hrr") }[name];
+    if (again) { try { again(); } catch (e) {} }
+  }
+  if (name === "eff") renderEffMlb();
   if (name === "wnba") wnbaEnsure();
   if (name === "locks") { renderLocks(); wnbaEnsure(); } // pull in both sports
   if (name === "value") { renderValue(); wnbaEnsure(); }
 }
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
-const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["nrfi", "NRFI/YRFI"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
-const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
+const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["nrfi", "NRFI/YRFI"], ["eff", "EFFICIENCY"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
+const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:eff", "EFFICIENCY"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
   const tabs = APP_SPORT === "mlb" ? MLB_TABS : APP_SPORT === "wnba" ? WNBA_TABS : APP_SPORT === "ten" ? [["ten:board", "BOARD"], ["ten:games", "TOTAL GAMES"], ["ten:rec", "MODEL RECORDS"], ["ten:how", "HOW IT WORKS"]] : genTabs(APP_SPORT);
@@ -8412,7 +9185,9 @@ function selectTab(key) {
 }
 function setSport(s) {
   if (s === "__more") { genMenu(); return; }
+  if (s === "mlb") runMlbDeferred(); // MLB was waiting for the start sport to finish — go now
   APP_SPORT = s;
+  if (hasLS) { try { localStorage.setItem("kb_lastsport", s); } catch (e) {} }
   const isGen = !!GS_CFG[s];
   if (isGen) GX.cur = s;
   document.querySelectorAll("#sportSwitch button").forEach(b => b.classList.toggle("on", b.dataset.sport === s));
@@ -8423,21 +9198,53 @@ async function nextGameDay() { // resolves the next date the CURRENT sport plays
   const sp = APP_SPORT;
   const cacheGet = k2 => { if (!hasLS) return null; try { const v = JSON.parse(localStorage.getItem("kb_gnext_" + k2) || "null"); return v && v.from === S.date && v.v > S.date ? v.v : null; } catch (e) { return null; } }; // a "next day" is only valid for the date it was computed FROM — stale future answers were sticking
   const cacheSet = (k2, v) => { if (hasLS && v) try { localStorage.setItem("kb_gnext_" + k2, JSON.stringify({ from: S.date, v })); } catch (e) {} };
-  const espnNext = async (path, k2, dense) => {
-    const c2 = cacheGet(k2); if (c2) return c2;
-    const base2 = `https://site.api.espn.com/apis/site/v2/sports/${path}`;
-    try {
-      const sb2 = await j(`${base2}/scoreboard`);
-      const evD = (sb2?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(d2 => d2 > S.date).sort();
-      if (evD[0]) { cacheSet(k2, evD[0]); return evD[0]; }
-    } catch (e) {}
-    for (const off of dense ? [1, 2, 3, 4, 5, 7, 10, 14, 21] : [7, 14, 21, 30, 45, 60, 90]) {
-      try {
-        const dd = addDays(S.date, off);
-        const sb3 = await j(`${base2}/scoreboard?dates=${dd.replace(/-/g, "")}`);
-        const dts = (sb3?.events || []).map(e3 => (e3.date || "").slice(0, 10)).filter(Boolean).sort();
-        if (dts.length) { const v = dts[0] > S.date ? dts[0] : dd; cacheSet(k2, v); return v; }
-      } catch (e) {}
+  // The next game day is FOUND, not guessed: every candidate day is checked against ESPN's scoreboard for that exact day (the same day-keyed
+  // call the board uses), so a sport that only plays Thursday/Sunday/Monday can't land on a Wednesday or on a date a month away.
+  // A probe has THREE outcomes: true (games), false (ESPN answered: none) and null (couldn't ask). Only a definite false may ever be skipped past —
+  // a timeout used to count as "no games that day", which is how the search wandered weeks or months ahead on a shaky connection.
+  const probe = async (path, dd) => { for (let t2 = 0; t2 < 2; t2++) { try { const sb = await j(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dd.replace(/-/g, "")}`); return (sb?.events || []).length > 0; } catch (e) {} } return null; };
+  const espnNext = async (path, k2, hints, from) => {
+    from = from || S.date;
+    const c2 = cacheGet(k2); if (c2 && c2 > from) return c2;
+    const done = v => { cacheSet(k2, v); return v; };
+    for (let o = 1; o <= 10; o += 5) { // 1) the next 10 days, five at a time
+      const ds = [0, 1, 2, 3, 4].map(x => addDays(from, o + x)), rs = await Promise.all(ds.map(d3 => probe(path, d3)));
+      const i = rs.findIndex(r => r === true), u = rs.findIndex(r => r === null);
+      if (i >= 0 && (u < 0 || u > i)) return done(ds[i]);   // the earliest day with games, and every earlier day was definitely checked
+      if (u >= 0) return null;                              // a day couldn't be checked → never jump ahead on a guess (the caller says "try again")
+    }
+    const far = [...new Set((hints || []).filter(h => h > addDays(from, 10)))].sort().slice(0, 4); // 2) off-season: jump to dates the league calendar names, then walk forward to the first real game day
+    for (const h of far) for (let o = 0; o < 7; o++) { const dd = addDays(h, o), r = await probe(path, dd); if (r === null) return null; if (r) return done(dd); }
+    let prev = addDays(from, 10); // 3) nothing named: coarse steps, then walk back to the first real day
+    for (const off of [17, 24, 31, 45, 60, 90, 120, 150]) {
+      const dd = addDays(from, off), r = await probe(path, dd); if (r === null) return null;
+      if (r) { for (let d3 = addDays(prev, 1); d3 < dd; d3 = addDays(d3, 1)) { const r2 = await probe(path, d3); if (r2 === null) return null; if (r2) return done(d3); } return done(dd); }
+      prev = dd;
+    }
+    return null;
+  };
+  // Weekly sports (NFL): the BOARD shows the whole week, but ⏭ still means the next GAME DAY — Thursday, then Sunday, then Monday, then next Thursday. One range call per week; if ESPN can't be asked we do NOT wander — we go to next week's Thursday (the usual first game day;
+  // the board shows the whole Tue→Mon week, so the exact day hardly matters). An empty week (bye of the season, off-season) moves on to the following week.
+  const weeklyNext = async (path, k2) => {
+    const cur = cacheGet(k2); if (cur) return cur;
+    const [wa, wb] = weekWindow(S.date); let sb = null, ok = false;
+    for (let t2 = 0; t2 < 2 && !ok; t2++) { try { sb = await j(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${wa.replace(/-/g, "")}-${wb.replace(/-/g, "")}`); ok = true; } catch (e) {} }
+    if (!ok) return espnNext(path, k2, [], S.date);                                   // the week call failed → check the next days one by one (failure-aware: it gives up rather than guess)
+    const ds = [...new Set((sb?.events || []).map(e3 => localISO(new Date(e3.date))))].filter(d3 => d3 > S.date && d3 <= wb).sort();
+    if (ds.length) { cacheSet(k2, ds[0]); return ds[0]; }                             // the next game day THIS week (your local date — Thursday night stays Thursday)
+    return weekNext(path, k2);                                                        // nothing left this week → the first game day of the next one
+  };
+  const weekNext = async (path, k2) => {
+    const cur = cacheGet(k2); if (cur) return cur;
+    const [wa0, wb0] = weekWindow(S.date);
+    for (let w = 1; w <= 30; w++) {
+      const wa = addDays(wa0, 7 * w), wb = addDays(wb0, 7 * w); let sb = null, ok = false;
+      for (let t2 = 0; t2 < 2 && !ok; t2++) { try { sb = await j(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${wa.replace(/-/g, "")}-${wb.replace(/-/g, "")}`); ok = true; } catch (e) {} }
+      const thu = addDays(wa, 2);
+      if (!ok) { cacheSet(k2, thu); return thu; }                                   // couldn't ask → next week's Thursday, not a guess further out
+      const ds = (sb?.events || []).map(e3 => localISO(new Date(e3.date))).filter(d3 => d3 >= wa && d3 <= wb).sort();
+      if (ds.length) { cacheSet(k2, ds[0]); return ds[0]; }                         // the week's first real game day
+      if ((sb?.events || []).length) { cacheSet(k2, thu); return thu; }             // games exist but the dates didn't parse → Thursday
     }
     return null;
   };
@@ -8450,15 +9257,15 @@ async function nextGameDay() { // resolves the next date the CURRENT sport plays
     } catch (e) {}
     return null;
   }
-  if (sp === "wnba") return espnNext("basketball/wnba", "wnba", true);
-  if (sp === "ten") return espnNext("tennis/atp", "ten", true);
+  if (sp === "wnba") return espnNext("basketball/wnba", "wnba", []);
+  if (sp === "ten") return espnNext("tennis/atp", "ten", []);
   const cfg = GS_CFG[sp]; if (!cfg) return null;
   const subs = cfg.combo || [sp];
   let best = null;
   for (const sub of subs) {
-    const s3 = gSlot(sub);
-    let v = (s3.calendar || []).find(d3 => d3 > S.date) || (s3.nextDay && s3.nextDay > S.date ? s3.nextDay : null) || cacheGet(sub);
-    if (!v) v = await espnNext(GS_CFG[sub].path, sub, !!cfg.soccer);
+    const s3 = gSlot(sub); const hints = (s3.calendar || []).slice(); if (s3.nextDay) hints.push(s3.nextDay);
+    for (let i = hints.length - 1; i >= 0; i--) if (!/^\d{4}-\d{2}-\d{2}$/.test(String(hints[i]))) hints.splice(i, 1); // only real YYYY-MM-DD strings
+    const v = GS_CFG[sub].weekly ? await weeklyNext(GS_CFG[sub].path, sub) : await espnNext(GS_CFG[sub].path, sub, hints); // hints only say where to look in the off-season — every date is verified before it is returned
     if (v && (!best || v < best)) best = v;
   }
   return best;
@@ -8471,16 +9278,35 @@ if (typeof document !== "undefined") {
     b2.disabled = true; const old = b2.textContent; b2.textContent = "⏭ finding…";
     const nx = await nextGameDay().catch(() => null);
     b2.disabled = false; b2.textContent = old;
-    if (!nx) { setStatus("Couldn't find the next game day — network hiccup, try again in a moment.", true); return; }
+    if (!nx) { setStatus("Couldn't confirm the next game day — ESPN's schedule didn't answer for every day it needed to check (or there are none for months). Nothing was changed; try again in a moment.", true); return; }
     const dp = $("#datePick");
     dp.value = nx; dp.dispatchEvent(new Event("change"));
     if (GS_CFG[APP_SPORT]) { for (const sub of (GS_CFG[APP_SPORT].combo || [APP_SPORT])) gSlot(sub).loaded = false; genEnsure(APP_SPORT); }
     setStatus(`⏭ Jumped to ${nx} — the next ${GS_CFG[APP_SPORT]?.name || APP_SPORT.toUpperCase()} game day. Date picker brings you back.`);
   });
 }
+const DEFAULT_START_SPORT = "nba"; // what the app opens on until you pick something else in the footer
+function startSportPref() { // saved choice → a real sport id; anything unknown falls back to the default (never throws)
+  const ok = id => id && (GS_CFG[id] || id === "mlb" || id === "wnba" || id === "ten");
+  let v = null; try { v = hasLS ? localStorage.getItem("kb_startsport") : null; } catch (e) {}
+  if (v === "last") { let l = null; try { l = localStorage.getItem("kb_lastsport"); } catch (e) {} return ok(l) ? l : DEFAULT_START_SPORT; }
+  return ok(v) ? v : DEFAULT_START_SPORT;
+}
+function runMlbDeferred() { if (!S._mlbDeferred) return; S._mlbDeferred = false; try { loadAll(); } catch (e) {} }
 function init() {
   const f = document.querySelector(".foot");
   if (f) f.innerHTML = `<b style="color:var(--blue)">BUILD ${BUILD}</b> — if you don't see this build number after updating, your phone is showing an old cached copy (pull to refresh, or open the link with ?new once)<br>` + f.innerHTML;
+  if (f) { // "open the app on" picker — lives in the footer, saved in kb_startsport
+    const btns = [...document.querySelectorAll("#sportSwitch button[data-sport]")];
+    let cur = "__default"; try { cur = (hasLS && localStorage.getItem("kb_startsport")) || "__default"; } catch (e) {}
+    const opts = [`<option value="__default"${cur === "__default" ? " selected" : ""}>Default (${(btns.find(b => b.dataset.sport === DEFAULT_START_SPORT) || { textContent: DEFAULT_START_SPORT }).textContent.trim()})</option>`,
+      `<option value="last"${cur === "last" ? " selected" : ""}>↩ The last sport I used</option>`]
+      .concat(btns.map(b => `<option value="${b.dataset.sport}"${cur === b.dataset.sport ? " selected" : ""}>${b.textContent.trim()}</option>`));
+    const row = document.createElement("div"); row.style.cssText = "margin:10px 0 2px;";
+    row.innerHTML = `Open the app on: <select id="startSport" style="background:var(--panel2);color:var(--txt);border:1px solid #2a2f3a;border-radius:8px;padding:4px 8px;font-size:13px;">${opts.join("")}</select>`;
+    f.appendChild(row);
+    row.querySelector("select").addEventListener("change", ev => { const v = ev.target.value; try { if (hasLS) { v === "__default" ? localStorage.removeItem("kb_startsport") : localStorage.setItem("kb_startsport", v); } } catch (e) {} setStatus("Starting sport saved — the app will open on " + (v === "__default" ? DEFAULT_START_SPORT.toUpperCase() : v === "last" ? "the last sport you used" : v.toUpperCase()) + " next time."); });
+  }
   const today = localISO(new Date());
   S.date = today;
   S.journal = loadJournal();
@@ -8517,8 +9343,11 @@ function init() {
       else if (APP_SPORT === "wnba" && soonOrLive(WS.games)) { WS.loaded = false; wnbaEnsure(); }
     } catch (e) {}
   }, 10 * 60 * 1000);
-  loadAll();
-  preloadOtherSports(); // warm every other sport in the background, one at a time — switching becomes instant
+  const startSp = startSportPref();
+  if (startSp !== "mlb") { S._mlbDeferred = true; setTimeout(runMlbDeferred, 20000); } else loadAll(); // MLB's heavy load must not fight the sport you opened on
+  preloadOtherSports(undefined, startSp !== "mlb" ? 10000 : undefined); // warm every other sport in the background, one at a time — switching becomes instant
+  if (startSp !== "mlb") { try { setSport(startSp); } catch (e) {} } // open on the chosen sport
+  setInterval(effTick, 10 * 60 * 1000); // efficiency tabs: fold in the newest results every 10 minutes while open
   setInterval(oddsTick, 20 * 60 * 1000); // auto-check for new book lines every 20 minutes while open
 }
 function sportDots() { // green dot on the switcher = that sport is warmed & ready to open instantly
@@ -8534,15 +9363,27 @@ function sportDots() { // green dot on the switcher = that sport is warmed & rea
     });
   } catch (e) {}
 }
-function preloadOtherSports(gapMs) { // staggered on purpose: one sport at a time so hostile networks never see a burst
+const SPORT_FAMILY = { nba: "bb", wnba: "bb", cbb: "bb", nfl: "fb", cfb: "fb", nhl: "ho", epl: "so", mls: "so", ucl: "so", mlb: "ba", ten: "te" };
+function wnbaInSeason() { const m = new Date((S.date || localISO(new Date())) + "T12:00:00").getMonth(); return m >= 4 && m <= 9; } // May → October
+function sportReady(sp) { // has the sport on screen finished its own load? (the warm-up must never compete with it)
+  try { if (sp === "wnba") return !!WS.loaded && !WS.loading; if (sp === "ten") return !!TN.loaded && !TN.loading; if (GS_CFG[sp]) return !!gSlot(sp).loaded && !gSlot(sp).loading; } catch (e) {}
+  return true;
+}
+function preloadOrder(cur) { // same family first (basketball → WNBA / college hoops), tennis ALWAYS last, WNBA skipped out of season
+  const base = ["nba", "wnba", "cbb", "nfl", "cfb", "nhl", "epl", "mls", "ucl", "ten"].filter(x => x !== cur && !(x === "wnba" && !wnbaInSeason()));
+  return base.map((x, i) => ({ x, i })).sort((p1, p2) => ((SPORT_FAMILY[p1.x] === SPORT_FAMILY[cur] ? 0 : 1) - (SPORT_FAMILY[p2.x] === SPORT_FAMILY[cur] ? 0 : 1)) || (p1.x === "ten") - (p2.x === "ten") || p1.i - p2.i).map(o => o.x);
+}
+function preloadOtherSports(gapMs, firstMs) { // staggered on purpose: one sport at a time so hostile networks never see a burst
   if (S._preloading) return;
   S._preloading = true;
   const gap = gapMs || 7000;
-  const order = ["wnba", "ten", "mls", "nfl", "nba", "nhl", "epl", "ucl", "cfb", "cbb"];
-  let i = 0;
+  let order = null, i = 0, waited = 0; S._preDone = []; // the order is decided at the first step, once the start sport is really on screen
   const step = () => {
+    if (!sportReady(APP_SPORT) && waited < 60000) { waited += 1000; setTimeout(step, 1000); return; } // wait (up to 60 s) until the sport you are looking at has finished loading
+    waited = 0;
+    if (!order) { order = preloadOrder(APP_SPORT); S._preOrder = order.slice(); }
     if (i >= order.length) { S._preloading = false; sportDots(); return; }
-    const sp = order[i++];
+    const sp = order[i++]; S._preDone.push(sp);
     try {
       if (sp === "wnba") wnbaEnsure();
       else if (sp === "ten") tnEnsure();
@@ -8551,7 +9392,7 @@ function preloadOtherSports(gapMs) { // staggered on purpose: one sport at a tim
     sportDots();
     setTimeout(step, gap);
   };
-  setTimeout(step, 2000); // WNBA (the slow one) starts right away, in parallel with MLB
+  setTimeout(step, firstMs || 2000);
 }
 if (typeof window !== "undefined" && typeof document !== "undefined" && document.getElementById("status")) init();
 
