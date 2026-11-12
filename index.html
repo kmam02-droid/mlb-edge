@@ -443,6 +443,15 @@
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.47  DEF VS POS props dropdown redesigned: two compact lines per player (no repeated headers / projection lines / chips); the line is the player's
+          NORMAL level (before the matchup) so the hit % is meaningful instead of a 51 % coin flip; each pick shows "NN% hit · L10 x/10"; a new
+          BAD MATCHUPS section lists defences that allow the FEWEST to a position (UNDER leans) next to GOOD MATCHUPS; only 55 %+ leans are shown.
+   v5.46  Props now cover the teams that PLAY TODAY: the app priced only the league's top 34 scorers (a star or two per team — and stars on idle
+          teams), so most positions on most DEF VS POS cards had nobody. It now asks ESPN for the top 80 per stat and spends up to 64 player-log
+          lookups on players whose team has a game in the slate (league-wide only as a fallback); the dropdown says who is priced when it is empty.
+   v5.45  DEF VS POS → BY GAME: every game card gets a dropdown "PROPS THAT FIT THESE MATCHUPS" — for each soft matchup on the card (e.g. "Cavaliers
+          allow the most rebounds to C") the opposing team's best players at that position with their model line, chance, matchup % and injury
+          flags (out / doubtful players and teams without a game are left out); tap a row to jump to the prop card. NBA + NFL.
    v5.44  Player props no longer mix in PRESEASON games: starters play 10–15 minutes there, which dragged projections down and widened the swing
           (Mitchell P+A "26.1 over 12 games" when only ~9 games count) — preseason is dropped by name AND by date (before the schedule's first game);
           game logs are also sorted newest-first explicitly instead of trusting ESPN's order.
@@ -498,7 +507,7 @@
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.44 · 10a";
+const BUILD = "v5.47 · 10a";
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -7120,9 +7129,14 @@ function glVals(parsed, ps, full) { // per-game values, most recent first (full=
   const res = full ? out : out.slice(0, 18); res.meta = full ? meta : meta.slice(0, 18); // meta[i] = { date, event id } of vals[i] (newest first)
   return res;
 }
+function genSlateTeams(sp, onlyOpen) { // abbreviations of every team in the slate (the day, or the whole NFL week); onlyOpen = just the games still to be played
+  const s = gSlot(sp), cfg = GS_CFG[sp], gs = (cfg.weekly ? s.weekGames : s.games) || [], ab = x => String(typeof x === "string" ? x : (x && x.abbr) || "").toUpperCase(), out = new Set();
+  for (const g of gs) { if (onlyOpen && g.completed) continue; out.add(ab(g.home)); out.add(ab(g.away)); } out.delete(""); return out;
+}
 async function genPropsLoad(sp) {
   const cfg = GS_CFG[sp], s = gSlot(sp);
-  s.pLoading = true; s.pErr = null; renderGen();
+  if (s.pLoading && Date.now() - (s._pLoadAt || 0) < 90000) return; // already loading (the board, the DEF VS POS page and Best Prop Bets can all ask) — never run ~60 player-log lookups twice at once
+  s.pLoading = true; s._pLoadAt = Date.now(); s.pErr = null; renderGen();
   try {
     const web = `https://site.web.api.espn.com/apis/common/v3/sports/${cfg.path}`;
     if (cfg.soccer) {
@@ -7180,13 +7194,17 @@ async function genPropsLoad(sp) {
     for (const ps of GS_PSTATS[sp] || []) {
       if (lists[ps.sort]) continue;
       try {
-        const ba = await j(`${web}/statistics/byathlete?region=us&lang=en&limit=22&sort=${ps.sort}%3Adesc`);
+        let ba = null; for (const lim of [80, 22]) { try { ba = await j(`${web}/statistics/byathlete?region=us&lang=en&limit=${lim}&sort=${ps.sort}%3Adesc`); if ((ba?.athletes || []).length) break; } catch (e3) {} } // the long list first, the old short one if ESPN refuses it
         lists[ps.sort] = (ba?.athletes || []).map(a2 => ({ id: +(a2.athlete?.id || 0), name: a2.athlete?.displayName || "", team: a2.athlete?.teamShortName || a2.athlete?.team?.abbreviation || "", hs: a2.athlete?.headshot?.href || a2.athlete?.headshot || "" })).filter(c2 => c2.id && c2.name);
       } catch (e2) { lists[ps.sort] = []; }
     }
     const byId = {};
     for (const ps of GS_PSTATS[sp] || []) for (const c2 of lists[ps.sort] || []) byId[c2.id] = byId[c2.id] || c2;
-    const players = Object.values(byId).slice(0, 34);
+    // spend the player-log lookups on teams that PLAY in this slate (a prop for a team with no game is useless); league-wide leaders only fill the gaps / an off day
+    const inSlate = genSlateTeams(sp), openTeams = genSlateTeams(sp, true); let pool = Object.values(byId), cap = 34; // (the old league-wide behaviour is the fallback: an off day, or too few slate players on the lists)
+    if (inSlate.size >= 2) { const mine = pool.filter(p3 => inSlate.has(String(p3.team || "").toUpperCase())).sort((a3, b3) => (openTeams.has(String(b3.team || "").toUpperCase()) ? 1 : 0) - (openTeams.has(String(a3.team || "").toUpperCase()) ? 1 : 0)); // games still to play first, finished games (kept as dimmed cards) after
+      if (mine.length >= 10) { const rest = pool.filter(p3 => !inSlate.has(String(p3.team || "").toUpperCase())); pool = mine.slice(0, 64).concat(rest.slice(0, Math.max(0, 34 - Math.min(mine.length, 64)))); cap = 64; } }
+    const players = pool.slice(0, cap);
     if (!players.length) throw new Error("no player leaders returned (off-season feeds can be empty)");
     s._gl = {};
     await Promise.all(players.map(async p2 => {
@@ -7985,7 +8003,7 @@ function genBestProps(sp) {
 function genBestPropsSection(root, sp) {
   const cfg = GS_CFG[sp]; if (!cfg || cfg.soccer || !(GS_PSTATS[sp] || []).length) return;
   const s = gSlot(sp);
-  if (!s.pReady && !s.pLoading && !s.pErr && !s._bpKick && s.loaded && !s.loading) { s._bpKick = true; setTimeout(() => { try { genPropsLoad(sp); } catch (e) {} }, 2500); } // only AFTER the board's own data has loaded — never competing with it
+  if (!s.pReady && !s.pLoading && !s.pErr && !s._bpKick && s.loaded && !s.loading) { s._bpKick = true; setTimeout(() => { try { const s2 = gSlot(sp); if (!s2.pReady && !s2.pLoading) genPropsLoad(sp); } catch (e) {} }, 2500); } // only AFTER the board's own data has loaded — never competing with it
   const box = el("div"); box.dataset.bestprops = sp;
   box.appendChild(el("div", "h1", `BEST PROP BETS <small>· every prop in ${cfg.name}, strongest call first</small>`));
   if (s.pLoading || (!s.pReady && !s.pErr)) { box.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">⏳ Pulling player game logs to rank every prop — this fills in by itself in a few seconds…</span>`)); root.appendChild(box); return; }
@@ -8388,9 +8406,41 @@ const dvpMost = r => (r === 1 ? "MOST" : dvpOrd(r) + " MOST");
 function dvpLines(sp, tid, tbl, maxRank) { // the headline lines for one defence: where it is most exploitable (and what it's good at)
   const C = DVP_CFG[sp], o = tbl[tid]; if (!o) return [];
   const nm = String(gSlot(sp).teams[tid]?.name || "").split(" ").slice(-1)[0].toUpperCase() || "TEAM", out = [];
-  for (const pos of C.positions) for (const [k, lab] of C.stats[pos]) { const c = o.pos[pos] && o.pos[pos][k]; if (c && c.rank <= maxRank) out.push({ rank: c.rank, pre: `${nm} ALLOW `, hot: dvpMost(c.rank), post: ` ${lab} TO ${pos}`, v: c.v }); }
+  for (const pos of C.positions) for (const [k, lab] of C.stats[pos]) { const c = o.pos[pos] && o.pos[pos][k]; if (c && c.rank <= maxRank) out.push({ rank: c.rank, pre: `${nm} ALLOW `, hot: dvpMost(c.rank), post: ` ${lab} TO ${pos}`, v: c.v, k, pos }); }
   for (const [k, lab, good] of C.team) { const c = o.team[k]; if (!c) continue; if (good && c.rank <= 5) out.push({ rank: c.rank + 0.5, pre: `${nm} RANK `, hot: "#" + c.rank, post: ` IN ${lab}`, v: c.v }); else if (!good && c.rank <= maxRank) out.push({ rank: c.rank + 0.5, pre: `${nm} ALLOW `, hot: dvpMost(c.rank), post: ` ${lab}`, v: c.v }); }
   return out.sort((a, b) => a.rank - b.rank).slice(0, 8);
+}
+/* ---------- DEF VS POS → the props that fit each soft matchup ---------- */
+const DVP_PROP = { nba: { pts: "PTS", reb: "REB", ast: "AST", tpm: "TPM", pra: "PRA" }, nfl: { pyds: "PASSYDS", ryds: "RUSHYDS", cyds: "RECYDS", rec: "REC" } };
+function dvpPropRows(sp, g, T) { // GOOD matchups (the defence gives up the MOST) and BAD matchups (the FEWEST): the opposing team's players at that position, priced with the matchup applied
+  const s = gSlot(sp), D = s.dvp, map = DVP_PROP[sp]; if (!map || !D || !D.pos || !s.pReady || !s.pdata) return null;
+  const abbrOf = id => String(s.teams[id]?.abbr || "").toUpperCase(), out = { good: [], bad: [] };
+  for (const [defId, offId] of [[g.a, g.h], [g.h, g.a]]) {
+    const offAb = abbrOf(offId);
+    for (const l of [...dvpLines(sp, String(defId), T, 8), ...dvpToughLines(sp, String(defId), T, 8)]) {
+      if (!l.k || !map[l.k]) continue; const ps = (GS_PSTATS[sp] || []).find(x => x.k === map[l.k]), list = s.pdata[map[l.k]]; if (!ps || !list) continue;
+      const defs = pmModels(ps.cls);
+      for (const p of list) {
+        if (String(p.team || "").toUpperCase() !== offAb || D.pos[String(p.id)] !== l.pos) continue;
+        const av = genPlayerUsable(sp, p); if (!av.ok) continue; // team has no game / ruled out / doubtful → not offered
+        let base; try { base = defs.map(m2 => m2.fit(p.vals.slice().reverse())); } catch (e) { continue; } if (base.length < 2) continue;
+        const line = Math.max(0.5, Math.round(mean(base.map(f2 => f2.proj)) - 0.5) + 0.5);   // his NORMAL level, before the matchup — roughly what a book would post
+        const r = muApply(sp, p, ps, base), pO = mean(r.fits.map(f2 => f2.pOver(line))), pO0 = mean(base.map(f2 => f2.pOver(line)));
+        const over = !l.tough, chance = over ? pO : 1 - pO, lift = over ? pO - pO0 : pO0 - pO;   // a GOOD matchup can only lean OVER, a BAD one only UNDER — and the lean must come FROM the matchup (not from the line's rounding)
+        if (chance < 0.55 || lift < 0.03) continue;
+        const v10 = (p.vals || []).slice(0, 10), h10 = v10.filter(v => (over ? v > line : v < line)).length;
+        (l.tough ? out.bad : out.good).push({ p, k: ps.k, stat: ps.n, offAb, line, over, chance, mu: r.mu, flag: av.flag, l10h: h10, l10n: v10.length, desc: `${l.pre}${l.hot}${l.post}`, tough: !!l.tough });
+      }
+    }
+  }
+  for (const k of ["good", "bad"]) { const seen = {}; out[k] = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort((x, y) => y.chance - x.chance).slice(0, 4); }
+  return out;
+}
+function dvpToughLines(sp, tid, tbl, soft) { // the opposite of dvpLines: where a defence allows the FEWEST to a position (a bad matchup for that position's props)
+  const C = DVP_CFG[sp], o = tbl[tid]; if (!o) return [];
+  const n = Object.keys(tbl).length, k0 = Math.min(8, Math.round(n / 4)), nm = String(gSlot(sp).teams[tid]?.name || "").split(" ").slice(-1)[0].toUpperCase() || "TEAM", out = [];
+  for (const pos of C.positions) for (const [k, lab] of C.stats[pos]) { const c = o.pos[pos] && o.pos[pos][k]; if (c && c.rank >= n - k0 + 1 && c.rank > soft) out.push({ rank: c.rank, pre: `${nm} ALLOW `, hot: dvpOrd(n - c.rank + 1) + " FEWEST", post: ` ${lab} TO ${pos}`, v: c.v, k, pos, tough: true }); }
+  return out.sort((a, b) => b.rank - a.rank);
 }
 const DVP_WINS = [["all", "SEASON"], ["10", "LAST 10"], ["5", "LAST 5"]];
 function renderDvp(root, sp) {
@@ -8434,6 +8484,7 @@ function renderDvp(root, sp) {
   else games = (s.games || []).filter(g => !g.completed).map(g => ({ date: g.date, h: +g.home.id, a: +g.away.id }));
   games = games.filter(g => g.h && g.a).sort((x, y) => (x.date < y.date ? -1 : 1));
   if (!games.length) { root.appendChild(el("div", "nobets", `No ${C.name} games still to play ${sp === "nfl" ? "this week" : "on " + (S.date || "this date")} — try ALL TEAMS for the full rankings.`)); return; }
+  if (DVP_PROP[sp] && !s.pReady && !s.pLoading && !s.pErr && !s._dvpPropKick) { s._dvpPropKick = true; setTimeout(() => { try { const s2 = gSlot(sp); if (!s2.pReady && !s2.pLoading) genPropsLoad(sp); } catch (e) {} }, 600); } // the dropdowns need the player props
   const grid = el("div", "grid wide");
   for (const g of games) {
     const nameOf = id => esc(s.teams[id]?.name || id), abbr = id => esc(s.teams[id]?.abbr || id);
@@ -8442,6 +8493,17 @@ function renderDvp(root, sp) {
     card.innerHTML = `<div class="chead"><span class="time">${(sp === "nfl" ? new Date(g.date).toLocaleDateString([], { weekday: "short" }) + " " : "") + timeLabel(g.date)}</span><div class="spacer"></div></div>
       <div style="font-family:var(--cond);font-weight:800;font-size:18px;margin:2px 0 6px;">${nameOf(g.a).toUpperCase()} @ ${nameOf(g.h).toUpperCase()}</div>
       <div style="display:flex;flex-wrap:wrap;gap:0 18px;">${col(g.a)}${col(g.h)}</div>`;
+    if (DVP_PROP[sp]) { // dropdown: the props that fit this game's matchups — good (OVER leans) and bad (UNDER leans)
+      const pr = dvpPropRows(sp, g, T), nRows = pr ? pr.good.length + pr.bad.length : 0;
+      const priced = (() => { const ab = new Set([String(s.teams[g.a]?.abbr || "").toUpperCase(), String(s.teams[g.h]?.abbr || "").toUpperCase()]), seen = {}; for (const k of Object.keys(s.pdata || {})) for (const p4 of s.pdata[k] || []) if (ab.has(String(p4.team || "").toUpperCase())) seen[p4.id] = p4.name; return Object.values(seen); })();
+      const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}" style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;">${esc(c3.p.name)} <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}</span></div><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.stat)} · ${esc(c3.desc)}${c3.mu && Math.abs(c3.mu.f - 1) >= 0.01 ? " · " + muPct(c3.mu) : ""}${c3.flag ? ` · <span style="color:var(--red)">⚠ ${esc(c3.flag)}</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:15px;">${c3.over ? "OVER" : "UNDER"} ${c3.line}</div><div style="font-size:11px;white-space:nowrap;"><b style="color:${c3.chance >= 0.6 ? "var(--green)" : "var(--txt)"}">${(c3.chance * 100).toFixed(0)}% hit</b> <span style="color:var(--dim3)">· L10 ${c3.l10h}/${c3.l10n}</span></div></div></div>`;
+      const sec = (title, col, items) => items.length ? `<div data-dvpsec="${title[0]}" style="margin:10px 0 2px;font-size:10px;letter-spacing:1.2px;font-weight:800;color:${col};">${title}</div>` + items.map(rowHtml).join("") : "";
+      const body = !pr ? (s.pErr ? "Player props didn't load — press RELOAD on the BOARD to retry." : "Loading player props…")
+        : !nRows ? `No pick with a real lean for these matchups. The app prices ${priced.length} player${priced.length === 1 ? "" : "s"} on these two teams today${priced.length ? " (" + esc(priced.slice(0, 5).join(", ")) + (priced.length > 5 ? " +" + (priced.length - 5) : "") + ")" : ""} — a lean needs a priced player at a position with a soft or tough matchup, and a 55%+ chance.`
+        : sec("GOOD MATCHUPS", "var(--green)", pr.good) + sec("BAD MATCHUPS", "var(--red)", pr.bad) + `<div style="font-size:10px;color:var(--dim3);margin-top:8px;line-height:1.5;">Line = his normal level before the matchup. <b>Hit %</b> = the model's chance of that side with the matchup applied; <b>L10</b> = times he cleared that line in his last 10. Model numbers, not book prices — tap a row for the full prop card.</div>`;
+      card.insertAdjacentHTML("beforeend", `<button class="whybtn" data-why style="margin-top:8px;">▸ PROPS THAT FIT THESE MATCHUPS${pr ? " (" + nRows + ")" : ""}</button><div class="whybox">${body}</div>`);
+      card.querySelectorAll("[data-dvpprop]").forEach(r3 => r3.addEventListener("click", () => { selectTab("gen:pstat:" + r3.dataset.dvpprop); jumpToCard(`#tab-gen [data-gpid="${r3.dataset.dvppid}"]`); }));
+    }
     grid.appendChild(card);
   }
   root.appendChild(grid);
