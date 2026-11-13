@@ -361,27 +361,49 @@
 <body>
 <noscript><div style="padding:30px;color:#f87171;font-family:sans-serif;">JavaScript is disabled — this app needs it to run.</div></noscript>
 <script>
-/* ES5-only boot guard: paints any error on screen, even if the main script fails to parse */
+/* ES5-only boot guard: paints any REAL error on screen (even if the main script fails to parse) — with COPY, ✕ CLOSE and de-duplication; routine network failures are not errors */
 (function () {
-  function paint(msg) {
-    var d = document.getElementById("bootErr");
-    if (!d) {
-      d = document.createElement("div");
-      d.id = "bootErr";
-      d.style.cssText = "position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;background:#2a1215;color:#ff8a80;border:1px solid #5c2b2e;border-radius:10px;padding:12px 16px;font:12px/1.5 Consolas,monospace;white-space:pre-wrap;max-height:40vh;overflow:auto;";
-      (document.body || document.documentElement).appendChild(d);
-    }
-    d.textContent += (d.textContent ? "\n" : "PROBLEM DETECTED — copy this message to Claude:\n") + msg;
+  var seen = {};
+  var BENIGN = /NetworkError|Failed to fetch|Load failed|network\/CORS|timeout \(\d+s\)|HTTP \d{3}|AbortError|aborted/i;
+  function ctx() { try { return window.__kbCtx ? window.__kbCtx() : ""; } catch (e) { return ""; } }
+  function copyText(txt) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt); return true; } } catch (e) {}
+    try { var ta = document.createElement("textarea"); ta.value = txt; ta.style.cssText = "position:fixed;opacity:0;"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); return true; } catch (e2) {}
+    return false;
   }
+  function box() {
+    var d = document.getElementById("bootErr");
+    if (d) return d;
+    d = document.createElement("div");
+    d.id = "bootErr";
+    d.style.cssText = "position:fixed;bottom:12px;left:12px;right:12px;z-index:9999;background:#2a1215;color:#ff8a80;border:1px solid #5c2b2e;border-radius:10px;padding:10px 14px;font:12px/1.5 Consolas,monospace;white-space:pre-wrap;max-height:40vh;overflow:auto;";
+    var btn = "background:#3a1a1d;color:#ffb4ab;border:1px solid #6b3237;border-radius:7px;padding:3px 10px;font:700 11px Consolas,monospace;cursor:pointer;";
+    d.innerHTML = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;"><b style="flex:1;">PROBLEM DETECTED \u2014 tap COPY and paste it to Claude</b><button id="bootErrCopy" style="' + btn + '">COPY</button><button id="bootErrClose" style="' + btn + '">\u2715 CLOSE</button></div><div id="bootErrBody"></div>';
+    (document.body || document.documentElement).appendChild(d);
+    document.getElementById("bootErrClose").onclick = function () { if (d.parentNode) d.parentNode.removeChild(d); seen = {}; };
+    document.getElementById("bootErrCopy").onclick = function () {
+      var ok = copyText((window.__kbCtx ? "[" + ctx() + "]\n" : "") + document.getElementById("bootErrBody").textContent);
+      this.textContent = ok ? "COPIED" : "SELECT + COPY";
+    };
+    return d;
+  }
+  function paint(msg) {
+    var d = box(), body = document.getElementById("bootErrBody"), k = msg.slice(0, 200);
+    if (seen[k]) { seen[k].n++; seen[k].el.textContent = msg + "  \u00d7" + seen[k].n; return; }
+    var line = document.createElement("div"); line.textContent = msg; body.appendChild(line); seen[k] = { n: 1, el: line };
+  }
+  function benign(msg) { if (msg && BENIGN.test(String(msg))) { try { console.warn("[kb] network issue (not shown):", msg); } catch (e) {} return true; } return false; }
   window.addEventListener("error", function (e) {
-    if (e && e.message) { paint("JS ERROR: " + e.message + (e.lineno ? " (line " + e.lineno + ")" : "")); }
+    if (e && e.message) { if (benign(e.message)) return; paint("JS ERROR: " + e.message + (e.lineno ? " (line " + e.lineno + ")" : "")); }
     else if (e && e.target && e.target !== window && (e.target.src || e.target.href)) {
       var u = String(e.target.src || e.target.href);
       if (u.indexOf("fonts.g") === -1 && u.indexOf("mlbstatic") === -1 && u.indexOf("espncdn") === -1) paint("RESOURCE FAILED: " + u.slice(0, 120));
     }
   }, true);
   window.addEventListener("unhandledrejection", function (e) {
-    var r = e && e.reason; paint("ASYNC ERROR: " + (r && (r.message || r.toString()) || "unknown"));
+    var r = e && e.reason, m = (r && (r.message || r.toString()) || "unknown");
+    if (benign(m) || (r && r.name === "AbortError")) return;
+    paint("ASYNC ERROR: " + m);
   });
 })();
 </script>
@@ -443,6 +465,12 @@
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.49  Error messages can be dismissed and copied: the red PROBLEM DETECTED box now has COPY (adds build + sport + tab) and ✕ CLOSE, repeats show
+          "×N", and routine network hiccups (blocked / timed-out ESPN calls the app already handles) are no longer painted as errors; the red
+          "Some sources failed" banner gets ↻ RETRY and ✕ DISMISS; an error in the status line fades after 25 s.
+   v5.48  DEF VS POS: the BAD matchups (defences that allow the FEWEST to a position) now show on the game cards themselves, in red; the props dropdown
+          no longer says "(0)" when players ARE priced — players at a matchup's position are listed even without a 55 % lean (greyed, "no real edge"),
+          and an ALSO PRICED group lists every other priced player in the game with his position and why no matchup applies.
    v5.47  DEF VS POS props dropdown redesigned: two compact lines per player (no repeated headers / projection lines / chips); the line is the player's
           NORMAL level (before the matchup) so the hit % is meaningful instead of a 51 % coin flip; each pick shows "NN% hit · L10 x/10"; a new
           BAD MATCHUPS section lists defences that allow the FEWEST to a position (UNDER leans) next to GOOD MATCHUPS; only 55 %+ leans are shown.
@@ -507,7 +535,8 @@
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.47 · 10a";
+const BUILD = "v5.49 · 10a";
+window.__kbCtx = () => BUILD + " · sport " + (typeof APP_SPORT !== "undefined" ? APP_SPORT : "?") + " · view " + ((typeof GX !== "undefined" && GX.view) || "?") + " · " + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/) || ["?"])[0];
 
 /* ---------------- CONFIG ---------------- */
 const CFG = {
@@ -2308,7 +2337,8 @@ function backtestModels() {
 /* ================================================================
    RENDER
    ================================================================ */
-function setStatus(msg, isErr) { const s = $("#status"); if (s) s.innerHTML = (isErr ? `<span class="err">${msg}</span>` : msg) + (S.oddsCredits?.remain != null ? ` <span style="color:var(--dim3)">· Odds API: ${S.oddsCredits.remain} credits left this month</span>` : ""); }
+function setStatus(msg, isErr) { const s = $("#status"); if (s && isErr) { const tok = (s._errTok = (s._errTok || 0) + 1); setTimeout(() => { try { if (s._errTok === tok && s.querySelector(".err")) s.innerHTML = ""; } catch (e) {} }, window.__STATUS_ERR_MS || 25000); } // an error in the status line fades by itself
+  if (s) s.innerHTML = (isErr ? `<span class="err">${msg}</span>` : msg) + (S.oddsCredits?.remain != null ? ` <span style="color:var(--dim3)">· Odds API: ${S.oddsCredits.remain} credits left this month</span>` : ""); }
 function renderLoading() { $("#tab-board").innerHTML = `<div class="loadingBox"><div class="spinner"></div><div>Warming up in the bullpen — pulling games, stats &amp; DraftKings lines…</div></div>`; }
 function renderError(msg) { $("#tab-board").innerHTML = `<div style="max-width:560px;margin:60px auto;text-align:center;padding:26px;background:var(--panel2);border:1px solid #3a2530;border-radius:14px;"><div style="font-size:34px;">⚾</div><div style="font-size:16px;font-weight:700;margin:10px 0 6px;">Couldn't load the board</div><div style="font-size:13px;color:var(--dim);text-align:left;">${msg}</div></div>`; setStatus("", false); }
 function timeLabel(t) { return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
@@ -8427,13 +8457,21 @@ function dvpPropRows(sp, g, T) { // GOOD matchups (the defence gives up the MOST
         const line = Math.max(0.5, Math.round(mean(base.map(f2 => f2.proj)) - 0.5) + 0.5);   // his NORMAL level, before the matchup — roughly what a book would post
         const r = muApply(sp, p, ps, base), pO = mean(r.fits.map(f2 => f2.pOver(line))), pO0 = mean(base.map(f2 => f2.pOver(line)));
         const over = !l.tough, chance = over ? pO : 1 - pO, lift = over ? pO - pO0 : pO0 - pO;   // a GOOD matchup can only lean OVER, a BAD one only UNDER — and the lean must come FROM the matchup (not from the line's rounding)
-        if (chance < 0.55 || lift < 0.03) continue;
+        const weak = chance < 0.55 || lift < 0.03;
         const v10 = (p.vals || []).slice(0, 10), h10 = v10.filter(v => (over ? v > line : v < line)).length;
-        (l.tough ? out.bad : out.good).push({ p, k: ps.k, stat: ps.n, offAb, line, over, chance, mu: r.mu, flag: av.flag, l10h: h10, l10n: v10.length, desc: `${l.pre}${l.hot}${l.post}`, tough: !!l.tough });
+        (l.tough ? out.bad : out.good).push({ p, k: ps.k, stat: ps.n, offAb, line, over, chance, lift, weak, mu: r.mu, flag: av.flag, l10h: h10, l10n: v10.length, desc: `${l.pre}${l.hot}${l.post}`, tough: !!l.tough });
       }
     }
   }
-  for (const k of ["good", "bad"]) { const seen = {}; out[k] = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort((x, y) => y.chance - x.chance).slice(0, 4); }
+  for (const k of ["good", "bad"]) { const seen = {}; out[k] = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort((x, y) => (x.weak - y.weak) || (y.chance - x.chance)).slice(0, 5); } // real leans first, then the rest (greyed)
+  // every OTHER priced player in this game, with his position and WHY no matchup row exists for him
+  const shown = new Set([...out.good, ...out.bad].map(c3 => c3.p.id)), abs2 = [abbrOf(g.a), abbrOf(g.h)], seenAlso = {}; out.also = [];
+  for (const k of Object.keys(s.pdata)) for (const p of s.pdata[k] || []) {
+    const ab = String(p.team || "").toUpperCase(); if (!abs2.includes(ab) || shown.has(p.id) || seenAlso[p.id] || !genPlayerUsable(sp, p).ok) continue; seenAlso[p.id] = 1;
+    const pos = D.pos[String(p.id)] || null, oppDef = ab === abs2[0] ? g.h : g.a, atPos = pos ? [...dvpLines(sp, String(oppDef), T, 8), ...dvpToughLines(sp, String(oppDef), T, 8)].filter(l2 => l2.pos === pos && l2.k) : [];
+    out.also.push({ p, key: k, pos, offAb: ab, note: !pos ? "position unknown" : atPos.length ? `${atPos[0].pre}${atPos[0].hot}${atPos[0].post} — but he isn't priced for that stat` : `no soft or tough matchup at ${pos} in this game` });
+  }
+  out.also = out.also.slice(0, 6);
   return out;
 }
 function dvpToughLines(sp, tid, tbl, soft) { // the opposite of dvpLines: where a defence allows the FEWEST to a position (a bad matchup for that position's props)
@@ -8488,19 +8526,21 @@ function renderDvp(root, sp) {
   const grid = el("div", "grid wide");
   for (const g of games) {
     const nameOf = id => esc(s.teams[id]?.name || id), abbr = id => esc(s.teams[id]?.abbr || id);
-    const col = id => { const ls = dvpLines(sp, String(id), T, 8); return `<div style="min-width:0;flex:1 1 230px;">${ls.length ? ls.map(l => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}<span style="color:var(--green)">${esc(l.hot)}</span>${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`).join("") : `<div style="padding:8px 0;color:var(--dim3);font-size:12px;">${abbr(id)}: no position is in the 8 softest right now.</div>`}</div>`; };
+    const col = id => { const ls = dvpLines(sp, String(id), T, 8), tough = dvpToughLines(sp, String(id), T, 8).slice(0, 3);
+      const rowH = (l, colr) => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}<span style="color:${colr}">${esc(l.hot)}</span>${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`;
+      return `<div style="min-width:0;flex:1 1 230px;">${ls.length ? ls.map(l => rowH(l, "var(--green)")).join("") : (tough.length ? "" : `<div style="padding:8px 0;color:var(--dim3);font-size:12px;">${abbr(id)}: no position is in the 8 softest right now.</div>`)}${tough.length ? `<div data-dvptough="${id}" style="padding:7px 0 1px;border-top:1px solid var(--line2, #1c2230);font-size:9.5px;letter-spacing:1.2px;font-weight:800;color:var(--red);">TOUGH MATCHUPS · allows the fewest</div>` + tough.map(l => rowH(l, "var(--red)")).join("") : ""}</div>`; };
     const card = el("div", "card"); card.dataset.dvpgame = g.a + "-" + g.h;
     card.innerHTML = `<div class="chead"><span class="time">${(sp === "nfl" ? new Date(g.date).toLocaleDateString([], { weekday: "short" }) + " " : "") + timeLabel(g.date)}</span><div class="spacer"></div></div>
       <div style="font-family:var(--cond);font-weight:800;font-size:18px;margin:2px 0 6px;">${nameOf(g.a).toUpperCase()} @ ${nameOf(g.h).toUpperCase()}</div>
       <div style="display:flex;flex-wrap:wrap;gap:0 18px;">${col(g.a)}${col(g.h)}</div>`;
     if (DVP_PROP[sp]) { // dropdown: the props that fit this game's matchups — good (OVER leans) and bad (UNDER leans)
-      const pr = dvpPropRows(sp, g, T), nRows = pr ? pr.good.length + pr.bad.length : 0;
-      const priced = (() => { const ab = new Set([String(s.teams[g.a]?.abbr || "").toUpperCase(), String(s.teams[g.h]?.abbr || "").toUpperCase()]), seen = {}; for (const k of Object.keys(s.pdata || {})) for (const p4 of s.pdata[k] || []) if (ab.has(String(p4.team || "").toUpperCase())) seen[p4.id] = p4.name; return Object.values(seen); })();
-      const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}" style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;">${esc(c3.p.name)} <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}</span></div><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.stat)} · ${esc(c3.desc)}${c3.mu && Math.abs(c3.mu.f - 1) >= 0.01 ? " · " + muPct(c3.mu) : ""}${c3.flag ? ` · <span style="color:var(--red)">⚠ ${esc(c3.flag)}</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:15px;">${c3.over ? "OVER" : "UNDER"} ${c3.line}</div><div style="font-size:11px;white-space:nowrap;"><b style="color:${c3.chance >= 0.6 ? "var(--green)" : "var(--txt)"}">${(c3.chance * 100).toFixed(0)}% hit</b> <span style="color:var(--dim3)">· L10 ${c3.l10h}/${c3.l10n}</span></div></div></div>`;
-      const sec = (title, col, items) => items.length ? `<div data-dvpsec="${title[0]}" style="margin:10px 0 2px;font-size:10px;letter-spacing:1.2px;font-weight:800;color:${col};">${title}</div>` + items.map(rowHtml).join("") : "";
+      const pr = dvpPropRows(sp, g, T), nRows = pr ? pr.good.length + pr.bad.length + pr.also.length : 0;
+      const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}" style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${c3.weak ? "opacity:.62;" : ""}"><div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;">${esc(c3.p.name)} <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}</span></div><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.stat)} · ${esc(c3.desc)}${c3.mu && Math.abs(c3.mu.f - 1) >= 0.01 ? " · " + muPct(c3.mu) : ""}${c3.weak ? " · no real edge" : ""}${c3.flag ? ` · <span style="color:var(--red)">⚠ ${esc(c3.flag)}</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:15px;">${c3.over ? "OVER" : "UNDER"} ${c3.line}</div><div style="font-size:11px;white-space:nowrap;"><b style="color:${!c3.weak && c3.chance >= 0.6 ? "var(--green)" : "var(--txt)"}">${(c3.chance * 100).toFixed(0)}% hit</b> <span style="color:var(--dim3)">· L10 ${c3.l10h}/${c3.l10n}</span></div></div></div>`;
+      const alsoHtml = c3 => `<div data-dvpprop="${c3.key}" data-dvppid="${c3.p.id}" data-dvpalso="1" style="padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><span style="font-size:13px;font-weight:700;">${esc(c3.p.name)}</span> <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}${c3.pos ? " · " + esc(c3.pos) : ""}</span><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.note)}</div></div>`;
+      const sec = (title, col, items, fn) => items.length ? `<div data-dvpsec="${title[0]}" style="margin:10px 0 2px;font-size:10px;letter-spacing:1.2px;font-weight:800;color:${col};">${title}</div>` + items.map(fn || rowHtml).join("") : "";
       const body = !pr ? (s.pErr ? "Player props didn't load — press RELOAD on the BOARD to retry." : "Loading player props…")
-        : !nRows ? `No pick with a real lean for these matchups. The app prices ${priced.length} player${priced.length === 1 ? "" : "s"} on these two teams today${priced.length ? " (" + esc(priced.slice(0, 5).join(", ")) + (priced.length > 5 ? " +" + (priced.length - 5) : "") + ")" : ""} — a lean needs a priced player at a position with a soft or tough matchup, and a 55%+ chance.`
-        : sec("GOOD MATCHUPS", "var(--green)", pr.good) + sec("BAD MATCHUPS", "var(--red)", pr.bad) + `<div style="font-size:10px;color:var(--dim3);margin-top:8px;line-height:1.5;">Line = his normal level before the matchup. <b>Hit %</b> = the model's chance of that side with the matchup applied; <b>L10</b> = times he cleared that line in his last 10. Model numbers, not book prices — tap a row for the full prop card.</div>`;
+        : !nRows ? "No player props are priced for these two teams today (or the players are out / not playing)."
+        : sec("GOOD MATCHUPS", "var(--green)", pr.good) + sec("BAD MATCHUPS", "var(--red)", pr.bad) + sec("ALSO PRICED IN THIS GAME", "var(--dim3)", pr.also, alsoHtml) + `<div style="font-size:10px;color:var(--dim3);margin-top:8px;line-height:1.5;">Line = his normal level before the matchup. <b>Hit %</b> = the model's chance of that side with the matchup applied; <b>L10</b> = times he cleared that line in his last 10. Greyed rows have no real edge (under 55%, or the matchup barely moves it). Model numbers, not book prices — tap a row for the full prop card.</div>`;
       card.insertAdjacentHTML("beforeend", `<button class="whybtn" data-why style="margin-top:8px;">▸ PROPS THAT FIT THESE MATCHUPS${pr ? " (" + nRows + ")" : ""}</button><div class="whybox">${body}</div>`);
       card.querySelectorAll("[data-dvpprop]").forEach(r3 => r3.addEventListener("click", () => { selectTab("gen:pstat:" + r3.dataset.dvpprop); jumpToCard(`#tab-gen [data-gpid="${r3.dataset.dvppid}"]`); }));
     }
@@ -8709,7 +8749,9 @@ function renderGen() {
     if (earlyBoard) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">⏳ Today's games and lines are in — the model picks are still loading (${s.stage || "…"}) and fill in by themselves.</span>`));
     if (s.errors.length) {
       const soft = s.errors.filter(e2 => /saved copy|auto-retrying|ℹ/i.test(e2)), hard = s.errors.filter(e2 => !soft.includes(e2));
-      if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span>`));
+      if (hard.length) { const hb = el("div", "subhead", `<span style="color:var(--red)">Some sources failed: ${hard.join(" · ")}</span> <span class="fchip" data-errretry>↻ RETRY</span> <span class="fchip" data-errdismiss>✕ DISMISS</span>`); root.appendChild(hb);
+        hb.querySelector("[data-errdismiss]").addEventListener("click", () => { s.errors = s.errors.filter(e3 => !hard.includes(e3)); renderGen(); });
+        hb.querySelector("[data-errretry]").addEventListener("click", () => { s.errors = []; s.loaded = false; s.loading = false; s._swr = null; genEnsure(sp); }); }
       if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
     }
     if (s.priYr && GX.view === "board") root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Models warmed by the ${s.priYr} season replay (${s.priN} games, offseason-regressed) + ${s.curN} played this season — records live on MODEL RECORDS.</span>`));
