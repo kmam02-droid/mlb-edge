@@ -356,6 +356,13 @@
     .h1{font-size:22px;}
     .bb{min-width:236px;}
   }
+.kb-rbtxt,.kb-rbpill{background:linear-gradient(90deg,#ff4757,#ffa502,#f7e24a,#34d399,#1e90ff,#a55eea,#ff4757);background-size:200% 100%;animation:kbRb 4s linear infinite;}
+.kb-rbtxt{-webkit-background-clip:text;background-clip:text;color:transparent !important;-webkit-text-fill-color:transparent;font-weight:800;}
+.kb-rbpill{color:#10131a !important;box-shadow:0 0 8px rgba(165,94,234,.55);}
+.kb-rbrow{position:relative;padding-left:12px !important;background:linear-gradient(90deg,rgba(165,94,234,.10),rgba(30,144,255,.04) 60%,transparent);}
+.kb-rbrow::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:linear-gradient(180deg,#ff4757,#ffa502,#f7e24a,#34d399,#1e90ff,#a55eea);}
+@keyframes kbRb{to{background-position:200% 0}}
+@media (prefers-reduced-motion:reduce){.kb-rbtxt,.kb-rbpill{animation:none}}
 </style>
 </head>
 <body>
@@ -465,6 +472,11 @@
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.51  DEF VS POS: the TOP 3 (1st-3rd MOST) and BOTTOM 3 (1st-3rd FEWEST) defences now show as solid glowing pills on the game cards and in the props dropdown,
+          clearly louder than ranks 4-8. A prop that is consistent (real lean, 60%+ hit, cleared in 7+ of his last 10) against one of those gets a rainbow
+          pill, side bar and CONSISTENT tag, and sorts to the top; the dropdown button shows a rainbow marker when any row qualifies.
+   v5.50  DEF VS POS props dropdown: the "3RD MOST" / "6TH FEWEST" phrase in every row is highlighted (green pill for most, red pill for fewest), and the
+          matchup % is coloured green / red by its sign — easy to scan.
    v5.49  Error messages can be dismissed and copied: the red PROBLEM DETECTED box now has COPY (adds build + sport + tab) and ✕ CLOSE, repeats show
           "×N", and routine network hiccups (blocked / timed-out ESPN calls the app already handles) are no longer painted as errors; the red
           "Some sources failed" banner gets ↻ RETRY and ✕ DISMISS; an error in the status line fades after 25 s.
@@ -535,7 +547,7 @@
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.49 · 10a";
+const BUILD = "v5.51 · 10a";
 window.__kbCtx = () => BUILD + " · sport " + (typeof APP_SPORT !== "undefined" ? APP_SPORT : "?") + " · view " + ((typeof GX !== "undefined" && GX.view) || "?") + " · " + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/) || ["?"])[0];
 
 /* ---------------- CONFIG ---------------- */
@@ -7046,6 +7058,8 @@ function muToday(sp, p, ps) { // the matchup for a player's NEXT game (null = no
 }
 const muText = mu => `${mu.opp} allow the ${mu.most ? dvpOrd(mu.rank) + " MOST" : dvpOrd(mu.of - mu.rank + 1) + " FEWEST"} ${String(mu.stat).toLowerCase()} to ${mu.pos}`;
 const muEsc = x => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const muTextHtml = mu => { const tough = !mu.most, phrase = tough ? dvpOrd(mu.of - mu.rank + 1) + " FEWEST" : dvpOrd(mu.rank) + " MOST"; // the same sentence as muText, with the MOST / FEWEST phrase as a coloured pill
+  return `${muEsc(mu.opp)} allow the <span data-hot="${muEsc(phrase)}" style="color:${tough ? "var(--red)" : "var(--green)"};background:${tough ? "rgba(255,71,87,.15)" : "rgba(52,211,153,.15)"};border-radius:4px;padding:0 5px;font-weight:800;white-space:nowrap;">${muEsc(phrase)}</span> ${muEsc(String(mu.stat).toLowerCase())} to ${muEsc(mu.pos)}`; };
 const muPct = mu => (mu.f >= 1 ? "+" : "−") + Math.abs((mu.f - 1) * 100).toFixed(1) + "%";
 function muApply(sp, p, ps, fits) { const mu = muToday(sp, p, ps); return mu ? { fits: fits.map(f2 => muScale(f2, mu.f)), mu } : { fits, mu: null }; }
 function pmDropStale(key, pre) { // the matchup data grows while it builds — keep ONE cached backtest per view of a prop, never a pile of old ones
@@ -8432,6 +8446,7 @@ function dvpTable(sp, win) {
   return tbl;
 }
 const dvpOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "TH" : ["TH", "ST", "ND", "RD"][n % 10 > 3 ? 0 : n % 10] || "TH");
+const dvpExt = hot => /^((MOST|FEWEST)|[123](ST|ND|RD) (MOST|FEWEST))$/.test(String(hot || ""));   // top 3 most / bottom 3 (fewest) — the extreme ends of the league
 const dvpMost = r => (r === 1 ? "MOST" : dvpOrd(r) + " MOST");
 function dvpLines(sp, tid, tbl, maxRank) { // the headline lines for one defence: where it is most exploitable (and what it's good at)
   const C = DVP_CFG[sp], o = tbl[tid]; if (!o) return [];
@@ -8459,17 +8474,18 @@ function dvpPropRows(sp, g, T) { // GOOD matchups (the defence gives up the MOST
         const over = !l.tough, chance = over ? pO : 1 - pO, lift = over ? pO - pO0 : pO0 - pO;   // a GOOD matchup can only lean OVER, a BAD one only UNDER — and the lean must come FROM the matchup (not from the line's rounding)
         const weak = chance < 0.55 || lift < 0.03;
         const v10 = (p.vals || []).slice(0, 10), h10 = v10.filter(v => (over ? v > line : v < line)).length;
-        (l.tough ? out.bad : out.good).push({ p, k: ps.k, stat: ps.n, offAb, line, over, chance, lift, weak, mu: r.mu, flag: av.flag, l10h: h10, l10n: v10.length, desc: `${l.pre}${l.hot}${l.post}`, tough: !!l.tough });
+        const ext = dvpExt(l.hot), rainbow = ext && !weak && chance >= 0.6 && v10.length >= 5 && h10 / v10.length >= 0.7;   // consistent prop (real lean, 60%+ hit, cleared in 7 of 10) against a top-3 / bottom-3 defence
+        (l.tough ? out.bad : out.good).push({ p, k: ps.k, stat: ps.n, offAb, line, over, chance, lift, weak, mu: r.mu, flag: av.flag, l10h: h10, l10n: v10.length, ext, rainbow, desc: `${l.pre}${l.hot}${l.post}`, dpre: l.pre, dhot: l.hot, dpost: l.post, tough: !!l.tough });
       }
     }
   }
-  for (const k of ["good", "bad"]) { const seen = {}; out[k] = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort((x, y) => (x.weak - y.weak) || (y.chance - x.chance)).slice(0, 5); } // real leans first, then the rest (greyed)
+  for (const k of ["good", "bad"]) { const seen = {}; out[k] = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort((x, y) => (y.rainbow - x.rainbow) || (x.weak - y.weak) || (y.chance - x.chance)).slice(0, 5); } // real leans first, then the rest (greyed)
   // every OTHER priced player in this game, with his position and WHY no matchup row exists for him
   const shown = new Set([...out.good, ...out.bad].map(c3 => c3.p.id)), abs2 = [abbrOf(g.a), abbrOf(g.h)], seenAlso = {}; out.also = [];
   for (const k of Object.keys(s.pdata)) for (const p of s.pdata[k] || []) {
     const ab = String(p.team || "").toUpperCase(); if (!abs2.includes(ab) || shown.has(p.id) || seenAlso[p.id] || !genPlayerUsable(sp, p).ok) continue; seenAlso[p.id] = 1;
     const pos = D.pos[String(p.id)] || null, oppDef = ab === abs2[0] ? g.h : g.a, atPos = pos ? [...dvpLines(sp, String(oppDef), T, 8), ...dvpToughLines(sp, String(oppDef), T, 8)].filter(l2 => l2.pos === pos && l2.k) : [];
-    out.also.push({ p, key: k, pos, offAb: ab, note: !pos ? "position unknown" : atPos.length ? `${atPos[0].pre}${atPos[0].hot}${atPos[0].post} — but he isn't priced for that stat` : `no soft or tough matchup at ${pos} in this game` });
+    out.also.push({ p, key: k, pos, offAb: ab, hot: atPos.length ? { pre: atPos[0].pre, hot: atPos[0].hot, post: atPos[0].post, tough: !!atPos[0].tough } : null, note: !pos ? "position unknown" : atPos.length ? `${atPos[0].pre}${atPos[0].hot}${atPos[0].post} — but he isn't priced for that stat` : `no soft or tough matchup at ${pos} in this game` });
   }
   out.also = out.also.slice(0, 6);
   return out;
@@ -8527,7 +8543,7 @@ function renderDvp(root, sp) {
   for (const g of games) {
     const nameOf = id => esc(s.teams[id]?.name || id), abbr = id => esc(s.teams[id]?.abbr || id);
     const col = id => { const ls = dvpLines(sp, String(id), T, 8), tough = dvpToughLines(sp, String(id), T, 8).slice(0, 3);
-      const rowH = (l, colr) => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}<span style="color:${colr}">${esc(l.hot)}</span>${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`;
+      const rowH = (l, colr) => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}${dvpExt(l.hot) ? `<span data-ext="1" style="color:#10131a;background:${colr};border-radius:4px;padding:0 6px;font-weight:900;white-space:nowrap;box-shadow:0 0 7px ${colr === "var(--red)" ? "rgba(255,71,87,.6)" : "rgba(52,211,153,.6)"};">${esc(l.hot)}</span>` : `<span style="color:${colr};opacity:.85;">${esc(l.hot)}</span>`}${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`;
       return `<div style="min-width:0;flex:1 1 230px;">${ls.length ? ls.map(l => rowH(l, "var(--green)")).join("") : (tough.length ? "" : `<div style="padding:8px 0;color:var(--dim3);font-size:12px;">${abbr(id)}: no position is in the 8 softest right now.</div>`)}${tough.length ? `<div data-dvptough="${id}" style="padding:7px 0 1px;border-top:1px solid var(--line2, #1c2230);font-size:9.5px;letter-spacing:1.2px;font-weight:800;color:var(--red);">TOUGH MATCHUPS · allows the fewest</div>` + tough.map(l => rowH(l, "var(--red)")).join("") : ""}</div>`; };
     const card = el("div", "card"); card.dataset.dvpgame = g.a + "-" + g.h;
     card.innerHTML = `<div class="chead"><span class="time">${(sp === "nfl" ? new Date(g.date).toLocaleDateString([], { weekday: "short" }) + " " : "") + timeLabel(g.date)}</span><div class="spacer"></div></div>
@@ -8535,13 +8551,15 @@ function renderDvp(root, sp) {
       <div style="display:flex;flex-wrap:wrap;gap:0 18px;">${col(g.a)}${col(g.h)}</div>`;
     if (DVP_PROP[sp]) { // dropdown: the props that fit this game's matchups — good (OVER leans) and bad (UNDER leans)
       const pr = dvpPropRows(sp, g, T), nRows = pr ? pr.good.length + pr.bad.length + pr.also.length : 0;
-      const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}" style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${c3.weak ? "opacity:.62;" : ""}"><div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;">${esc(c3.p.name)} <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}</span></div><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.stat)} · ${esc(c3.desc)}${c3.mu && Math.abs(c3.mu.f - 1) >= 0.01 ? " · " + muPct(c3.mu) : ""}${c3.weak ? " · no real edge" : ""}${c3.flag ? ` · <span style="color:var(--red)">⚠ ${esc(c3.flag)}</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:15px;">${c3.over ? "OVER" : "UNDER"} ${c3.line}</div><div style="font-size:11px;white-space:nowrap;"><b style="color:${!c3.weak && c3.chance >= 0.6 ? "var(--green)" : "var(--txt)"}">${(c3.chance * 100).toFixed(0)}% hit</b> <span style="color:var(--dim3)">· L10 ${c3.l10h}/${c3.l10n}</span></div></div></div>`;
-      const alsoHtml = c3 => `<div data-dvpprop="${c3.key}" data-dvppid="${c3.p.id}" data-dvpalso="1" style="padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><span style="font-size:13px;font-weight:700;">${esc(c3.p.name)}</span> <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}${c3.pos ? " · " + esc(c3.pos) : ""}</span><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.note)}</div></div>`;
+      const hotPill = (txt, tough, rb) => dvpExt(txt) ? `<span data-hot="${esc(txt)}"${rb ? ' class="kb-rbpill"' : ""} style="${rb ? "" : `color:#10131a;background:${tough ? "var(--red)" : "var(--green)"};box-shadow:0 0 7px ${tough ? "rgba(255,71,87,.6)" : "rgba(52,211,153,.6)"};`}border-radius:4px;padding:0 6px;font-weight:900;white-space:nowrap;">${esc(txt)}</span>` : `<span data-hot="${esc(txt)}" style="color:${tough ? "var(--red)" : "var(--green)"};background:${tough ? "rgba(255,71,87,.10)" : "rgba(52,211,153,.10)"};border-radius:4px;padding:0 5px;font-weight:700;white-space:nowrap;opacity:.85;">${esc(txt)}</span>`;
+      const pctHtml = mu => mu && Math.abs(mu.f - 1) >= 0.01 ? ` · <b style="color:${mu.f > 1 ? "var(--green)" : "var(--red)"};">${muPct(mu)}</b>` : "";
+      const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}"${c3.rainbow ? ' data-rainbow="1" class="kb-rbrow"' : ""} style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${c3.weak ? "opacity:.62;" : ""}"><div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;">${esc(c3.p.name)} <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}</span></div><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.stat)} · ${esc(c3.dpre)}${hotPill(c3.dhot, c3.tough, c3.rainbow)}${esc(c3.dpost)}${pctHtml(c3.mu)}${c3.rainbow ? ' · <b class="kb-rbtxt" data-rbtag="1">CONSISTENT</b>' : ""}${c3.weak ? " · no real edge" : ""}${c3.flag ? ` · <span style="color:var(--red)">⚠ ${esc(c3.flag)}</span>` : ""}</div></div><div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:15px;">${c3.over ? "OVER" : "UNDER"} ${c3.line}</div><div style="font-size:11px;white-space:nowrap;"><b style="color:${!c3.weak && c3.chance >= 0.6 ? "var(--green)" : "var(--txt)"}">${(c3.chance * 100).toFixed(0)}% hit</b> <span style="color:var(--dim3)">· L10 ${c3.l10h}/${c3.l10n}</span></div></div></div>`;
+      const alsoHtml = c3 => `<div data-dvpprop="${c3.key}" data-dvppid="${c3.p.id}" data-dvpalso="1" style="padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><span style="font-size:13px;font-weight:700;">${esc(c3.p.name)}</span> <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}${c3.pos ? " · " + esc(c3.pos) : ""}</span><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${c3.hot ? esc(c3.hot.pre) + hotPill(c3.hot.hot, c3.hot.tough) + esc(c3.hot.post) + " — but he isn't priced for that stat" : esc(c3.note)}</div></div>`;
       const sec = (title, col, items, fn) => items.length ? `<div data-dvpsec="${title[0]}" style="margin:10px 0 2px;font-size:10px;letter-spacing:1.2px;font-weight:800;color:${col};">${title}</div>` + items.map(fn || rowHtml).join("") : "";
       const body = !pr ? (s.pErr ? "Player props didn't load — press RELOAD on the BOARD to retry." : "Loading player props…")
         : !nRows ? "No player props are priced for these two teams today (or the players are out / not playing)."
         : sec("GOOD MATCHUPS", "var(--green)", pr.good) + sec("BAD MATCHUPS", "var(--red)", pr.bad) + sec("ALSO PRICED IN THIS GAME", "var(--dim3)", pr.also, alsoHtml) + `<div style="font-size:10px;color:var(--dim3);margin-top:8px;line-height:1.5;">Line = his normal level before the matchup. <b>Hit %</b> = the model's chance of that side with the matchup applied; <b>L10</b> = times he cleared that line in his last 10. Greyed rows have no real edge (under 55%, or the matchup barely moves it). Model numbers, not book prices — tap a row for the full prop card.</div>`;
-      card.insertAdjacentHTML("beforeend", `<button class="whybtn" data-why style="margin-top:8px;">▸ PROPS THAT FIT THESE MATCHUPS${pr ? " (" + nRows + ")" : ""}</button><div class="whybox">${body}</div>`);
+      card.insertAdjacentHTML("beforeend", `<button class="whybtn" data-why style="margin-top:8px;">▸ PROPS THAT FIT THESE MATCHUPS${pr ? " (" + nRows + ")" : ""}${pr && pr.good.concat(pr.bad).some(c3 => c3.rainbow) ? ' <span class="kb-rbtxt" data-rbbtn="1">● CONSISTENT</span>' : ""}</button><div class="whybox">${body}</div>`);
       card.querySelectorAll("[data-dvpprop]").forEach(r3 => r3.addEventListener("click", () => { selectTab("gen:pstat:" + r3.dataset.dvpprop); jumpToCard(`#tab-gen [data-gpid="${r3.dataset.dvppid}"]`); }));
     }
     grid.appendChild(card);
@@ -9108,7 +9126,7 @@ function renderGen() {
         ${whyBox([
           ["Last 5 vs season", `${p2.last5.toFixed(1)} vs ${p2.season.toFixed(1)}`, p2.last5 > p2.season * 1.08 ? "trending UP — recency engines lean over" : p2.last5 < p2.season * 0.92 ? "trending DOWN — recency engines lean under" : "steady — the engines mostly agree"],
           ["Night-to-night swing", "±" + p2.sigma.toFixed(1), p2.grade === "A" || p2.grade === "B" ? "consistent — calls earn confidence" : "volatile — every call gets discounted"],
-          ...(mu ? [["Matchup vs " + mu.pos, muText(mu), `league-relative ×${mu.raw.toFixed(2)} over ${mu.n} games → projection ${muPct(mu)} (shrunk for small samples, capped ±12%)`]] : []),
+          ...(mu ? [["Matchup vs " + mu.pos, muTextHtml(mu), `league-relative ×${mu.raw.toFixed(2)} over ${mu.n} games → projection ${muPct(mu)} (shrunk for small samples, capped ±12%)`]] : []),
           ["Model line", String(modelLine), "consensus projection rounded to the nearest half"],
           ["Engines' verdicts", fits.map(f2 => (f2.pOver(modelLine) >= 0.5 ? "OVER" : "UNDER")).join(" · "), agree ? "unanimous — that's what buys the rank" : "split — one engine sees it differently, so this drops"],
           ["Conviction", (conf * 100).toFixed(0) + "%", "average certainty of the engines at the model line"],
