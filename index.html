@@ -472,6 +472,26 @@
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.58  The projected spread + O/U now also sit on the big yellow BIGGEST DIFFERENTIAL card (with the book line beside them and what built the margin: ratings,
+          home edge, rest, injuries) and as a gold "HOU −5.5 · O/U 224.5" on every row of the day's list. Same numbers as the model panel; MLB / finished / live games show none.
+   v5.57  EFFICIENCY model panel: each of tonight's games now shows the PROJECTED SPREAD (book-style, e.g. HOU −5.5) and PROJECTED O/U (rounded to a half), with the
+          ESPN book spread / total beside them when listed and how far the model differs. Model numbers, not book prices.
+   v5.56  EFFICIENCY tab (every sport with it): new rating model — each team's offense / defense is fitted against WHO it played and WHERE (opponent + home adjusted),
+          with a tuned timeline (whole season, or recent games weighted, half-life 20 / 10) picked by replaying every past game with only earlier games; a rest
+          (back-to-back) effect learned the same way; tonight's projected margin / total / win % with injuries applied at the existing injury model's value
+          (shown on their own line, not learned). Collapsed panel on the tab shows the report card. New VIEW chip: RAW | OPPONENT-ADJUSTED redraws the landscape
+          with each game corrected for opponent strength and venue (kb_effadj). Plain season average stays unless something beats it; MLB shows no projections.
+   v5.55  FIX: the gold \"<team> missing at WR: <name>\" note on NFL rows was meaningless (an offence's WR on the other team's injury list says nothing about covering
+          a WR) — that note now shows only for NBA / WNBA / NHL.
+   v5.55  WNBA now has a DEF VS POS tab (positions G / F / C, the same box-score + roster build and tuned matchup model as NBA). When that data is loaded, a
+          WNBA prop's opponent adjustment is how that team defends HIS position (tuned read, ±12% cap) instead of the old team-wide points-allowed multiplier;
+          with no data the old multiplier stays. Box scores only load while the DEF VS POS tab is open (then cached in kb_dvpg_wnba).
+   v5.54  NHL now has DEF VS POS and the tuned matchup model (same engine as NBA / NFL): positions C / W (left + right wing merged) / D, stats shots on goal /
+          goals / points, built from each finished game's box score + rosters (goalies skipped). Props for NHL (SOG, goals, points) get the matchup factor,
+          the dropdown on every game card, steady / volatile labels and rainbow rows. Parser fails closed (game marked unreadable) if the shots / goals /
+          assists columns are not found.
+   v5.53  DEF VS POS pills: 1st, 2nd and 3rd MOST / FEWEST now each have their own shade — 1st brightest with a strong glow, 2nd a solid mid shade, 3rd a tinted
+          outline (green for MOST, red for FEWEST), on the game cards, the dropdown rows and the prop card. Ranks 4-8 unchanged.
    v5.52  MATCHUP MODEL (DEF VS POS → props): how a defence is read is now TUNED on past games instead of fixed. 8 candidates = timeline (whole season, or
           recent games weighted with a half-life of 12 / 6 / 3 games) × schedule adjustment (vs what each offence's position normally produces). muTune()
           replays every past defence-game with only earlier games and keeps the lowest-error way per prop; under 150 samples, or no improvement → the old
@@ -553,7 +573,7 @@
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.52 · 10a";
+const BUILD = "v5.58 · 10a";
 window.__kbCtx = () => BUILD + " · sport " + (typeof APP_SPORT !== "undefined" ? APP_SPORT : "?") + " · view " + ((typeof GX !== "undefined" && GX.view) || "?") + " · " + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/) || ["?"])[0];
 
 /* ---------------- CONFIG ---------------- */
@@ -5465,7 +5485,7 @@ function wnbaProj(player, statKey) {
   if (statKey === "3PM" && !vals.some(v => v > 0)) return null; // non-shooters (or logs from before 3PT tracking) aren't 3PM props
   const recent = vals.slice(0, 5);
   const proj0 = 0.6 * mean(recent) + 0.4 * mean(vals);
-  let mult = 1, oppAbbr = null, playing = false;
+  let mult = 1, oppAbbr = null, playing = false, muW = null;
   const gm = WS.games.find(g => !g.completed && (g.home.abbr === player.team || g.away.abbr === player.team));
   if (gm) {
     playing = true;
@@ -5478,6 +5498,8 @@ function wnbaProj(player, statKey) {
       const w = /PTS|PRA|P\+/.test(statKey) ? 0.6 : 0.3;
       mult = clamp(1 + (f - 1) * w, 0.9, 1.12);
     }
+    try { const D2 = gSlot("wnba").dvp, pos2 = D2 && D2.pos ? D2.pos[String(player.id)] : null; // v5.55: how THIS opponent defends HIS position (tuned read) replaces the team-wide points-allowed multiplier when the box-score data is there
+      if (pos2 && muOn() && MU_STAT.wnba[statKey]) { const r2 = muFactor("wnba", +opp.id, pos2, statKey, "9999-12-31"); if (r2) { mult = r2.f; muW = { f: r2.f, pos: pos2, n: r2.n, vr: r2.vr, tuned: r2.tuned }; } } } catch (e) {}
   }
   // blowout check: a lopsided model margin means garbage time — stars on BOTH sides sit the 4th
   let blow = null, blowMu = null;
@@ -5493,7 +5515,7 @@ function wnbaProj(player, statKey) {
   const mins = (player.logs || []).map(l => l.min);
   let warn = mean(mins.slice(0, 3)) < mean(mins) - 5 ? "MINUTES DOWN LATELY" : (sd(mins) > 7 ? "MINUTES SWINGY" : null);
   if (injE) warn = (warn ? warn + " · " : "") + "INJURY: " + String(injE.status).toUpperCase();
-  return { proj, sigma, avg: mean(vals), last5: mean(recent), mult, blow, blowMu, warn, oppAbbr, playing, n: vals.length };
+  return { proj, sigma, avg: mean(vals), last5: mean(recent), mult, muW, blow, blowMu, warn, oppAbbr, playing, n: vals.length };
 }
 async function fetchWnbaProps() {
   const key = getKey(); if (!key) { alert("Add your free The Odds API key on the MY MODEL tab first."); return; }
@@ -6480,6 +6502,7 @@ function renderWnba() {
     if (hard.length) root.appendChild(el("div", "subhead", `<span style="color:var(--red)">Some WNBA sources failed: ${hard.join(" · ")}</span>`));
     if (soft.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">ℹ ${soft.join(" · ")}</span>`));
   }
+  if (WS.view === "dvp") { renderDvp(root, "wnba"); return; }
   if (WS.view === "eff") { effHostWnba(root); return; }
   if (WS.view === "model") { renderWnbaModel(root); return; }
   // model records (walk-forward backtest)
@@ -7022,13 +7045,13 @@ function median2(vals) { const s2 = vals.slice().sort((a2, b2) => a2 - b2); cons
    12 / 6 / 3 games) × with or without a SCHEDULE adjustment (each game is compared with what THAT offence's position normally produces, not with the
    league).  muTune() replays every past defence-game ("as of" that date) and keeps the way with the smallest error at predicting what the defence then
    allowed — per prop.  Too few games, or nothing beats "no adjustment" → it stays on the plain whole-season read (the pre-v5.52 behaviour). */
-const MU_STAT = { nba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], TPM: ["tpm"], PRA: ["pts", "reb", "ast"], PR: ["pts", "reb"], RA: ["reb", "ast"], PA: ["pts", "ast"] }, nfl: { PASSYDS: ["pyds"], RUSHYDS: ["ryds"], RECYDS: ["cyds"], REC: ["rec"] } };
+const MU_STAT = { wnba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], "3PM": ["tpm"], PRA: ["pts", "reb", "ast"], "P+R": ["pts", "reb"], "P+A": ["pts", "ast"], "R+A": ["reb", "ast"] }, nhl: { SOG: ["sog"], G: ["g"], PTS: ["pts"] }, nba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], TPM: ["tpm"], PRA: ["pts", "reb", "ast"], PR: ["pts", "reb"], RA: ["reb", "ast"], PA: ["pts", "ast"] }, nfl: { PASSYDS: ["pyds"], RUSHYDS: ["ryds"], RECYDS: ["cyds"], REC: ["rec"] } };
 const MU_K = 6, MU_CAP = [0.88, 1.12], MU_OFFK = 4, MU_TUNE_MIN = 150;
 const MU_VARS = [{ id: "s0", hl: 0, adj: 0 }, { id: "s1", hl: 0, adj: 1 }, { id: "a0", hl: 12, adj: 0 }, { id: "a1", hl: 12, adj: 1 }, { id: "b0", hl: 6, adj: 0 }, { id: "b1", hl: 6, adj: 1 }, { id: "c0", hl: 3, adj: 0 }, { id: "c1", hl: 3, adj: 1 }];
 const muVarText = v => (v.hl ? `recent games count more (half-life ${v.hl} games)` : "whole season, every game equal") + (v.adj ? " + schedule-adjusted" : "");
 const muOn = () => { try { return !(hasLS && localStorage.getItem("kb_matchup") === "off"); } catch (e) { return true; } };
 const muScale = (f2, k) => (Math.abs(k - 1) < 1e-6 ? f2 : { ...f2, proj: f2.proj * k, pOver: L2 => f2.pOver(L2 / k) });
-function muIndex(sp) { // per-defence game list (what the opposing offence did, by position) + event lookup; rebuilt when the box-score set changes
+function muIndex(sp) { dvpSync(sp); // per-defence game list (what the opposing offence did, by position) + event lookup; rebuilt when the box-score set changes
   const s = gSlot(sp), D = s.dvp, C = DVP_CFG[sp]; if (!D || !D.agg || !C) return null;
   const key = Object.keys(D.agg).length + ":" + (s.results || []).length; if (s._mu && s._mu.key === key) return s._mu;
   const byDef = {}, byOff = {}, byId = {};
@@ -7088,8 +7111,8 @@ function muTeammateOut(sp, p, ps) { // CONTEXT ONLY (never in the projection): a
   return out;
 }
 const muTmText = t => (t.nWo && t.nW ? `${t.mWo.toFixed(1)} in ${t.nWo} game${t.nWo === 1 ? "" : "s"} without ${t.name} vs ${t.mW.toFixed(1)} with him` : `${t.name} is OUT — no games without him yet to compare`);
-function muDefOut(sp, defId, pos) { // CONTEXT ONLY: the defence's own ruled-out players at that position
-  const s = gSlot(sp), D = s.dvp, out = []; if (!s.inj || !D || !D.pos) return out;
+function muDefOut(sp, defId, pos) { // CONTEXT ONLY: the defence's own ruled-out players at that position — only where the same position labels guard each other (basketball / hockey). NFL positions are offence-only, so a defence "missing a WR" says nothing about covering one
+  const s = gSlot(sp), D = s.dvp, out = []; if (sp === "nfl" || !s.inj || !D || !D.pos) return out;
   for (const k in s.inj) { if (k.indexOf("n:") === 0) continue; const e = s.inj[k]; if (e && +e.team === +defId && /^out/i.test(e.status || "") && D.pos[String(e.id)] === pos && e.name) out.push(e.name); }
   return out.slice(0, 3);
 }
@@ -7108,7 +7131,7 @@ function muToday(sp, p, ps) { // the matchup for a player's NEXT game (null = no
 const muText = mu => `${mu.opp} allow the ${mu.most ? dvpOrd(mu.rank) + " MOST" : dvpOrd(mu.of - mu.rank + 1) + " FEWEST"} ${String(mu.stat).toLowerCase()} to ${mu.pos}`;
 const muEsc = x => String(x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const muTextHtml = mu => { const tough = !mu.most, phrase = tough ? dvpOrd(mu.of - mu.rank + 1) + " FEWEST" : dvpOrd(mu.rank) + " MOST"; // the same sentence as muText, with the MOST / FEWEST phrase as a coloured pill
-  return `${muEsc(mu.opp)} allow the <span data-hot="${muEsc(phrase)}" style="color:${tough ? "var(--red)" : "var(--green)"};background:${tough ? "rgba(255,71,87,.15)" : "rgba(52,211,153,.15)"};border-radius:4px;padding:0 5px;font-weight:800;white-space:nowrap;">${muEsc(phrase)}</span> ${muEsc(String(mu.stat).toLowerCase())} to ${muEsc(mu.pos)}`; };
+  return `${muEsc(mu.opp)} allow the <span data-hot="${muEsc(phrase)}" data-tier="${dvpTier(phrase)}" style="${dvpTier(phrase) ? dvpPillCss(phrase, tough) : `color:${tough ? "var(--red)" : "var(--green)"};background:${tough ? "rgba(255,71,87,.10)" : "rgba(52,211,153,.10)"};border-radius:4px;padding:0 5px;font-weight:700;white-space:nowrap;opacity:.85;`}">${muEsc(phrase)}</span> ${muEsc(String(mu.stat).toLowerCase())} to ${muEsc(mu.pos)}`; };
 const muPct = mu => (mu.f >= 1 ? "+" : "−") + Math.abs((mu.f - 1) * 100).toFixed(1) + "%";
 function muApply(sp, p, ps, fits) { const mu = muToday(sp, p, ps); return mu ? { fits: fits.map(f2 => muScale(f2, mu.f)), mu } : { fits, mu: null }; }
 function pmDropStale(key, pre) { // the matchup data grows while it builds — keep ONE cached backtest per view of a prop, never a pile of old ones
@@ -8127,11 +8150,13 @@ function genBestPropsSection(root, sp) {
 const EFF_WINS = [["5", "LAST 5"], ["10", "LAST 10"], ["20", "LAST 20"], ["all", "SEASON"]];
 function effWin() { let v = null; try { v = hasLS ? localStorage.getItem("kb_effwin") : null; } catch (e) {} return EFF_WINS.some(w => w[0] === v) ? v : "10"; }
 function effBuild(results, teams, win) {
-  const per = {};
+  const per = {}; let af = null; if (effAdj()) { const ga = effGames(results); af = effFit(ga, ga.length, { hl: 0, adj: 1 }); } // opponent-adjusted view: each game is corrected by season-long ratings of who it was played against + the venue
   for (const r of results || []) {
     if (r == null || r.hs == null || r.as == null || !isFinite(r.hs) || !isFinite(r.as)) continue;
-    (per[r.hId] = per[r.hId] || []).push({ d: r.d || "", pf: +r.hs, pa: +r.as });
-    (per[r.aId] = per[r.aId] || []).push({ d: r.d || "", pf: +r.as, pa: +r.hs });
+    let pfH = +r.hs, paH = +r.as, pfA = +r.as, paA = +r.hs;
+    if (af && af.O[r.hId] != null && af.O[r.aId] != null) { const hv = af.hfa / 2; pfH = +r.hs - af.D[r.aId] - hv; paH = +r.as - af.O[r.aId] + hv; pfA = +r.as - af.D[r.hId] + hv; paA = +r.hs - af.O[r.hId] - hv; }
+    (per[r.hId] = per[r.hId] || []).push({ d: r.d || "", pf: pfH, pa: paH });
+    (per[r.aId] = per[r.aId] || []).push({ d: r.d || "", pf: pfA, pa: paA });
   }
   const N = win === "all" ? 1e9 : +win, rows = [], avg = a => a.reduce((x, y) => x + y, 0) / a.length;
   for (const id in per) {
@@ -8150,16 +8175,116 @@ function effBuild(results, teams, win) {
   rows.slice().sort((a, b) => b.net - a.net).forEach((r, i) => r.rNet = i + 1);
   return { rows, lg };
 }
+/* ---------- EFFICIENCY MODEL (v5.56) ----------
+   A team is two numbers: O (points it scores above an average team) and D (points it GIVES UP above average — lower is better), fitted so that
+       points(t vs u) = L + O_t + D_u ± hfa/2          (L = league average per team, hfa = home edge, + for the home side)
+   Every game is therefore read against WHO it was played against and WHERE (opponent-adjusted, home-adjusted); ratings are shrunk toward average by
+   4 pseudo-games so a 5-game team isn't over-believed.  Predicted margin (home − away) = (O_h − D_h) − (O_a − D_a) + hfa.
+   HOW the games are weighted is not fixed: EFF_VARS = 3 timelines (whole season, or a team's recent games with a half-life of 20 / 10 games) × with or
+   without the opponent + home adjustment.  effTune() replays every past game with only the games before it and keeps the lowest average error; it must
+   beat BOTH "just the home edge" and the plain season average (the old landscape) or the plain average stays.  A rest effect (back-to-back) is learned
+   from those same replays (ridge-shrunk).  INJURIES have no history to learn from, so they are applied only to tonight's projection at the injury
+   model's own value and shown on their own line.  Units are points / runs / goals per game — not pace-adjusted (the feeds carry scores, not possessions). */
+const EFF_VARS = [{ id: "r0", hl: 0, adj: 0 }, { id: "r1", hl: 0, adj: 1 }, { id: "a0", hl: 20, adj: 0 }, { id: "a1", hl: 20, adj: 1 }, { id: "b0", hl: 10, adj: 0 }, { id: "b1", hl: 10, adj: 1 }];
+const EFF_LAM = 4, EFF_HFA_K = 40, EFF_MIN_TEST = 150;
+const effVarText = v => (v.hl ? `a team's recent games count more (half-life ${v.hl} games)` : "whole season, every game equal") + (v.adj ? " · opponent + home adjusted" : " · raw averages");
+const effAdj = () => { try { return hasLS && localStorage.getItem("kb_effadj") === "1"; } catch (e) { return false; } };
+function effGames(results) { // finished games, oldest first, with each team's running position (for recency weights) and whether it played the day before
+  const g = []; for (const r of results || []) { if (r == null || r.hs == null || r.as == null || !isFinite(r.hs) || !isFinite(r.as)) continue; g.push({ d: r.d || "", h: +r.hId, a: +r.aId, hs: +r.hs, as: +r.as }); }
+  g.sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
+  const pos = {}, days = {}; for (const x of g) { x.ph = pos[x.h] = (pos[x.h] == null ? 0 : pos[x.h] + 1); x.pa = pos[x.a] = (pos[x.a] == null ? 0 : pos[x.a] + 1); (days[x.h] = days[x.h] || {})[x.d] = 1; (days[x.a] = days[x.a] || {})[x.d] = 1; }
+  const prev = d => { try { return localISO(new Date(new Date(d + "T12:00:00").getTime() - 864e5)); } catch (e) { return ""; } };
+  for (const x of g) { const pd = x.d ? prev(x.d) : ""; x.bh = !!(pd && days[x.h][pd]); x.ba = !!(pd && days[x.a][pd]); }
+  return g;
+}
+function effFit(g, n, vr) { // ratings from the first n games only
+  if (n < 20) return null;
+  let L = 0, mh = 0; for (let i = 0; i < n; i++) { L += g[i].hs + g[i].as; mh += g[i].hs - g[i].as; } L /= 2 * n; const hfa = (mh / n) * (n / (n + EFF_HFA_K));
+  const tc = {}; for (let i = 0; i < n; i++) { tc[g[i].h] = (tc[g[i].h] || 0) + 1; tc[g[i].a] = (tc[g[i].a] || 0) + 1; }
+  const wh = new Float64Array(n), wa = new Float64Array(n);
+  for (let i = 0; i < n; i++) { const x = g[i]; wh[i] = vr.hl ? Math.pow(0.5, (tc[x.h] - 1 - x.ph) / vr.hl) : 1; wa[i] = vr.hl ? Math.pow(0.5, (tc[x.a] - 1 - x.pa) / vr.hl) : 1; }
+  const ids = Object.keys(tc), O = {}, D = {}; ids.forEach(t => { O[t] = 0; D[t] = 0; });
+  for (let it = 0, N = vr.adj ? 12 : 1; it < N; it++) {
+    const nO = {}, dO = {}, nD = {}, dD = {}; ids.forEach(t => { nO[t] = 0; dO[t] = 0; nD[t] = 0; dD[t] = 0; });
+    const hv = vr.adj ? hfa / 2 : 0, ad = vr.adj ? 1 : 0;
+    for (let i = 0; i < n; i++) { const x = g[i];
+      nO[x.h] += wh[i] * (x.hs - L - ad * D[x.a] - hv); dO[x.h] += wh[i]; nD[x.h] += wh[i] * (x.as - L - ad * O[x.a] + hv); dD[x.h] += wh[i];
+      nO[x.a] += wa[i] * (x.as - L - ad * D[x.h] + hv); dO[x.a] += wa[i]; nD[x.a] += wa[i] * (x.hs - L - ad * O[x.h] - hv); dD[x.a] += wa[i]; }
+    ids.forEach(t => { O[t] = nO[t] / (dO[t] + EFF_LAM); D[t] = nD[t] / (dD[t] + EFF_LAM); });
+  }
+  return { L, hfa, O, D, n, vr };
+}
+const effPred = (f, h, a) => (f && f.O[h] != null && f.O[a] != null ? (f.O[h] - f.D[h]) - (f.O[a] - f.D[a]) + f.hfa : null);
+function effTune(sp, results, weekly) { // walk-forward replay: every test day is predicted from the games before it
+  const g = effGames(results), ck = "E|" + sp + "|" + g.length + "|" + (g.length ? g[g.length - 1].d : ""); GX._eff = GX._eff || {}; if (GX._eff[ck]) return GX._eff[ck];
+  for (const k of Object.keys(GX._eff)) if (k.indexOf("E|" + sp + "|") === 0) delete GX._eff[k];
+  const out = { g, n: 0, vars: EFF_VARS.map(v => ({ v, ae: 0, se: 0, hit: 0, skill: null, mae: null })), homeAe: 0, best: EFF_VARS[0], tuned: false, top: null, beta: 0, nB: 0, sd: null, fit: null, key: ck };
+  if (g.length < 60) { out.fit = effFit(g, g.length, EFF_VARS[0]); return (GX._eff[ck] = out); }
+  const starts = []; for (let i = 40; i < g.length; i++) if (i === 0 || g[i].d !== g[i - 1].d) starts.push(i); const stride = Math.max(1, Math.ceil(starts.length / 90)), res = EFF_VARS.map(() => []);
+  for (let si = 0; si < starts.length; si += stride) { const i0 = starts[si]; let i1 = i0; while (i1 < g.length && g[i1].d === g[i0].d) i1++;
+    const fits = EFF_VARS.map(v => effFit(g, i0, v)); if (fits.some(f => !f)) continue;
+    for (let i = i0; i < i1; i++) { const x = g[i], act = x.hs - x.as, bx = (x.ba ? 1 : 0) - (x.bh ? 1 : 0); let ok = true; const ps = fits.map(f => effPred(f, x.h, x.a)); if (ps.some(p => p == null)) continue;
+      out.n++; out.homeAe += Math.abs(act - fits[0].hfa);
+      ps.forEach((p, j) => { const e = act - p; out.vars[j].ae += Math.abs(e); out.vars[j].se += e * e; if ((p > 0) === (act > 0) && act !== 0) out.vars[j].hit++; res[j].push({ e, bx }); }); } }
+  out.vars.forEach(v => { v.mae = out.n ? v.ae / out.n : null; v.skill = out.n && out.homeAe > 0 ? 1 - v.ae / out.homeAe : null; });
+  if (out.n >= EFF_MIN_TEST) { out.top = out.vars.slice().sort((a2, b2) => a2.mae - b2.mae)[0]; if (out.top.mae < out.vars[0].mae && out.top.skill > 0) { out.best = out.top.v; out.tuned = true; } }
+  const bi = EFF_VARS.indexOf(out.best), rs = res[bi] || []; // the rest effect and the error spread come from the chosen way's own replays
+  let sxx = 0, sxy = 0, nB = 0; for (const r of rs) { if (r.bx) { nB++; sxx += r.bx * r.bx; sxy += r.bx * r.e; } }
+  if (!weekly && nB >= 30) { out.beta = sxy / (sxx + 30); out.nB = nB; } else out.nB = nB;
+  if (rs.length > 20) { const m = mean(rs.map(r => r.e)); out.sd = Math.sqrt(mean(rs.map(r => (r.e - m) * (r.e - m)))); }
+  out.fit = effFit(g, g.length, out.best);
+  return (GX._eff[ck] = out);
+}
+function effInj(sp, id) { try { if (sp === "wnba") return (wnbaInjShift(+id) || {}).shift || 0; if (GS_INJ[sp]) return (genInjShift(sp, id) || {}).shift || 0; } catch (e) {} return 0; } // margin points the team loses tonight to ruled-out players (0 when the sport has no injury model)
+function effTonight(sp, o, tn, weekly) { // tonight's games: ratings + home edge + rest (learned) + injuries (existing model, not learned)
+  const f = tn.fit; if (!f || !o.games) return [];
+  return o.games.filter(g => g.status === "up").map(g => { const base = effPred(f, g.home, g.away); if (base == null) return null;
+    const day = g.date ? localISO(new Date(g.date)) : "", pd = day ? localISO(new Date(new Date(day + "T12:00:00").getTime() - 864e5)) : "", played = id => tn.g.some(x => x.d === pd && (x.h === id || x.a === id));
+    const bh = !weekly && played(g.home), ba = !weekly && played(g.away), rest = tn.beta * ((ba ? 1 : 0) - (bh ? 1 : 0)), ih = effInj(sp, g.home), ia = effInj(sp, g.away), margin = base + rest - ih + ia;
+    const tot = 2 * f.L + f.O[g.home] + f.D[g.away] + f.O[g.away] + f.D[g.home], pHome = tn.sd ? phi(margin / tn.sd) : null;
+    return { g, base, rest, ih, ia, margin, tot, pHome, bh, ba }; }).filter(Boolean);
+}
 const EFF_SORTS = [["net", "BEST NET"], ["off", "BEST OFFENSE"], ["def", "BEST DEFENSE"], ["trend", "TREND"], ["wl", "W-L"]];
+const effHalf = x => Math.round(x * 2) / 2, effSgn = x => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(1); // book-style: −5.5 / +3.0
+function effProjBlock(t, nm, esc) { // projected spread + O/U (model numbers), the book's line beside them, and what built the margin — shared by the panel and the yellow card
+  const f1 = x => (+x || 0).toFixed(1), sg = x => ((+x || 0) >= 0 ? "+" : "−") + Math.abs(+x || 0).toFixed(1), hA = nm(t.g.home), aA = nm(t.g.away), pm = effHalf(t.margin), pt = effHalf(t.tot), bits = [`ratings + home edge ${sg(t.base)}`];
+  if (Math.abs(t.rest) >= 0.05) bits.push(`rest ${sg(t.rest)}${t.bh ? " (" + esc(hA) + " on a back-to-back)" : ""}${t.ba ? " (" + esc(aA) + " on a back-to-back)" : ""}`);
+  if (t.ih || t.ia) bits.push(`injuries ${sg(-t.ih + t.ia)} (${t.ih ? esc(hA) + " −" + f1(t.ih) : ""}${t.ih && t.ia ? ", " : ""}${t.ia ? esc(aA) + " −" + f1(t.ia) : ""})`);
+  const spTxt = pm === 0 ? "PK" : `${esc(pm > 0 ? hA : aA)} ${effSgn(-Math.abs(pm))}`;
+  let bk = ""; const bs = t.g.spread != null && isFinite(+t.g.spread) ? +t.g.spread : null, bt = t.g.total != null && isFinite(+t.g.total) && +t.g.total > 0 ? +t.g.total : null; // book spread = the HOME team's line (negative = home favoured)
+  if (bs != null || bt != null) { const parts = []; if (bs != null) { const d = t.margin - (-bs); parts.push(`spread ${bs === 0 ? "PK" : esc(bs < 0 ? hA : aA) + " " + effSgn(-Math.abs(bs))} (model ${Math.abs(d) < 0.25 ? "agrees" : f1(Math.abs(d)) + " more on " + esc(d > 0 ? hA : aA)})`); }
+    if (bt != null) { const d2 = t.tot - bt; parts.push(`O/U ${bt} (model ${Math.abs(d2) < 0.25 ? "agrees" : f1(Math.abs(d2)) + (d2 > 0 ? " higher" : " lower")})`); } bk = `<br><span data-effbook="1" style="color:var(--dim);font-size:10.5px;">book: ${parts.join(" · ")}</span>`; }
+  return `<br><span style="font-size:13px;">projected spread <b data-effspread="${pm}" style="color:var(--gold)">${spTxt}</b> · projected O/U <b data-efftotal="${pt}" style="color:var(--gold)">${pt}</b></span>${bk}<br><span style="color:var(--dim3);font-size:10.5px;">${bits.join(" · ")}</span>`;
+}
+function effProjMap(o) { // "away-home" → tonight's projection, for every upcoming game in the slate (empty when the model can't run)
+  const out = {}; try { if (!o.results || o.results.length < 30 || o.scope === "mlb" || !o.games) return out; const tn = effTune(o.scope, o.results, !!o.weekly); if (!tn || !tn.fit) return out; for (const t of effTonight(o.scope, o, tn, !!o.weekly)) out[t.g.away + "-" + t.g.home] = t; } catch (e) {} return out;
+}
+function effPanel(root, o) { // the model's report card + tonight's projections (collapsed)
+  if (!o.results || (o.results || []).length < 30) return;
+  const sp = o.scope, tn = effTune(sp, o.results, !!o.weekly), esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); if (!tn || !tn.fit) return;
+  const f1 = x => (+x || 0).toFixed(1), sg = x => ((+x || 0) >= 0 ? "+" : "−") + Math.abs(+x || 0).toFixed(1), nm = id => { const r = (o.rows || []).find(r2 => r2.id === +id); return r ? r.abbr : String(id); };
+  const unit = String(o.unit || "Points").toLowerCase();
+  const verdict = tn.n < EFF_MIN_TEST ? `only ${tn.n} of the ${EFF_MIN_TEST} past games needed to tune — staying on the plain season average` : tn.tuned ? `<b style="color:var(--green)">${esc(effVarText(tn.best))}</b> predicted margins best: off by ${f1(tn.top.mae)} on average vs ${f1(tn.vars[0].mae)} for the plain season average and ${f1(tn.homeAe / tn.n)} for "home edge only" · ${tn.n} past games replayed` : `nothing beat the plain season average (off by ${f1(tn.vars[0].mae)} per game; "home edge only" ${f1(tn.homeAe / tn.n)}) · ${tn.n} past games replayed`;
+  const table = tn.n >= 20 ? tn.vars.map(v => `<div data-effvar="${v.v.id}" style="display:flex;gap:8px;justify-content:space-between;padding:3px 0;font-size:11px;${v.v === tn.best ? "color:var(--green);font-weight:700;" : "color:var(--dim);"}"><span>${esc(effVarText(v.v))}</span><span style="white-space:nowrap;">off by ${f1(v.mae)} · picks the winner ${(100 * v.hit / tn.n).toFixed(0)}%</span></div>`).join("") : "";
+  const tonight = o.scope === "mlb" ? [] : effTonight(sp, o, tn, !!o.weekly);
+  const rows2 = tonight.sort((x, y) => Math.abs(y.margin) - Math.abs(x.margin)).map(t => `<div data-efftonight="${t.g.away}-${t.g.home}" style="padding:6px 0;border-top:1px solid var(--line2, #1c2230);font-size:11.5px;line-height:1.5;"><b>${esc(nm(t.g.away))} @ ${esc(nm(t.g.home))}</b>${t.pHome != null ? ` · ${esc(nm(t.margin >= 0 ? t.g.home : t.g.away))} wins ${(100 * (t.margin >= 0 ? t.pHome : 1 - t.pHome)).toFixed(0)}%` : ""}${effProjBlock(t, nm, esc)}</div>`).join("");
+  const note = `<div style="font-size:10.5px;color:var(--dim3);margin-top:8px;line-height:1.55;">Each team is rated by what it scores and gives up compared with an average team, correcting every game for who it was played against and where; recent games can count more. The way of weighting games is chosen by replaying every past game using only the games before it (negative error = better).<br><b>In the projection:</b> the tuned ratings, the home edge (${sg(tn.fit.hfa)} ${unit}), and a rest effect${tn.nB >= 30 ? ` learned from ${tn.nB} back-to-back games (${sg(tn.beta)} per team-day of rest edge)` : " (too few back-to-back games to learn one — not applied)"}.<br><b>Applied but not learned:</b> injuries — there is no history of past injury reports to test, so tonight's shift uses the injury model's own value${o.scope === "mlb" ? "" : sp === "wnba" || GS_INJ[sp] ? "" : " (this sport has no injury model, so none is applied)"}.<br><b>Reading the lines:</b> the projected spread is the model's margin rounded to a half point (the favorite is the team with the minus); the O/U is its projected total rounded to a half. They are the model's own numbers, not book prices — "book" is the line ESPN lists, and a gap only says the model sees it differently, it is not a bet by itself.<br><b>Not in this model:</b> pace, starting pitchers / goalies / quarterbacks, travel, motivation, line moves. ${o.scope === "mlb" ? "MLB projections are left to the BOARD, which prices starting pitchers." : ""}</div>`;
+  const box = el("div"); box.style.cssText = "margin:0 0 12px;max-width:760px;";
+  box.innerHTML = `<button class="whybtn" data-why>▸ THE EFFICIENCY MODEL — opponent, home, rest and injuries · tuned on past games</button><div class="whybox"><div data-effverdict="1" style="font-size:11.5px;line-height:1.5;margin-bottom:6px;">${verdict}</div>${table}${rows2 ? `<div style="margin:10px 0 2px;font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--gold);">TONIGHT'S PROJECTED SPREAD & OVER / UNDER (${tonight.length})</div>${rows2}` : ""}${note}</div>`;
+  root.appendChild(box);
+}
 function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayLabel, games }
   if (GX.effScope !== o.scope) { GX.effScope = o.scope; GX.effTeam = null; GX.effHl = null; GX.effZ = null; } // a selection never leaks into another sport / league
   const rows = o.rows, lg = o.lg, f1 = x => x.toFixed(1);
   const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   bar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">WINDOW</span>` + EFF_WINS.map(([k, l]) => `<span class="fchip${o.win === k ? " on" : ""}" data-effw="${k}">${l}</span>`).join("") +
-    `<span style="font-size:10px;color:var(--dim3);font-weight:600;">rolls forward by itself as new results land</span>`;
+    `<span style="width:8px"></span><span style="font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">VIEW</span>` + [["0", "RAW"], ["1", "OPPONENT-ADJUSTED"]].map(([k, l]) => `<span class="fchip${(effAdj() ? "1" : "0") === k ? " on" : ""}" data-effadj="${k}">${l}</span>`).join("") + `<span style="font-size:10px;color:var(--dim3);font-weight:600;">rolls forward by itself as new results land</span>`;
+  bar.querySelectorAll("[data-effadj]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effadj", c.dataset.effadj); } catch (e) {} GX.effZ = null; o.rerender(); }));
   bar.querySelectorAll("[data-effw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effwin", c.dataset.effw); } catch (e) {} o.rerender(); }));
   root.appendChild(bar);
+  if (effAdj() && rows.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">OPPONENT-ADJUSTED: every game's points are corrected for the strength of the offense / defense it was played against and for home court (season-long ratings), then averaged over the window. A team that piled up points on weak defenses moves left.</span>`));
+  try { effPanel(root, o); } catch (e) {}
   if (!rows.length) { root.appendChild(el("div", "nobets", `Not enough completed games with scores yet — this needs at least 4 teams with 5+ results. It fills in by itself once the season (and its results feed) is running.${o.note ? "<br><br>" + o.note : ""}`)); return; }
   const dnOf = r => (r.prior ? r.net - (r.prior.off - r.prior.def) : null);
   // ---- BIGGEST DIFFERENTIAL OF THE DAY: today's games ranked by the gap between the two teams' nets (same window as the chart)
@@ -8182,7 +8307,7 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
     root.appendChild(sc);
   }
   if (hl) {
-    const sg = v => (v >= 0 ? "+" : "") + f1(v), fav = hl.fav, dog = hl.dog;
+    const sg = v => (v >= 0 ? "+" : "") + f1(v), fav = hl.fav, dog = hl.dog, projAll = effProjMap(o), abOf = id => (byId[id] ? byId[id].abbr : String(id)), hlProj = projAll[hl.key] || null;
     const hlCard = el("div", "card"); hlCard.dataset.effhl = hl.key; hlCard.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
     hlCard.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">${selPair ? `📍 ${esc(sel.abbr)}'S GAME ${o.dayLabel || "TODAY"} — #${pairs.indexOf(selPair) + 1} OF ${pairs.length} BY DIFFERENTIAL` : `🔥 BIGGEST DIFFERENTIAL ${o.dayLabel || "TODAY"}`} · ${whenOf(hl.g)} · ${esc(hl.a.abbr)} @ ${esc(hl.h.abbr)}</span>${selPair ? `<button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button>` : ""}</div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 6px;">
@@ -8191,12 +8316,13 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
         <span style="display:inline-flex;align-items:center;gap:8px;flex-direction:row-reverse;text-align:right;">${logoTagPre(dog, 34)}<span><b style="font-size:17px;">${esc(dog.abbr)}</b> <b style="color:${dog.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg(dog.net)}</b><br><span style="font-size:10.5px;color:var(--dim3);">#${dog.rNet} net · ${dog.w}-${dog.l} last ${dog.n}</span></span></span>
       </div>
       <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">${esc(fav.abbr)} scores <b style="color:var(--txt)">${f1(fav.off)}</b> (#${fav.rOff}) against a ${esc(dog.abbr)} defense allowing <b style="color:var(--txt)">${f1(dog.def)}</b> (#${dog.rDef}) · ${esc(dog.abbr)} scores <b style="color:var(--txt)">${f1(dog.off)}</b> (#${dog.rOff}) against a ${esc(fav.abbr)} defense allowing <b style="color:var(--txt)">${f1(fav.def)}</b> (#${fav.rDef}).</div>
-      <div style="font-size:10px;color:var(--dim3);margin-top:6px;">Differential = the gap between the two teams' nets over their last ${o.win === "all" ? "season" : o.win} games — a measure of form, not a prediction (no home court, injuries or rest). Both teams are ringed on the chart below.</div>`;
+      ${hlProj ? `<div data-effhlproj="1" style="margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.22);border:1px solid rgba(255,160,46,.3);"><span style="font-size:9.5px;letter-spacing:1.3px;font-weight:800;color:var(--gold);">MODEL PROJECTION · opponent, home, rest &amp; injuries</span>${effProjBlock(hlProj, abOf, esc)}</div>` : ""}
+      <div style="font-size:10px;color:var(--dim3);margin-top:6px;">Differential = the gap between the two teams' nets over their last ${o.win === "all" ? "season" : o.win} games — a measure of form${hlProj ? "; the projection above adds home court, rest and injuries" : ", not a prediction (no home court, injuries or rest)"}. Both teams are ringed on the chart below.</div>`;
     if (selPair) { const dnS = dnOf(sel); const ex = el("div"); ex.style.cssText = "font-size:11px;color:var(--gold);margin-top:6px;font-weight:700;"; ex.textContent = `${sel.abbr}: #${sel.rNet} net${dnS != null ? ` · ${dnS >= 0 ? "▲ improving" : "▼ slipping"} ${f1(Math.abs(dnS))} vs its previous ${sel.n} games` : ""}`; hlCard.dataset.effsel = String(selId); hlCard.appendChild(ex); hlCard.querySelector("[data-effclear]").addEventListener("click", clearSel); }
     root.appendChild(hlCard);
     if (pairs.length > 1) {
       const lst = el("div", "card"); lst.style.cssText = "max-width:680px;margin:0 auto 12px;padding:4px 12px;";
-      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span><span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span></div>`).join("");
+      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span>${projAll[p3.key] ? `<span data-effrowproj="${p3.key}" style="color:var(--gold);font-size:10.5px;font-weight:700;white-space:nowrap;">${projAll[p3.key].margin === 0 || effHalf(projAll[p3.key].margin) === 0 ? "PK" : esc(abOf(effHalf(projAll[p3.key].margin) > 0 ? p3.g.home : p3.g.away)) + " " + effSgn(-Math.abs(effHalf(projAll[p3.key].margin)))} · O/U ${effHalf(projAll[p3.key].tot)}</span>` : ""}<span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span></div>`).join("");
       lst.querySelectorAll("[data-effgame]").forEach(r3 => r3.addEventListener("click", () => { GX.effHl = r3.dataset.effgame; GX.effTeam = null; o.rerender(); }));
       root.appendChild(lst);
     }
@@ -8357,12 +8483,12 @@ function renderEffMlb() {
   if (!(S.seasonGames || []).length) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Waiting for the season's results — this fills in by itself.</div>`)); return; }
   const meta = {}; for (const gm of S.seasonGames) for (const id of [gm.hId, gm.aId]) if (!meta[id]) meta[id] = { abbr: String(ESPN_ABBR[id] || id).toUpperCase(), name: String(ESPN_ABBR[id] || id).toUpperCase(), logo: teamLogo(id), color: TEAM_COLORS[id] || "#5b9dff" };
   const win = effWin(), b = effBuild(S.seasonGames, meta, win);
-  effRender(root, { unit: "Runs", rows: b.rows, lg: b.lg, win, rerender: renderEffMlb, scope: "mlb", dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (S.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.time, status: g.state === "Final" ? "final" : g.state === "Live" ? "live" : "up" })) });
+  effRender(root, { results: S.seasonGames, unit: "Runs", rows: b.rows, lg: b.lg, win, rerender: renderEffMlb, scope: "mlb", dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (S.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.time, status: g.state === "Final" ? "final" : g.state === "Live" ? "live" : "up" })) });
 }
 function effHostWnba(root) {
   root.appendChild(el("div", "h1", `WNBA EFFICIENCY LANDSCAPE <small>· points scored vs allowed, rolling</small>`));
   const win = effWin(), b = effBuild(WS.results || [], WS.teams || {}, win);
-  effRender(root, { unit: "Points", rows: b.rows, lg: b.lg, win, rerender: renderWnba, scope: "wnba", dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (WS.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.date, status: g.completed ? "final" : g.live ? "live" : "up" })) });
+  effRender(root, { results: WS.results || [], unit: "Points", rows: b.rows, lg: b.lg, win, rerender: renderWnba, scope: "wnba", dayLabel: S.date === localISO(new Date()) ? "TODAY" : S.date, games: (WS.games || []).map(g => ({ home: +g.home.id, away: +g.away.id, date: g.date, status: g.completed ? "final" : g.live ? "live" : "up", spread: g.spread, total: g.total })) });
 }
 function effTick() { // every 10 min while an efficiency tab is open: fold in the newest results without wiping the page
   try {
@@ -8371,22 +8497,27 @@ function effTick() { // every 10 min while an efficiency tab is open: fold in th
     }
   } catch (e) {}
 }
-/* ---------- DEFENSE VS POSITION (NFL · NBA) ----------
+/* ---------- DEFENSE VS POSITION (NFL · NBA · NHL · WNBA) ----------
    For every defense: how much does it give up, per game, to each OPPOSING position — and where does that rank among all teams (1st = most).
    Built from real box scores: every finished game's summary is fetched once, the opposing offence's player lines are summed by position,
    and the compact result is saved (kb_dvpg_<sport>) so it's instant next time and only new games are fetched. NFL box scores carry no
    positions, so positions come from each team's roster (kb_dvppos_<sport>); a player not on any roster is skipped and counted. */
 const DVP_NFL_REC = [["rec", "RECEPTIONS"], ["tgt", "RECEIVING TARGETS"], ["cyds", "RECEIVING YARDS"], ["ctd", "RECEIVING TDs"]];
+const DVP_NHL_ST = [["sog", "SHOTS ON GOAL"], ["g", "GOALS"], ["pts", "POINTS"]];
 const DVP_NBA_ST = [["pts", "POINTS"], ["reb", "REBOUNDS"], ["ast", "ASSISTS"], ["tpm", "3-POINTERS"], ["pra", "PRA"]];
 const DVP_CFG = {
   nfl: { name: "NFL", positions: ["QB", "RB", "WR", "TE"], stats: {
       QB: [["pyds", "PASS YARDS"], ["pcmp", "COMPLETIONS"], ["ptd", "PASS TDs"], ["ryds", "RUSH YARDS"], ["rtd", "RUSH TDs"]],
       RB: [["ryds", "RUSH YARDS"], ["ratt", "RUSH ATTEMPTS"], ["rtd", "RUSH TDs"], ["rec", "RECEPTIONS"], ["tgt", "RECEIVING TARGETS"], ["cyds", "RECEIVING YARDS"], ["ctd", "RECEIVING TDs"]],
       WR: DVP_NFL_REC, TE: DVP_NFL_REC }, team: [["sk", "SACKS", true], ["in", "INTERCEPTIONS", true], ["fg", "FIELD GOALS", false]] },
+  wnba: { name: "WNBA", positions: ["G", "F", "C"], stats: { G: DVP_NBA_ST, F: DVP_NBA_ST, C: DVP_NBA_ST }, team: [] },
+  nhl: { name: "NHL", positions: ["C", "W", "D"], stats: { C: DVP_NHL_ST, W: DVP_NHL_ST, D: DVP_NHL_ST }, team: [] },
   nba: { name: "NBA", positions: ["PG", "SG", "G", "SF", "PF", "F", "C"], stats: { PG: DVP_NBA_ST, SG: DVP_NBA_ST, G: DVP_NBA_ST, SF: DVP_NBA_ST, PF: DVP_NBA_ST, F: DVP_NBA_ST, C: DVP_NBA_ST }, team: [] }
 };
 const dvpNum = x => { const m = String(x == null ? "" : x).match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : 0; }; // "2-15" → 2 · "20/30" → 20
 const dvpAdd = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+const dvpPosNorm = (sp, ab) => { const u = String(ab || "").toUpperCase(); if (sp === "wnba") return /^(G|PG|SG)$/.test(u) ? "G" : /^(F|SF|PF|G-?F|F-?G)$/.test(u) ? "F" : /^(C|F-?C|C-?F)$/.test(u) ? "C" : ""; // WNBA: three positions, hybrids fold toward the side they play most
+  if (sp !== "nhl") return u; return u === "C" ? "C" : /^(LW|RW|L|R|W)$/.test(u) ? "W" : u === "D" ? "D" : ""; }; // NHL: both wings are ONE position (bigger samples); goalies are not a prop position
 function dvpPack(sp, P) { const C = DVP_CFG[sp], out = {}; for (const pos of C.positions) { const o = P[pos]; if (o && Object.keys(o).length) out[pos] = C.stats[pos].map(([k]) => Math.round((o[k] || 0) * 10) / 10); } return out; }
 function dvpNflRec(sm, posMap) {
   const blocks = sm?.boxscore?.players || []; if (blocks.length < 2) return null;
@@ -8410,7 +8541,7 @@ function dvpNflRec(sm, posMap) {
   }
   return Object.keys(out.t).length === 2 && seen >= 10 ? out : null;
 }
-function dvpNbaRec(sm, posMap) {
+function dvpNbaRec(sm, posMap, sp) { sp = sp || "nba";
   const blocks = sm?.boxscore?.players || []; if (blocks.length < 2) return null;
   const out = { t: {}, unk: 0 }; let seen = 0;
   for (const b of blocks) {
@@ -8420,23 +8551,47 @@ function dvpNbaRec(sm, posMap) {
       for (const a of grp.athletes || []) {
         const st = a.stats || []; if (st.length < 5 || a.didNotPlay) continue;
         if (ix("MIN") >= 0 && !(dvpNum(st[ix("MIN")]) > 0)) continue; seen++;
-        const pos = posMap[String(a.athlete?.id ?? "")] || a.athlete?.position?.abbreviation || null;
-        if (!pos || DVP_CFG.nba.positions.indexOf(pos) < 0) { out.unk++; continue; }
+        const pos = sp === "wnba" ? dvpPosNorm("wnba", posMap[String(a.athlete?.id ?? "")] || a.athlete?.position?.abbreviation) : (posMap[String(a.athlete?.id ?? "")] || a.athlete?.position?.abbreviation || null);
+        if (!pos || DVP_CFG[sp].positions.indexOf(pos) < 0) { out.unk++; continue; }
         const o = P[pos] = P[pos] || {}, pts = ix("PTS") >= 0 ? dvpNum(st[ix("PTS")]) : 0, reb = ix("REB") >= 0 ? dvpNum(st[ix("REB")]) : 0, ast = ix("AST") >= 0 ? dvpNum(st[ix("AST")]) : 0;
         dvpAdd(o, "pts", pts); dvpAdd(o, "reb", reb); dvpAdd(o, "ast", ast); dvpAdd(o, "tpm", ix("3PT") >= 0 ? dvpNum(st[ix("3PT")]) : 0); dvpAdd(o, "pra", pts + reb + ast);
       }
     }
-    out.t[tid] = { p: dvpPack("nba", P) };
+    out.t[tid] = { p: dvpPack(sp, P) };
   }
   return Object.keys(out.t).length === 2 && seen >= 8 ? out : null;
 }
+function dvpNhlRec(sm, posMap) { // forwards + defense groups (G A … S …); goalies are skipped; fails closed (null) when the shot / goal / assist columns aren't there
+  const blocks = sm?.boxscore?.players || []; if (blocks.length < 2) return null;
+  const out = { t: {}, unk: 0 }; let seen = 0;
+  for (const b of blocks) {
+    const tid = +(b.team?.id || 0); if (!tid) continue; const P = {};
+    for (const grp of b.statistics || []) {
+      if (/goal/i.test(String(grp.name || grp.type || ""))) continue; const labels = grp.labels || [], ix = l => labels.indexOf(l);
+      const iG = ix("G"), iA = ix("A"), iS = [ix("S"), ix("SOG"), ix("SHOTS")].find(i => i >= 0); if (iG < 0 || iA < 0 || iS === undefined) continue;
+      for (const a of grp.athletes || []) {
+        const st = a.stats || []; if (st.length < 4 || a.didNotPlay) continue; seen++;
+        const pos = dvpPosNorm("nhl", posMap[String(a.athlete?.id ?? "")] || a.athlete?.position?.abbreviation); if (!pos) { out.unk++; continue; }
+        const o = P[pos] = P[pos] || {}, g = dvpNum(st[iG]), as = dvpNum(st[iA]);
+        dvpAdd(o, "sog", dvpNum(st[iS])); dvpAdd(o, "g", g); dvpAdd(o, "pts", g + as);
+      }
+    }
+    out.t[tid] = { p: dvpPack("nhl", P) };
+  }
+  return Object.keys(out.t).length === 2 && seen >= 8 ? out : null;
+}
+/* WNBA keeps its own state (WS); the DvP engine reads a generic "slot" — mirror WS into it (same shapes: teams, results {id,d,hId,aId}, games) */
+const dvpPath = sp => (sp === "wnba" ? "basketball/wnba" : GS_CFG[sp].path);
+function dvpSync(sp) { if (sp !== "wnba") return; const s = gSlot("wnba"); s.loaded = !!WS.loaded; s.teams = WS.teams || {}; s.results = WS.results || []; s.games = WS.games || []; }
+const dvpVisible = sp => (sp === "wnba" ? APP_SPORT === "wnba" && WS.view === "dvp" : GX.cur === sp && GX.view === "dvp");
+const dvpRepaint = sp => { try { if (sp === "wnba") renderWnba(); else renderGen(); } catch (e) {} };
 async function dvpRosters(sp) {
-  const s = gSlot(sp), D = s.dvp, base = `https://site.api.espn.com/apis/site/v2/sports/${GS_CFG[sp].path}`, ids = Object.keys(s.teams || {});
+  const s = gSlot(sp), D = s.dvp, base = `https://site.api.espn.com/apis/site/v2/sports/${dvpPath(sp)}`, ids = Object.keys(s.teams || {});
   for (let i = 0; i < ids.length; i += 6) {
     await Promise.all(ids.slice(i, i + 6).map(async id => {
       try {
         const js = await j(`${base}/teams/${id}/roster`);
-        const take = a => { const ab = String(a?.position?.abbreviation || "").toUpperCase(); if (a?.id != null && ab) D.pos[String(a.id)] = ab; };
+        const take = a => { const ab = dvpPosNorm(sp, a?.position?.abbreviation); if (a?.id != null && ab) D.pos[String(a.id)] = ab; };
         for (const g of js?.athletes || []) { if (Array.isArray(g.items)) g.items.forEach(take); else take(g); }
       } catch (e) {}
     }));
@@ -8444,23 +8599,23 @@ async function dvpRosters(sp) {
   D.posAt = Date.now(); if (Object.keys(D.pos).length) kbSet("kb_dvppos_" + sp, JSON.stringify({ t: D.posAt, pos: D.pos }));
 }
 async function dvpEnsure(sp) {
-  const C = DVP_CFG[sp], s = gSlot(sp); if (!C || !s.loaded) return;
+  dvpSync(sp); const C = DVP_CFG[sp], s = gSlot(sp); if (!C || !s.loaded) return;
   const D = s.dvp = s.dvp || { agg: {}, pos: {}, bad: {}, skip: {}, tries: {}, busy: false, unk: 0, total: 0, done: 0, err: null, posAt: 0 };
   if (D.busy) return;
   if (!D._init) { D._init = true; try { const a = hasLS ? JSON.parse(localStorage.getItem("kb_dvpg_" + sp) || "null") : null; if (a?.agg) { D.agg = a.agg; D.bad = a.bad || {}; D.unk = a.unk || 0; } const p = hasLS ? JSON.parse(localStorage.getItem("kb_dvppos_" + sp) || "null") : null; if (p?.pos) { D.pos = p.pos; D.posAt = p.t || 0; } } catch (e) {} }
-  const visible = () => GX.cur === sp && GX.view === "dvp", repaint = () => { if (visible()) { try { renderGen(); } catch (e) {} } };
+  const visible = () => dvpVisible(sp), repaint = () => { if (visible()) dvpRepaint(sp); };
   const finals = (s.results || []).filter(r => r.id); D.total = finals.length;
   const todo = finals.filter(r => !D.agg[r.id] && !D.bad[r.id] && !D.skip[r.id]); D.done = finals.length - todo.length;
   const needPos = Object.keys(D.pos).length ? Date.now() - D.posAt > 3 * 864e5 : Date.now() - D.posAt > 5 * 6e4; // no roster answer yet → retry at most every 5 min, never in a loop
   if (!todo.length && !needPos) return;
   if (D.noPos && !needPos) return; // rosters didn't answer a moment ago — don't hammer, and don't parse games without positions
-  D.busy = true; const base = `https://site.api.espn.com/apis/site/v2/sports/${GS_CFG[sp].path}`;
+  D.busy = true; const base = `https://site.api.espn.com/apis/site/v2/sports/${dvpPath(sp)}`;
   try {
     if (needPos) { await dvpRosters(sp); D.noPos = !Object.keys(D.pos).length; repaint(); }
     if (!Object.keys(D.pos).length) { D.err = "rosters didn't answer"; D.busy = false; D.noPos = true; repaint(); return; } // box scores parsed without positions would be saved with the wrong/generic positions forever
     for (let i = 0; i < todo.length && visible(); i += 6) {
       await Promise.all(todo.slice(i, i + 6).map(async r => {
-        try { const sm = await j(`${base}/summary?event=${r.id}`); const rec = sp === "nfl" ? dvpNflRec(sm, D.pos) : dvpNbaRec(sm, D.pos); if (rec) { D.agg[r.id] = rec; D.unk += rec.unk || 0; } else D.bad[r.id] = 1; }
+        try { const sm = await j(`${base}/summary?event=${r.id}`); const rec = sp === "nfl" ? dvpNflRec(sm, D.pos) : sp === "nhl" ? dvpNhlRec(sm, D.pos) : dvpNbaRec(sm, D.pos, sp); if (rec) { D.agg[r.id] = rec; D.unk += rec.unk || 0; } else D.bad[r.id] = 1; }
         catch (e) { D.err = String(e.message || e); D.tries[r.id] = (D.tries[r.id] || 0) + 1; if (D.tries[r.id] >= 2) D.skip[r.id] = 1; }
       }));
       D.done = finals.filter(r => D.agg[r.id] || D.bad[r.id] || D.skip[r.id]).length;
@@ -8496,6 +8651,11 @@ function dvpTable(sp, win) {
 }
 const dvpOrd = n => n + (n % 100 >= 11 && n % 100 <= 13 ? "TH" : ["TH", "ST", "ND", "RD"][n % 10 > 3 ? 0 : n % 10] || "TH");
 const dvpExt = hot => /^((MOST|FEWEST)|[123](ST|ND|RD) (MOST|FEWEST))$/.test(String(hot || ""));   // top 3 most / bottom 3 (fewest) — the extreme ends of the league
+const dvpTier = hot => { const m = String(hot || "").match(/^(?:([123])(?:ST|ND|RD) )?(?:MOST|FEWEST)$/); return m ? +(m[1] || 1) : 0; };   // 1 / 2 / 3 for the top-3 / bottom-3 ends, 0 otherwise
+const dvpPillCss = (hot, tough) => { const t = dvpTier(hot), g = !tough, base = "border-radius:4px;padding:0 6px;white-space:nowrap;font-weight:900;";   // 1st = brightest + glow, 2nd = solid mid shade, 3rd = tinted outline
+  if (t === 1) return base + (g ? "color:#06281c;background:#34d399;box-shadow:0 0 10px rgba(52,211,153,.8);" : "color:#2a050a;background:#ff4757;box-shadow:0 0 10px rgba(255,71,87,.8);");
+  if (t === 2) return base + (g ? "color:#fff;background:#1b9468;" : "color:#fff;background:#c93445;");
+  return base + (g ? "color:#34d399;background:rgba(52,211,153,.2);border:1px solid rgba(52,211,153,.6);" : "color:#ff6b78;background:rgba(255,71,87,.2);border:1px solid rgba(255,71,87,.6);"); };
 const dvpMost = r => (r === 1 ? "MOST" : dvpOrd(r) + " MOST");
 function dvpLines(sp, tid, tbl, maxRank) { // the headline lines for one defence: where it is most exploitable (and what it's good at)
   const C = DVP_CFG[sp], o = tbl[tid]; if (!o) return [];
@@ -8505,7 +8665,7 @@ function dvpLines(sp, tid, tbl, maxRank) { // the headline lines for one defence
   return out.sort((a, b) => a.rank - b.rank).slice(0, 8);
 }
 /* ---------- DEF VS POS → the props that fit each soft matchup ---------- */
-const DVP_PROP = { nba: { pts: "PTS", reb: "REB", ast: "AST", tpm: "TPM", pra: "PRA" }, nfl: { pyds: "PASSYDS", ryds: "RUSHYDS", cyds: "RECYDS", rec: "REC" } };
+const DVP_PROP = { nhl: { sog: "SOG", g: "G", pts: "PTS" }, nba: { pts: "PTS", reb: "REB", ast: "AST", tpm: "TPM", pra: "PRA" }, nfl: { pyds: "PASSYDS", ryds: "RUSHYDS", cyds: "RECYDS", rec: "REC" } };
 function dvpPropRows(sp, g, T) { // GOOD matchups (the defence gives up the MOST) and BAD matchups (the FEWEST): the opposing team's players at that position, priced with the matchup applied
   const s = gSlot(sp), D = s.dvp, map = DVP_PROP[sp]; if (!map || !D || !D.pos || !s.pReady || !s.pdata) return null;
   const abbrOf = id => String(s.teams[id]?.abbr || "").toUpperCase(), out = { good: [], bad: [] };
@@ -8556,8 +8716,8 @@ function renderDvp(root, sp) {
   const view = GX.dvpView || "game";
   const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   bar.innerHTML = [["game", "BY GAME"], ["teams", "ALL TEAMS"]].map(([k, l]) => `<span class="fchip${view === k ? " on" : ""}" data-dvpv="${k}">${l}</span>`).join("") + `<span style="width:10px"></span>` + DVP_WINS.map(([k, l]) => `<span class="fchip${win === k ? " on" : ""}" data-dvpw="${k}">${l}</span>`).join("");
-  bar.querySelectorAll("[data-dvpv]").forEach(c => c.addEventListener("click", () => { GX.dvpView = c.dataset.dvpv; renderGen(); }));
-  bar.querySelectorAll("[data-dvpw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_dvpwin", c.dataset.dvpw); } catch (e) {} renderGen(); }));
+  bar.querySelectorAll("[data-dvpv]").forEach(c => c.addEventListener("click", () => { GX.dvpView = c.dataset.dvpv; dvpRepaint(sp); }));
+  bar.querySelectorAll("[data-dvpw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_dvpwin", c.dataset.dvpw); } catch (e) {} dvpRepaint(sp); }));
   root.appendChild(bar);
   const nAgg = D ? Object.keys(D.agg).length : 0;
   const status = el("div", "subhead"); status.innerHTML = `<span style="color:var(--dim3)">${D ? `Built from ${nAgg} of ${D.total} finished ${C.name} games${D.busy ? " — loading more, this fills in as you watch…" : ""}${D.unk ? ` · ${D.unk} player lines skipped (not on a roster)` : ""}${genCoverageNote(sp) ? " · " + genCoverageNote(sp) : ""}${!Object.keys(D.pos).length ? " · ⚠ rosters didn't answer, so positions are unknown — only passing can be read until they load" : ""}${D.err && !nAgg ? ` · last error: ${D.err}` : ""}` : "Loading…"}</span>`;
@@ -8579,10 +8739,10 @@ function renderDvp(root, sp) {
     const stats = C.stats[GX.dvpPos]; GX.dvpStat = stats.some(x => x[0] === GX.dvpStat) ? GX.dvpStat : stats[0][0];
     const pb = el("div"); pb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px;";
     pb.innerHTML = C.positions.filter(p2 => Object.values(T).some(o => o.pos[p2])).map(p2 => `<span class="fchip${GX.dvpPos === p2 ? " on" : ""}" data-dvpp="${p2}">${p2}</span>`).join("");
-    pb.querySelectorAll("[data-dvpp]").forEach(c => c.addEventListener("click", () => { GX.dvpPos = c.dataset.dvpp; renderGen(); }));
+    pb.querySelectorAll("[data-dvpp]").forEach(c => c.addEventListener("click", () => { GX.dvpPos = c.dataset.dvpp; dvpRepaint(sp); }));
     const sb = el("div"); sb.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;";
     sb.innerHTML = stats.map(([k, l]) => `<span class="fchip${GX.dvpStat === k ? " on" : ""}" data-dvps="${k}">${l}</span>`).join("") + (C.team.length && GX.dvpPos === C.positions[0] ? "" : "");
-    sb.querySelectorAll("[data-dvps]").forEach(c => c.addEventListener("click", () => { GX.dvpStat = c.dataset.dvps; renderGen(); }));
+    sb.querySelectorAll("[data-dvps]").forEach(c => c.addEventListener("click", () => { GX.dvpStat = c.dataset.dvps; dvpRepaint(sp); }));
     root.appendChild(pb); root.appendChild(sb);
     const rows = Object.keys(T).filter(id => T[id].pos[GX.dvpPos]).map(id => ({ id, o: T[id], c: T[id].pos[GX.dvpPos][GX.dvpStat] })).sort((a, b) => a.c.rank - b.c.rank);
     const card = el("div", "card"); card.style.cssText = "padding:6px 12px;max-width:640px;";
@@ -8603,7 +8763,7 @@ function renderDvp(root, sp) {
   for (const g of games) {
     const nameOf = id => esc(s.teams[id]?.name || id), abbr = id => esc(s.teams[id]?.abbr || id);
     const col = id => { const ls = dvpLines(sp, String(id), T, 8), tough = dvpToughLines(sp, String(id), T, 8).slice(0, 3);
-      const rowH = (l, colr) => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}${dvpExt(l.hot) ? `<span data-ext="1" style="color:#10131a;background:${colr};border-radius:4px;padding:0 6px;font-weight:900;white-space:nowrap;box-shadow:0 0 7px ${colr === "var(--red)" ? "rgba(255,71,87,.6)" : "rgba(52,211,153,.6)"};">${esc(l.hot)}</span>` : `<span style="color:${colr};opacity:.85;">${esc(l.hot)}</span>`}${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`;
+      const rowH = (l, colr) => `<div style="display:flex;gap:8px;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line2, #1c2230);font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2px;"><span>${esc(l.pre)}${dvpExt(l.hot) ? `<span data-ext="1" data-tier="${dvpTier(l.hot)}" style="${dvpPillCss(l.hot, colr === "var(--red)")}">${esc(l.hot)}</span>` : `<span style="color:${colr};opacity:.85;">${esc(l.hot)}</span>`}${esc(l.post)}</span><span style="color:var(--dim3);font-size:11px;white-space:nowrap;">${l.v.toFixed(1)}</span></div>`;
       return `<div style="min-width:0;flex:1 1 230px;">${ls.length ? ls.map(l => rowH(l, "var(--green)")).join("") : (tough.length ? "" : `<div style="padding:8px 0;color:var(--dim3);font-size:12px;">${abbr(id)}: no position is in the 8 softest right now.</div>`)}${tough.length ? `<div data-dvptough="${id}" style="padding:7px 0 1px;border-top:1px solid var(--line2, #1c2230);font-size:9.5px;letter-spacing:1.2px;font-weight:800;color:var(--red);">TOUGH MATCHUPS · allows the fewest</div>` + tough.map(l => rowH(l, "var(--red)")).join("") : ""}</div>`; };
     const card = el("div", "card"); card.dataset.dvpgame = g.a + "-" + g.h;
     card.innerHTML = `<div class="chead"><span class="time">${(sp === "nfl" ? new Date(g.date).toLocaleDateString([], { weekday: "short" }) + " " : "") + timeLabel(g.date)}</span><div class="spacer"></div></div>
@@ -8611,7 +8771,7 @@ function renderDvp(root, sp) {
       <div style="display:flex;flex-wrap:wrap;gap:0 18px;">${col(g.a)}${col(g.h)}</div>`;
     if (DVP_PROP[sp]) { // dropdown: the props that fit this game's matchups — good (OVER leans) and bad (UNDER leans)
       const pr = dvpPropRows(sp, g, T), nRows = pr ? pr.good.length + pr.bad.length + pr.also.length : 0;
-      const hotPill = (txt, tough, rb) => dvpExt(txt) ? `<span data-hot="${esc(txt)}"${rb ? ' class="kb-rbpill"' : ""} style="${rb ? "" : `color:#10131a;background:${tough ? "var(--red)" : "var(--green)"};box-shadow:0 0 7px ${tough ? "rgba(255,71,87,.6)" : "rgba(52,211,153,.6)"};`}border-radius:4px;padding:0 6px;font-weight:900;white-space:nowrap;">${esc(txt)}</span>` : `<span data-hot="${esc(txt)}" style="color:${tough ? "var(--red)" : "var(--green)"};background:${tough ? "rgba(255,71,87,.10)" : "rgba(52,211,153,.10)"};border-radius:4px;padding:0 5px;font-weight:700;white-space:nowrap;opacity:.85;">${esc(txt)}</span>`;
+      const hotPill = (txt, tough, rb) => dvpExt(txt) ? `<span data-hot="${esc(txt)}"${rb ? ' class="kb-rbpill"' : ""} data-tier="${dvpTier(txt)}" style="${rb ? "border-radius:4px;padding:0 6px;font-weight:900;white-space:nowrap;" : dvpPillCss(txt, tough)}">${esc(txt)}</span>` : `<span data-hot="${esc(txt)}" style="color:${tough ? "var(--red)" : "var(--green)"};background:${tough ? "rgba(255,71,87,.10)" : "rgba(52,211,153,.10)"};border-radius:4px;padding:0 5px;font-weight:700;white-space:nowrap;opacity:.85;">${esc(txt)}</span>`;
       const pctHtml = mu => mu && Math.abs(mu.f - 1) >= 0.01 ? ` · <b style="color:${mu.f > 1 ? "var(--green)" : "var(--red)"};">${muPct(mu)}</b>` : "";
       const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}"${c3.rainbow ? ' data-rainbow="1" class="kb-rbrow"' : ""} style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${c3.weak ? "opacity:.62;" : ""}"><div style="min-width:0;flex:1;"><div style="font-size:13px;font-weight:700;">${esc(c3.p.name)} <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}</span></div><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${esc(c3.stat)} · ${esc(c3.dpre)}${hotPill(c3.dhot, c3.tough, c3.rainbow)}${esc(c3.dpost)}${pctHtml(c3.mu)}${c3.rainbow ? ' · <b class="kb-rbtxt" data-rbtag="1">CONSISTENT</b>' : ""}${c3.grade === "A" || c3.grade === "B" ? ' · <span data-grade="steady" style="color:var(--green)">steady</span>' : c3.grade === "D" ? ' · <span data-grade="volatile" style="color:var(--red)">volatile</span>' : ""}${c3.weak ? " · no real edge" : ""}${c3.flag ? ` · <span style="color:var(--red)">⚠ ${esc(c3.flag)}</span>` : ""}</div>${c3.ctx && c3.ctx.length ? `<div data-dvpctx="1" style="font-size:10px;color:var(--gold);line-height:1.4;">${c3.ctx.map(x => "⚑ " + esc(x)).join("<br>")}</div>` : ""}</div><div style="text-align:right;flex:0 0 auto;"><div style="font-family:var(--cond);font-weight:800;font-size:15px;">${c3.over ? "OVER" : "UNDER"} ${c3.line}</div><div style="font-size:11px;white-space:nowrap;"><b style="color:${!c3.weak && c3.chance >= 0.6 ? "var(--green)" : "var(--txt)"}">${(c3.chance * 100).toFixed(0)}% hit</b> <span style="color:var(--dim3)">· L10 ${c3.l10h}/${c3.l10n}</span></div></div></div>`;
       const alsoHtml = c3 => `<div data-dvpprop="${c3.key}" data-dvppid="${c3.p.id}" data-dvpalso="1" style="padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><span style="font-size:13px;font-weight:700;">${esc(c3.p.name)}</span> <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}${c3.pos ? " · " + esc(c3.pos) : ""}</span><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${c3.hot ? esc(c3.hot.pre) + hotPill(c3.hot.hot, c3.hot.tough) + esc(c3.hot.post) + " — but he isn't priced for that stat" : esc(c3.note)}</div></div>`;
@@ -8999,7 +9159,7 @@ function renderGen() {
     const winE = effWin(), bE = effBuild(sE.results || [], sE.teams || {}, winE);
     const dayISO = S.date || localISO(new Date()); let dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && localISO(new Date(g3.date)) === dayISO), dayLabel = dayISO === localISO(new Date()) ? "TODAY" : dayISO;
     if (!dayGames.length && cE.weekly) { dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && !g3.completed); dayLabel = "THIS WEEK"; } // a weekly sport on an off day: the week's biggest mismatch
-    effRender(root, { unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, scope: lgE, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up" })) : null });
+    effRender(root, { results: sE.results || [], weekly: !!cE.weekly, unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, scope: lgE, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up", spread: g3.spread, total: g3.total })) : null });
     return;
   }
   if (GX.view === "pstat") {
@@ -9628,7 +9788,7 @@ function switchTab(name) {
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
 const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["nrfi", "NRFI/YRFI"], ["eff", "EFFICIENCY"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
-const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:eff", "EFFICIENCY"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
+const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:dvp", "DEF VS POS"], ["wnba:eff", "EFFICIENCY"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
   const tabs = APP_SPORT === "mlb" ? MLB_TABS : APP_SPORT === "wnba" ? WNBA_TABS : APP_SPORT === "ten" ? [["ten:board", "BOARD"], ["ten:games", "TOTAL GAMES"], ["ten:rec", "MODEL RECORDS"], ["ten:how", "HOW IT WORKS"]] : genTabs(APP_SPORT);
