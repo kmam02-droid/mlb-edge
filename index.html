@@ -363,6 +363,58 @@
 .kb-rbrow::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:linear-gradient(180deg,#ff4757,#ffa502,#f7e24a,#34d399,#1e90ff,#a55eea);}
 @keyframes kbRb{to{background-position:200% 0}}
 @media (prefers-reduced-motion:reduce){.kb-rbtxt,.kb-rbpill{animation:none}}
+/* ===== v5.69 — LOOK & MOTION layer (additive; every :root token untouched) ===== */
+body::before{content:"";position:fixed;inset:-25%;z-index:-1;pointer-events:none;
+  background:radial-gradient(38% 32% at 18% 12%,rgba(91,157,255,.10),transparent 70%),radial-gradient(34% 30% at 86% 18%,rgba(165,94,234,.08),transparent 70%),radial-gradient(40% 34% at 62% 92%,rgba(52,211,153,.06),transparent 70%);
+  animation:mAurora 26s ease-in-out infinite alternate;}
+@keyframes mAurora{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(3%,-2%,0) scale(1.06)}100%{transform:translate3d(-3%,2%,0) scale(1.02)}}
+header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(91,157,255,.75),rgba(165,94,234,.7),rgba(52,211,153,.6),transparent);background-size:200% 100%;animation:mEdge 9s linear infinite;}
+@keyframes mEdge{to{background-position:200% 0}}
+.logoBox{animation:mLogo 5s ease-in-out infinite;}
+@keyframes mLogo{0%,100%{box-shadow:0 4px 14px rgba(91,157,255,.35)}50%{box-shadow:0 4px 22px rgba(91,157,255,.65),0 0 0 3px rgba(91,157,255,.12)}}
+/* tabs, sport switch, chips, buttons: smooth state changes + press response */
+.tab,#sportSwitch button,.fchip,.btn,.whybtn{transition:color .2s,background-color .2s,border-color .2s,box-shadow .25s,transform .12s;}
+.tab{position:relative;}
+.tab.active::after{content:"";position:absolute;left:12px;right:12px;bottom:2px;height:2px;border-radius:2px;background:linear-gradient(90deg,#ff4757,#ffa502);box-shadow:0 0 8px rgba(255,71,87,.6);animation:mTabLine .35s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes mTabLine{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+.fchip.on{box-shadow:0 0 14px rgba(245,185,62,.35);}
+.tab:active,#sportSwitch button:active,.fchip:active,.btn:active,.whybtn:active{transform:scale(.96);}
+/* cards: lift + glow on hover — mouse only, so it never "sticks" after a tap on a phone */
+.card{transition:border-color .2s,transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;}
+@media (hover:hover){
+  .card:not(.golden):not(.rainbow):hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(0,0,0,.38),0 0 0 1px rgba(91,157,255,.22),0 0 26px rgba(91,157,255,.10);}
+  .card.golden:hover,.card.rainbow:hover{transform:translateY(-3px);}
+  .whybtn:hover{border-color:rgba(91,157,255,.35);color:var(--txt);}
+}
+/* entrance — ONLY while body.m-enter is set (opening a tab / switching sport), never on background repaints */
+body.m-enter [id^="tab-"] > *{animation:mRise .45s cubic-bezier(.2,.8,.2,1) both;}
+body.m-enter [id^="tab-"] > *:nth-child(2){animation-delay:.04s} body.m-enter [id^="tab-"] > *:nth-child(3){animation-delay:.08s} body.m-enter [id^="tab-"] > *:nth-child(4){animation-delay:.12s} body.m-enter [id^="tab-"] > *:nth-child(n+5){animation-delay:.16s}
+body.m-enter .grid > .card:not(.golden):not(.rainbow){animation:mCardIn .55s cubic-bezier(.2,.8,.2,1) both;}
+body.m-enter .grid > .card:nth-child(2){animation-delay:.05s} body.m-enter .grid > .card:nth-child(3){animation-delay:.10s} body.m-enter .grid > .card:nth-child(4){animation-delay:.15s}
+body.m-enter .grid > .card:nth-child(5){animation-delay:.20s} body.m-enter .grid > .card:nth-child(6){animation-delay:.25s} body.m-enter .grid > .card:nth-child(7){animation-delay:.30s}
+body.m-enter .grid > .card:nth-child(8){animation-delay:.35s} body.m-enter .grid > .card:nth-child(n+9){animation-delay:.40s}
+body.m-enter .kstat .v{animation:mNum .6s cubic-bezier(.2,.8,.2,1) .15s both;}
+body.m-enter svg.spark rect{transform-box:fill-box;transform-origin:50% 100%;animation:mBar .6s cubic-bezier(.2,.8,.2,1) .2s both;}
+@keyframes mRise{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@keyframes mCardIn{from{opacity:0;transform:translate3d(0,16px,0) scale(.985)}to{opacity:1;transform:none}}
+@keyframes mNum{from{opacity:0;filter:blur(6px);transform:translate3d(0,4px,0)}to{opacity:1;filter:none;transform:none}}
+@keyframes mBar{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+/* dropdowns slide open; distribution bars grow in, staggered */
+.whybox.open{animation:mDrop .24s cubic-bezier(.2,.8,.2,1) both;}
+@keyframes mDrop{from{opacity:0;transform:translate3d(0,-6px,0)}to{opacity:1;transform:none}}
+.whybox.open [data-distbar]{transform-origin:0 50%;animation:mGrow .55s cubic-bezier(.2,.8,.2,1) both;}
+.whybox.open [data-dist] > div:nth-child(3) [data-distbar]{animation-delay:.03s} .whybox.open [data-dist] > div:nth-child(4) [data-distbar]{animation-delay:.06s} .whybox.open [data-dist] > div:nth-child(5) [data-distbar]{animation-delay:.09s}
+.whybox.open [data-dist] > div:nth-child(6) [data-distbar]{animation-delay:.12s} .whybox.open [data-dist] > div:nth-child(7) [data-distbar]{animation-delay:.15s} .whybox.open [data-dist] > div:nth-child(n+8) [data-distbar]{animation-delay:.18s}
+@keyframes mGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+/* loading: gradient ring + a shimmer skeleton card */
+.spinner{border:3px solid transparent;background:conic-gradient(from 0deg,transparent 0 20%,#5b9dff 55%,#a55eea 80%,#34d399) border-box;-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));animation:spin .9s linear infinite;}
+.loadingBox::after{content:"";width:min(680px,92%);height:118px;border-radius:14px;border:1px solid var(--line);background:linear-gradient(100deg,rgba(255,255,255,.025) 30%,rgba(255,255,255,.075) 50%,rgba(255,255,255,.025) 70%);background-size:220% 100%;animation:shimmer 1.5s linear infinite;}
+/* anyone who asked their phone / computer for less motion gets none */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;animation-delay:0s !important;transition-duration:.001ms !important;}
+  body::before,header::after,.logoBox{animation:none !important;}
+  .card:hover{transform:none !important;}
+}
 </style>
 </head>
 <body>
@@ -472,6 +524,41 @@
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.69  LOOK & MOTION layer (additive — no colour/font token changed, no data or model touched): tab content and cards glide in with a short stagger when you open a tab or switch
+          sport (only then — background reloads don't replay it), cards lift and glow on hover (mouse only, never sticks on a phone), the active tab gets an animated underline, chips and
+          buttons give a press response, the chart bars rise in, the distribution bars and every dropdown slide open, headline numbers sharpen in, loading shows a gradient ring + shimmer
+          skeleton, a slow aurora glow sits behind the page, and the header gets a moving gradient edge. Everything turns off for "reduce motion" phone/OS settings.
+   v5.68  FIX (player-prop tabs: POINTS / PRA / REBOUNDS … for NBA, NFL, NHL, college, soccer): (1) EVERYTHING SAID "SPLIT". The line the models were asked about was the AVERAGE of the
+          models' own projections, so by construction some models land above it and some below — "do they agree?" could almost never be yes, and "conviction" just measured how far apart
+          the models were (the more they disagreed the higher a card ranked). The question is now the same for all of them and independent of them: "will he beat HIS OWN SEASON AVERAGE
+          (snapped to a half-point)?" — the LINE on the card. Agreement, conviction, the per-model OVER/UNDER rows, the dashed line on the chart, the ALT LINES and the DISTRIBUTION all
+          use that line; the consensus projection is still shown. Each card now says how many models lean OVER vs UNDER (3 of 3, 2 of 3). (2) Only 15 players were ever shown — it
+          now shows 15 and a SHOW 15 MORE button (up to every priced player).
+   v5.67  NEW: a PROBABILITY DISTRIBUTION dropdown under every prop card's ALT LINES dropdown (MLB strikeouts + the other MLB player cards, WNBA props, soccer props, and every
+          NFL / NBA / NHL / college player-prop card). A bar for every outcome (or band of outcomes) with its chance — green = over the line, red = under, gold = the band holding the
+          line — plus the median, middle-50% and middle-80% range and the chance of over / under. Built from the SAME curve that prices the ALT LINES, so the two always agree.
+   v5.66  The rainbow CONSISTENT look now reaches GOOD matchups (OVER) too, not just bad ones (UNDER). The bar was "cleared the line in 7 of his last 10" for both sides, but the line is
+          set at his normal level and counting stats lean low (a few big games pull the average up), so clearing it 7 times is much rarer for an OVER than clearing under it is for an UNDER.
+          OVER now needs 6 of 10 (60%); UNDER still needs 7 of 10 (70%). Everything else is unchanged: top/bottom-3 matchup, real lean, 60%+ model chance, steady player.
+   v5.65  FIX (phone): the DEF VS POS chips (BY GAME / ALL TEAMS / SEASON / LAST 10 / LAST 5) could not be tapped. While box scores and props load, the tab repaints itself over and over
+          (every few batches), and each repaint REPLACES the chips — a phone tap needs the same chip under the finger from touch-down to touch-up, so a repaint in between ate the
+          tap (a mouse click is too fast to notice). A repaint that arrives while a finger is down now waits until it lifts, then runs once. Applies to every sport's generic tab and WNBA.
+   v5.64  FIX: no 3-POINTER props in the "props that fit these matchups" lists even when the card showed a 3-pointer matchup. The lists were ranked by edge first and cut to a
+          few rows, and low-count stats (3-pointers, assists) usually grade "no real edge", so they were always the rows cut. Now every stat that has a matchup in the game gets
+          its own best row first (then the rest by edge, up to 10 a side), so a 3-point matchup always shows its player when one is priced.
+   v5.63  FIX (found by running the live site against ESPN): on NFL the "who plays this slate" check read only the WEEK list, which is still empty when props load — so the
+          slate looked empty and the loader fell back to 34 league-wide players (~1 a team; v5.62 made that fallback worse by taking the passing list first). The day's
+          games now always count, and the fallback takes the best of every list. v5.62's "ESPN returns short lists" explanation was wrong — limit=80 does return 80.
+   v5.62  FIX: still only 1-2 priced players a team. The season-leader lists that decide WHO gets priced came back only ~22-50 deep (one request; ESPN pages them) — they are now
+          walked page by page to ~200 deep per list (limit 50 x 4 pages, falling back to 25 x 6, then the old single request), lookups go up to 8 per slate team (max 220),
+          and DEF VS POS shows how many players were priced and how deep each list came back. A game that has kicked off now says so instead of "no props priced".
+   v5.61  NFL: every stat DEF VS POS ranks now has a prop — new categories COMPLETIONS, PASS TDS, RUSH ATT, RUSH TDS, TARGETS, REC TDS (same player gamelogs, other columns;
+          Poisson-type count models; matchup factor + tuning for each). The PROPS THAT FIT dropdown now covers them (up to 8 a side). Player lookups: the best players of
+          EVERY leader list come first (the passing list used to fill the quota) and a big slate gets up to 150 lookups (was 64), 32 at a time. Not added: kicker FGs, sacks, INTs.
+   v5.60  FIX (phone): the DEF VS POS timeline chips (SEASON / LAST 10 / LAST 5) and the EFFICIENCY chips (window, sort, RAW / OPPONENT-ADJUSTED, wheel) only worked if the browser let
+          the page save data — on a phone that blocks or drops saved data the tap did nothing. The choice is now kept in memory first (prefGet / prefSet) and saved as well; same kb_ keys.
+   v5.59  FIX: the gold projected spread / O-U on the differential list rows sat on the SAME line as the matchup, time and the points-apart number and crowded them on a narrow screen
+          — it now sits on its own small line under each row, so the list looks exactly as before (rank, teams, time, differential).
    v5.58  The projected spread + O/U now also sit on the big yellow BIGGEST DIFFERENTIAL card (with the book line beside them and what built the margin: ratings,
           home edge, rest, injuries) and as a gold "HOU −5.5 · O/U 224.5" on every row of the day's list. Same numbers as the model panel; MLB / finished / live games show none.
    v5.57  EFFICIENCY model panel: each of tonight's games now shows the PROJECTED SPREAD (book-style, e.g. HOU −5.5) and PROJECTED O/U (rounded to a half), with the
@@ -573,7 +660,7 @@
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.58 · 10a";
+const BUILD = "v5.69 · 10a";
 window.__kbCtx = () => BUILD + " · sport " + (typeof APP_SPORT !== "undefined" ? APP_SPORT : "?") + " · view " + ((typeof GX !== "undefined" && GX.view) || "?") + " · " + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/) || ["?"])[0];
 
 /* ---------------- CONFIG ---------------- */
@@ -622,6 +709,9 @@ const SLIDERS = [
 
 /* ---------------- STATE ---------------- */
 const hasLS = typeof localStorage !== "undefined";
+/* chip choices: remembered IN MEMORY first, then saved — a phone whose browser blocks or drops saved data (private mode, storage cleared) must still switch timelines */
+const prefGet = k => { try { if (GX._pref && GX._pref[k] != null) return GX._pref[k]; } catch (e) {} try { return hasLS ? localStorage.getItem(k) : null; } catch (e) { return null; } };
+const prefSet = (k, v) => { try { (GX._pref = GX._pref || {})[k] = v; } catch (e) {} try { if (hasLS) localStorage.setItem(k, v); } catch (e) {} };
 const S = {
   date: null,
   weights: loadWeights(),
@@ -3206,6 +3296,23 @@ function altRungs(pOverFn, center, step, n = 3) { // rungs center ± n·step on 
   }
   return rows;
 }
+function distBox(pOverFn, mainLine, hint, title, note) { // v5.67 — the whole probability distribution of a prop, read off the SAME survival curve the ALT LINES use: P(X > x) at half-lines → P(X = k) = S(k-.5) - S(k+.5)
+  try {
+    const S = x => { const v = pOverFn(x); return v == null || !isFinite(v) ? NaN : clamp(v, 0, 1); };
+    if (isNaN(S(0.5)) || isNaN(S(5.5))) return "";
+    const cdf = x => x < 0 ? 0 : 1 - S(x + 0.5), top = Math.min(3000, Math.ceil((hint > 0 ? hint : 1) * 4 + 30));
+    const q = qq => { let a = 0, b = top; if (cdf(b) < qq) return b; while (a < b) { const m = (a + b) >> 1; if (cdf(m) >= qq) b = m; else a = m + 1; } return a; };
+    const lo = q(0.005), hi = Math.max(lo + 1, q(0.995)), w = Math.max(1, Math.ceil((hi - lo + 1) / 14)), bins = [];
+    for (let a = lo; a <= hi; a += w) { const b = Math.min(hi, a + w - 1), first = a === lo, last = b >= hi, pr = (first ? cdf(b) : S(a - 0.5)) - (last ? 0 : S(b + 0.5)); bins.push({ a, b, first, last, p: Math.max(0, pr), lbl: first && lo > 0 ? (w === 1 ? "≤" + b : "≤" + b) : last ? a + "+" : w === 1 ? String(a) : a + "–" + b }); }
+    const maxP = Math.max.apply(null, bins.map(b => b.p)) || 1, pct = x => x < 0.005 ? "<1%" : x < 0.1 ? (x * 100).toFixed(1) + "%" : (x * 100).toFixed(0) + "%", L = mainLine;
+    const rows = bins.map(b => { const col = L == null ? "var(--dim2)" : b.a > L ? "var(--green)" : b.b < L ? "var(--red)" : "var(--gold)"; return `<div style="display:grid;grid-template-columns:44px 1fr 42px;gap:6px;align-items:center;font-size:11px;margin:2px 0;"><span style="color:var(--dim3);text-align:right;">${b.lbl}</span><div style="background:rgba(255,255,255,.05);border-radius:3px;height:12px;"><div data-distbar="1" style="width:${(b.p / maxP * 100).toFixed(1)}%;height:100%;border-radius:3px;background:${col};opacity:.85;"></div></div><span style="font-weight:700;">${pct(b.p)}</span></div>`; }).join("");
+    const pOv = L != null ? S(L) : null, med = q(0.5), c = (t, v) => `<span class="chip">${t} <b>${v}</b></span>`;
+    const chips = c("median", med) + c("middle 50%", q(0.25) + "–" + q(0.75)) + c("middle 80%", q(0.1) + "–" + q(0.9)) + (pOv != null ? c("OVER " + L, pct(pOv)) + c("UNDER " + L, pct(1 - pOv)) : "");
+    return `<button class="whybtn" data-why>▸ ${title || "PROBABILITY DISTRIBUTION — every outcome"}</button>
+    <div class="whybox"><div data-dist="1"><div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px;">${chips}</div>${rows}</div>
+    <div class="wnote">${note || `How likely each result is, from the same curve that prices the ALT LINES. ${L != null ? "Green = over the " + L + " line, red = under, gold = the band that holds it. " : ""}${w > 1 ? `Bars group ${w} results together. ` : ""}Model numbers, not book prices.`}</div></div>`;
+  } catch (e) { return ""; }
+}
 function altBox(rows, mainLine, title, note, pxOf) { // pxOf optional: (side "O"|"U", line) → {price, book}
   if (!rows || rows.length < 2) return "";
   const pxTxt = (side, L, p) => { if (!pxOf) return ""; const px = pxOf(side, L); if (px?.price == null) return ""; const ev2 = (p - americanToProb(px.price)) * 100; return ` · <b style="color:${ev2 >= 1 ? "var(--gold)" : "var(--dim3)"}">bk ${fmtML(px.price)}${ev2 >= 1 ? " +" + ev2.toFixed(1) + "%" : ""}</b>`; };
@@ -3544,7 +3651,8 @@ function kCard(r, manual) {
         line != null && lean ? [`P(OVER ${line})`, (lean.pOver * 100).toFixed(0) + "%", "bell curve centered on the projection, width = his swing"] : null,
       ], line != null ? `The call: projection ${proj.projK.toFixed(1)} vs line ${line} — a gap of ${(proj.projK - line >= 0 ? "+" : "") + (proj.projK - line).toFixed(1)} Ks, sized against his ±${proj.sigma.toFixed(1)} swing. Big gap + steady pitcher = strong call; small gap or wild swings = pass.` : `No book line yet — the projection stands alone until one posts.`);
     })()}
-    ${altBox(altRungs(L2 => 1 - phi((L2 - proj.projK) / proj.sigma), line != null ? line : Math.round(proj.projK - 0.5) + 0.5, 1, 3), line, "ALT K LINES — every rung priced", `Bell curve centered on his ${proj.projK.toFixed(1)}-K projection, width = his ±${proj.sigma.toFixed(1)} swing. Compare with your book's alternate strikeout menu — bet a rung only when the book beats fair.`)}`;
+    ${altBox(altRungs(L2 => 1 - phi((L2 - proj.projK) / proj.sigma), line != null ? line : Math.round(proj.projK - 0.5) + 0.5, 1, 3), line, "ALT K LINES — every rung priced", `Bell curve centered on his ${proj.projK.toFixed(1)}-K projection, width = his ±${proj.sigma.toFixed(1)} swing. Compare with your book's alternate strikeout menu — bet a rung only when the book beats fair.`)}
+    ${distBox(L2 => 1 - phi((L2 - proj.projK) / proj.sigma), line != null ? line : Math.round(proj.projK - 0.5) + 0.5, proj.projK, "K DISTRIBUTION — every strikeout total")}`;
   card.querySelector(".manline")?.addEventListener("change", ev => {
     const m = hasLS ? JSON.parse(localStorage.getItem("kb_lines_" + S.date) || "{}") : {};
     m[ev.target.dataset.pid] = ev.target.value;
@@ -3766,7 +3874,8 @@ function renderBasesTab(kind) {
         [`P(OVER ${p._line})`, (p._pOver * 100).toFixed(0) + "%", "bell curve on the projection, width = his swing"],
         kind === "hrr" && p._p1 != null ? ["1+ " + c.short, `${p._c1}/${p._n1} games · fair ${fmtML(probToAmerican(p._p1))}`, "cleared at least one in that many logged games, lightly model-shrunk — compare with your book's 1+ price"] : null,
       ], p._real ? `Real book line. 56%+ = lean; check the price against fair before betting.` : `No book line yet — blue MODEL LINE is the projection at even odds. Tap Fetch above for real lines.`)}
-      ${altBox(altRungs(L3 => 1 - phi((L3 - p.proj) / p.sigma), p._line, 1, 3), p._line, `ALT ${c.short} LINES — every rung priced`, `Bell curve on his ${p.proj.toFixed(1)} projection. Compare with your book's alternate ${c.short.toLowerCase()} menu — bet a rung only when they beat fair.`)}`;
+      ${altBox(altRungs(L3 => 1 - phi((L3 - p.proj) / p.sigma), p._line, 1, 3), p._line, `ALT ${c.short} LINES — every rung priced`, `Bell curve on his ${p.proj.toFixed(1)} projection. Compare with your book's alternate ${c.short.toLowerCase()} menu — bet a rung only when they beat fair.`)}
+      ${distBox(L3 => 1 - phi((L3 - p.proj) / p.sigma), p._line, p.proj, `${c.short} DISTRIBUTION — every outcome`)}`;
     grid.appendChild(card);
   }
   root.appendChild(grid);
@@ -6486,6 +6595,7 @@ function renderWnbaHow(root) {
     WNBA moneylines and props feed the cross-sport 🔒 LOCKS (most likely to cash) and 💎 VALUE (biggest edge vs the book) pages. Use the filter bar there — sport chips (🏀 WNBA ONLY) and the odds window sliders — to see just basketball or to clear out heavy MLB favorites.`);
 }
 function renderWnba() {
+  if (tapHold(2)) return;
   renderWnba._er = null; // edge ranks rebuild per render
   const root = $("#tab-wnba"); if (!root) return;
   root.innerHTML = "";
@@ -6915,7 +7025,8 @@ function renderWnba() {
         pOver != null && line != null ? [`P(OVER ${line})`, (pOver * 100).toFixed(0) + "%", "bell curve centered on her projection, width = her swing"] : null,
         pr.warn ? ["⚠ Heads up", pr.warn, "recent minutes tell the truth before box scores do"] : null,
       ], hasRealLine ? `The call: projection ${pr.proj.toFixed(1)} vs line ${line} — a ${(pr.proj - line >= 0 ? "+" : "") + (pr.proj - line).toFixed(1)} gap against her ±${pr.sigma.toFixed(1)} swing. 62%+ = STRONG BET, 56%+ = GOOD, below 52% = pass.` : `Blue MODEL LINE = her projection rounded to the nearest half — a reference at even odds, not a bet, until a real book line posts.`)}
-      ${altBox(altRungs(L3 => 1 - phi((L3 - pr.proj) / pr.sigma), line ?? modelLine, { PTS: 2, REB: 1, AST: 1, "3PM": 1, PRA: 2.5, "P+R": 2, "P+A": 2, "R+A": 1.5 }[ST] || 2, 3), hasRealLine ? line : modelLine, `ALT ${ST} LINES — every rung priced`, `Bell curve centered on her ${pr.proj.toFixed(1)} projection, width = her ±${pr.sigma.toFixed(1)} swing. Compare with your book's alternate ${ST} menu — a rung is only a bet when the book pays more than fair.`)}`;
+      ${altBox(altRungs(L3 => 1 - phi((L3 - pr.proj) / pr.sigma), line ?? modelLine, { PTS: 2, REB: 1, AST: 1, "3PM": 1, PRA: 2.5, "P+R": 2, "P+A": 2, "R+A": 1.5 }[ST] || 2, 3), hasRealLine ? line : modelLine, `ALT ${ST} LINES — every rung priced`, `Bell curve centered on her ${pr.proj.toFixed(1)} projection, width = her ±${pr.sigma.toFixed(1)} swing. Compare with your book's alternate ${ST} menu — a rung is only a bet when the book pays more than fair.`)}
+      ${distBox(L3 => 1 - phi((L3 - pr.proj) / pr.sigma), hasRealLine ? line : modelLine, pr.proj, `${ST} DISTRIBUTION — every outcome`)}`;
     card.querySelector(".manline")?.addEventListener("change", ev => {
       const m = hasLS ? JSON.parse(localStorage.getItem("kb_wline_" + ST + "_" + S.date) || "{}") : {};
       m[ev.target.dataset.wpid] = ev.target.value;
@@ -6972,7 +7083,14 @@ const GS_PSTATS = {
     { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 35, cls: "yds" },
     { k: "RUSHYDS", n: "RUSH YDS", sort: "rushing.rushingYards", cat: "rushing", lab: "YDS", fl: 18, cls: "yds" },
     { k: "RECYDS", n: "REC YDS", sort: "receiving.receivingYards", cat: "receiving", lab: "YDS", fl: 16, cls: "yds" },
-    { k: "REC", n: "RECEPTIONS", sort: "receiving.receptions", cat: "receiving", lab: "REC", fl: 1.1, cls: "count" }
+    { k: "REC", n: "RECEPTIONS", sort: "receiving.receptions", cat: "receiving", lab: "REC", fl: 1.1, cls: "count" },
+    // v5.61 — every stat DEF VS POS ranks now has a prop (same gamelog, other columns; the leader lists above are reused, so no extra requests)
+    { k: "PASSCMP", n: "COMPLETIONS", sort: "passing.passingYards", cat: "passing", lab: "CMP", alt: ["C/ATT", "COMP"], fl: 3, cls: "count" },
+    { k: "PASSTD", n: "PASS TDS", sort: "passing.passingYards", cat: "passing", lab: "TD", fl: 0.7, cls: "count" },
+    { k: "RUSHATT", n: "RUSH ATT", sort: "rushing.rushingYards", cat: "rushing", lab: "CAR", alt: ["ATT", "RUSH"], fl: 2.5, cls: "count" },
+    { k: "RUSHTD", n: "RUSH TDS", sort: "rushing.rushingYards", cat: "rushing", lab: "TD", fl: 0.4, cls: "count" },
+    { k: "TGT", n: "TARGETS", sort: "receiving.receivingYards", cat: "receiving", lab: "TGTS", alt: ["TGT", "TAR"], fl: 1.4, cls: "count" },
+    { k: "RECTD", n: "REC TDS", sort: "receiving.receivingYards", cat: "receiving", lab: "TD", fl: 0.4, cls: "count" }
   ],
   cfb: [
     { k: "PASSYDS", n: "PASS YDS", sort: "passing.passingYards", cat: "passing", lab: "YDS", fl: 40, cls: "yds" },
@@ -7045,7 +7163,7 @@ function median2(vals) { const s2 = vals.slice().sort((a2, b2) => a2 - b2); cons
    12 / 6 / 3 games) × with or without a SCHEDULE adjustment (each game is compared with what THAT offence's position normally produces, not with the
    league).  muTune() replays every past defence-game ("as of" that date) and keeps the way with the smallest error at predicting what the defence then
    allowed — per prop.  Too few games, or nothing beats "no adjustment" → it stays on the plain whole-season read (the pre-v5.52 behaviour). */
-const MU_STAT = { wnba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], "3PM": ["tpm"], PRA: ["pts", "reb", "ast"], "P+R": ["pts", "reb"], "P+A": ["pts", "ast"], "R+A": ["reb", "ast"] }, nhl: { SOG: ["sog"], G: ["g"], PTS: ["pts"] }, nba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], TPM: ["tpm"], PRA: ["pts", "reb", "ast"], PR: ["pts", "reb"], RA: ["reb", "ast"], PA: ["pts", "ast"] }, nfl: { PASSYDS: ["pyds"], RUSHYDS: ["ryds"], RECYDS: ["cyds"], REC: ["rec"] } };
+const MU_STAT = { wnba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], "3PM": ["tpm"], PRA: ["pts", "reb", "ast"], "P+R": ["pts", "reb"], "P+A": ["pts", "ast"], "R+A": ["reb", "ast"] }, nhl: { SOG: ["sog"], G: ["g"], PTS: ["pts"] }, nba: { PTS: ["pts"], REB: ["reb"], AST: ["ast"], TPM: ["tpm"], PRA: ["pts", "reb", "ast"], PR: ["pts", "reb"], RA: ["reb", "ast"], PA: ["pts", "ast"] }, nfl: { PASSYDS: ["pyds"], RUSHYDS: ["ryds"], RECYDS: ["cyds"], REC: ["rec"], PASSCMP: ["pcmp"], PASSTD: ["ptd"], RUSHATT: ["ratt"], RUSHTD: ["rtd"], TGT: ["tgt"], RECTD: ["ctd"] } };
 const MU_K = 6, MU_CAP = [0.88, 1.12], MU_OFFK = 4, MU_TUNE_MIN = 150;
 const MU_VARS = [{ id: "s0", hl: 0, adj: 0 }, { id: "s1", hl: 0, adj: 1 }, { id: "a0", hl: 12, adj: 0 }, { id: "a1", hl: 12, adj: 1 }, { id: "b0", hl: 6, adj: 0 }, { id: "b1", hl: 6, adj: 1 }, { id: "c0", hl: 3, adj: 0 }, { id: "c1", hl: 3, adj: 1 }];
 const muVarText = v => (v.hl ? `recent games count more (half-life ${v.hl} games)` : "whole season, every game equal") + (v.adj ? " + schedule-adjusted" : "");
@@ -7246,7 +7364,7 @@ function glVals(parsed, ps, full) { // per-game values, most recent first (full=
   return res;
 }
 function genSlateTeams(sp, onlyOpen) { // abbreviations of every team in the slate (the day, or the whole NFL week); onlyOpen = just the games still to be played
-  const s = gSlot(sp), cfg = GS_CFG[sp], gs = (cfg.weekly ? s.weekGames : s.games) || [], ab = x => String(typeof x === "string" ? x : (x && x.abbr) || "").toUpperCase(), out = new Set();
+  const s = gSlot(sp), cfg = GS_CFG[sp], gs = (cfg.weekly && s.weekGames && s.weekGames.length ? s.weekGames : []).concat(s.games || []), ab = x => String(typeof x === "string" ? x : (x && x.abbr) || "").toUpperCase(), out = new Set(); // v5.63: the NFL week list is often still EMPTY when props load (seen live: weekGames null, 14 games on the day) — the slate then looked empty and only 34 league-wide players were priced. The day's games always count.
   for (const g of gs) { if (onlyOpen && g.completed) continue; out.add(ab(g.home)); out.add(ab(g.away)); } out.delete(""); return out;
 }
 async function genPropsLoad(sp) {
@@ -7307,25 +7425,32 @@ async function genPropsLoad(sp) {
     }
     if (cfg.inj && s.injAt == null) { try { await genInjuries(sp); } catch (e2) {} }
     const lists = {};
-    for (const ps of GS_PSTATS[sp] || []) {
-      if (lists[ps.sort]) continue;
-      try {
-        let ba = null; for (const lim of [80, 22]) { try { ba = await j(`${web}/statistics/byathlete?region=us&lang=en&limit=${lim}&sort=${ps.sort}%3Adesc`); if ((ba?.athletes || []).length) break; } catch (e3) {} } // the long list first, the old short one if ESPN refuses it
-        lists[ps.sort] = (ba?.athletes || []).map(a2 => ({ id: +(a2.athlete?.id || 0), name: a2.athlete?.displayName || "", team: a2.athlete?.teamShortName || a2.athlete?.team?.abbreviation || "", hs: a2.athlete?.headshot?.href || a2.athlete?.headshot || "" })).filter(c2 => c2.id && c2.name);
-      } catch (e2) { lists[ps.sort] = []; }
-    }
+    const leadList = async sortKey => { // ESPN serves these leader lists in pages (checked live 2026-11-15: limit=80 does return 80; NFL receiving has 171 qualified, rushing 60, passing 48) — walk the pages so the whole list is used, not the first 80.
+      const seen = {}, out = [], take = ba => { let add = 0; for (const a2 of ba?.athletes || []) { const c2 = { id: +(a2.athlete?.id || 0), name: a2.athlete?.displayName || "", team: a2.athlete?.teamShortName || a2.athlete?.team?.abbreviation || "", hs: a2.athlete?.headshot?.href || a2.athlete?.headshot || "" }; if (c2.id && c2.name && !seen[c2.id]) { seen[c2.id] = 1; out.push(c2); add++; } } return add; };
+      for (const lim of [50, 25]) { for (let pg = 1; pg <= (lim === 50 ? 4 : 6) && out.length < 200; pg++) { let ba = null; try { ba = await j(`${web}/statistics/byathlete?region=us&lang=en&limit=${lim}&page=${pg}&sort=${sortKey}%3Adesc`); } catch (e3) { break; } const got = (ba?.athletes || []).length, add = take(ba); if (!add || got < lim || (ba?.pagination?.pages && pg >= ba.pagination.pages)) break; } if (out.length) break; }
+      if (!out.length) for (const lim of [80, 22]) { try { if (take(await j(`${web}/statistics/byathlete?region=us&lang=en&limit=${lim}&sort=${sortKey}%3Adesc`))) break; } catch (e3) {} } // the old single request, if paging is refused
+      return out;
+    };
+    const sortKeys = []; for (const ps of GS_PSTATS[sp] || []) if (sortKeys.indexOf(ps.sort) < 0) sortKeys.push(ps.sort);
+    await Promise.all(sortKeys.map(async k4 => { try { lists[k4] = await leadList(k4); } catch (e2) { lists[k4] = []; } }));
     const byId = {};
     for (const ps of GS_PSTATS[sp] || []) for (const c2 of lists[ps.sort] || []) byId[c2.id] = byId[c2.id] || c2;
     // spend the player-log lookups on teams that PLAY in this slate (a prop for a team with no game is useless); league-wide leaders only fill the gaps / an off day
     const inSlate = genSlateTeams(sp), openTeams = genSlateTeams(sp, true); let pool = Object.values(byId), cap = 34; // (the old league-wide behaviour is the fallback: an off day, or too few slate players on the lists)
-    if (inSlate.size >= 2) { const mine = pool.filter(p3 => inSlate.has(String(p3.team || "").toUpperCase())).sort((a3, b3) => (openTeams.has(String(b3.team || "").toUpperCase()) ? 1 : 0) - (openTeams.has(String(a3.team || "").toUpperCase()) ? 1 : 0)); // games still to play first, finished games (kept as dimmed cards) after
-      if (mine.length >= 10) { const rest = pool.filter(p3 => !inSlate.has(String(p3.team || "").toUpperCase())); pool = mine.slice(0, 64).concat(rest.slice(0, Math.max(0, 34 - Math.min(mine.length, 64)))); cap = 64; } }
+    const rankOf = {}; for (const k3 in lists) (lists[k3] || []).forEach((c3, i3) => { if (rankOf[c3.id] == null || i3 < rankOf[c3.id]) rankOf[c3.id] = i3; }); // a player's best place on ANY list — so the top rushers and receivers get a log lookup, not just the 80 passers that happened to be listed first
+    const capS = Math.max(64, Math.min(220, inSlate.size * 8)); // a 13-game NFL Sunday has 26 teams: 64 lookups was ~2 players a team
+    pool.sort((a3, b3) => rankOf[a3.id] - rankOf[b3.id]); // even with no slate (off day), the best of every list — not the passing list first
+    if (inSlate.size >= 2) { const isOpen = p3 => (openTeams.has(String(p3.team || "").toUpperCase()) ? 1 : 0), mine = pool.filter(p3 => inSlate.has(String(p3.team || "").toUpperCase())).sort((a3, b3) => (isOpen(b3) - isOpen(a3)) || (rankOf[a3.id] - rankOf[b3.id])); // games still to play first, finished games (kept as dimmed cards) after; within each, best-ranked first
+      if (mine.length >= 10) { const rest = pool.filter(p3 => !inSlate.has(String(p3.team || "").toUpperCase())), per = Math.max(4, Math.ceil(capS / inSlate.size)), cnt = {}, first = [], later = []; // an even share per team first (so one team's 15 listed players can't crowd another team out), leftovers after
+        for (const p3 of mine) { const tm = String(p3.team || "").toUpperCase(); cnt[tm] = (cnt[tm] || 0) + 1; (cnt[tm] <= per ? first : later).push(p3); }
+        const mine2 = first.concat(later); pool = mine2.slice(0, capS).concat(rest.slice(0, Math.max(0, 34 - Math.min(mine2.length, capS)))); cap = capS; } }
     const players = pool.slice(0, cap);
     if (!players.length) throw new Error("no player leaders returned (off-season feeds can be empty)");
     s._gl = {};
-    await Promise.all(players.map(async p2 => {
+    for (let i4 = 0; i4 < players.length; i4 += 32) await Promise.all(players.slice(i4, i4 + 32).map(async p2 => { // 32 at a time: up to 150 lookups must not all hit ESPN in the same instant
       try { const gl = await j(`${web}/athletes/${p2.id}/gamelog`); const parsed = glParse(gl, genRegSeasonCut(sp)); if (parsed.rows.length >= 5) s._gl[p2.id] = { p: p2, parsed }; } catch (e2) {}
     }));
+    s.pMeta = { deep: sortKeys.map(k4 => (lists[k4] || []).length), lookups: players.length, logs: Object.keys(s._gl).length, slate: inSlate.size }; // shown on DEF VS POS so a thin list is visible, not a mystery
     s.pdata = {};
     for (const ps of GS_PSTATS[sp] || []) {
       const arr = [];
@@ -7598,6 +7723,11 @@ async function socBoxEnsure(sub) { // real per-match player logs from game summa
   } catch (e2) { s.boxErr = e2.message; }
   s.boxLoading = false; if (whyOpenNow()) { GX._dirty = 1; } else renderGen();
 }
+// v5.65 — never repaint under a finger: track touch/pointer-down, and let renderGen / renderWnba wait for the lift (a tap needs the SAME element at touch-down and touch-up)
+var TAP = { down: false, wait: 0, t: 0 };
+(function () { if (typeof document === "undefined") return; const dn = () => { TAP.down = true; TAP.t = Date.now(); }, up = () => { if (!TAP.down) return; TAP.down = false; setTimeout(() => { if (TAP.down || !TAP.wait) return; const w = TAP.wait; TAP.wait = 0; try { if (w === 1) renderGen(); else if (w === 2) renderWnba(); } catch (e) {} }, 450); }; // 450 ms: the click that follows the lift has fired before the repaint
+  ["pointerdown", "touchstart"].forEach(n => document.addEventListener(n, dn, true)); ["pointerup", "pointercancel", "touchend", "touchcancel"].forEach(n => document.addEventListener(n, up, true)); })();
+function tapHold(w) { if (TAP && TAP.down && Date.now() - TAP.t < 2500) { TAP.wait = w; return true; } if (TAP) TAP.down = false; return false; } // a finger stuck "down" for 2.5 s (lost touchend) can't freeze the page
 function whyOpenNow() { try { return !!document.querySelector(".whybox.open"); } catch (e) { return false; } }
 function genRenderIf(sp) { // background loads must never repaint the page you're reading
   try { const c2 = GX.cur; if (!c2) return; if (c2 === sp || (GS_CFG[c2]?.combo || []).includes(sp)) renderGen(); } catch (e) {}
@@ -8148,7 +8278,7 @@ function genBestPropsSection(root, sp) {
    A faint line shows where the team stood one window ago. Honest unit: points / runs / goals PER GAME — the feeds carry scores, not
    possessions, so this is NOT pace-adjusted (a fast team's offence reads a little high, its defence a little low). */
 const EFF_WINS = [["5", "LAST 5"], ["10", "LAST 10"], ["20", "LAST 20"], ["all", "SEASON"]];
-function effWin() { let v = null; try { v = hasLS ? localStorage.getItem("kb_effwin") : null; } catch (e) {} return EFF_WINS.some(w => w[0] === v) ? v : "10"; }
+function effWin() { const v = prefGet("kb_effwin"); return EFF_WINS.some(w => w[0] === v) ? v : "10"; }
 function effBuild(results, teams, win) {
   const per = {}; let af = null; if (effAdj()) { const ga = effGames(results); af = effFit(ga, ga.length, { hl: 0, adj: 1 }); } // opponent-adjusted view: each game is corrected by season-long ratings of who it was played against + the venue
   for (const r of results || []) {
@@ -8188,7 +8318,7 @@ function effBuild(results, teams, win) {
 const EFF_VARS = [{ id: "r0", hl: 0, adj: 0 }, { id: "r1", hl: 0, adj: 1 }, { id: "a0", hl: 20, adj: 0 }, { id: "a1", hl: 20, adj: 1 }, { id: "b0", hl: 10, adj: 0 }, { id: "b1", hl: 10, adj: 1 }];
 const EFF_LAM = 4, EFF_HFA_K = 40, EFF_MIN_TEST = 150;
 const effVarText = v => (v.hl ? `a team's recent games count more (half-life ${v.hl} games)` : "whole season, every game equal") + (v.adj ? " · opponent + home adjusted" : " · raw averages");
-const effAdj = () => { try { return hasLS && localStorage.getItem("kb_effadj") === "1"; } catch (e) { return false; } };
+const effAdj = () => prefGet("kb_effadj") === "1";
 function effGames(results) { // finished games, oldest first, with each team's running position (for recency weights) and whether it played the day before
   const g = []; for (const r of results || []) { if (r == null || r.hs == null || r.as == null || !isFinite(r.hs) || !isFinite(r.as)) continue; g.push({ d: r.d || "", h: +r.hId, a: +r.aId, hs: +r.hs, as: +r.as }); }
   g.sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
@@ -8280,8 +8410,8 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
   const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   bar.innerHTML = `<span style="flex:0 0 54px;font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">WINDOW</span>` + EFF_WINS.map(([k, l]) => `<span class="fchip${o.win === k ? " on" : ""}" data-effw="${k}">${l}</span>`).join("") +
     `<span style="width:8px"></span><span style="font-size:10px;color:var(--gold);letter-spacing:1.2px;font-weight:800;">VIEW</span>` + [["0", "RAW"], ["1", "OPPONENT-ADJUSTED"]].map(([k, l]) => `<span class="fchip${(effAdj() ? "1" : "0") === k ? " on" : ""}" data-effadj="${k}">${l}</span>`).join("") + `<span style="font-size:10px;color:var(--dim3);font-weight:600;">rolls forward by itself as new results land</span>`;
-  bar.querySelectorAll("[data-effadj]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effadj", c.dataset.effadj); } catch (e) {} GX.effZ = null; o.rerender(); }));
-  bar.querySelectorAll("[data-effw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effwin", c.dataset.effw); } catch (e) {} o.rerender(); }));
+  bar.querySelectorAll("[data-effadj]").forEach(c => c.addEventListener("click", () => { prefSet("kb_effadj", c.dataset.effadj); GX.effZ = null; o.rerender(); }));
+  bar.querySelectorAll("[data-effw]").forEach(c => c.addEventListener("click", () => { prefSet("kb_effwin", c.dataset.effw); o.rerender(); }));
   root.appendChild(bar);
   if (effAdj() && rows.length) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">OPPONENT-ADJUSTED: every game's points are corrected for the strength of the offense / defense it was played against and for home court (season-long ratings), then averaged over the window. A team that piled up points on weak defenses moves left.</span>`));
   try { effPanel(root, o); } catch (e) {}
@@ -8322,7 +8452,7 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
     root.appendChild(hlCard);
     if (pairs.length > 1) {
       const lst = el("div", "card"); lst.style.cssText = "max-width:680px;margin:0 auto 12px;padding:4px 12px;";
-      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span>${projAll[p3.key] ? `<span data-effrowproj="${p3.key}" style="color:var(--gold);font-size:10.5px;font-weight:700;white-space:nowrap;">${projAll[p3.key].margin === 0 || effHalf(projAll[p3.key].margin) === 0 ? "PK" : esc(abOf(effHalf(projAll[p3.key].margin) > 0 ? p3.g.home : p3.g.away)) + " " + effSgn(-Math.abs(effHalf(projAll[p3.key].margin)))} · O/U ${effHalf(projAll[p3.key].tot)}</span>` : ""}<span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span></div>`).join("");
+      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span><span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span>${projAll[p3.key] ? `<span data-effrowproj="${p3.key}" style="flex:0 0 100%;padding:0 0 0 28px;box-sizing:border-box;color:var(--gold);font-size:10.5px;font-weight:700;">${projAll[p3.key].margin === 0 || effHalf(projAll[p3.key].margin) === 0 ? "PK" : esc(abOf(effHalf(projAll[p3.key].margin) > 0 ? p3.g.home : p3.g.away)) + " " + effSgn(-Math.abs(effHalf(projAll[p3.key].margin)))} · O/U ${effHalf(projAll[p3.key].tot)}</span>` : ""}</div>`).join("");
       lst.querySelectorAll("[data-effgame]").forEach(r3 => r3.addEventListener("click", () => { GX.effHl = r3.dataset.effgame; GX.effTeam = null; o.rerender(); }));
       root.appendChild(lst);
     }
@@ -8437,9 +8567,9 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
     window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp); window.addEventListener("pointercancel", onUp); // follows the drag even outside the chart, without capturing the pointer
   });
   wrap.addEventListener("dblclick", e => { const p0 = svgPt(e); zoomAt(e.shiftKey ? 0.5 : 2, p0.x, p0.y); });
-  const wheelMode = () => { let v = null; try { v = hasLS ? localStorage.getItem("kb_effwheel") : null; } catch (er) {} return v === "page" ? "page" : "zoom"; }; // default: the wheel zooms the chart
+  const wheelMode = () => { const v = prefGet("kb_effwheel"); return v === "page" ? "page" : "zoom"; }; // default: the wheel zooms the chart
   const wheelChip = zbar.querySelector("[data-effwheel]"), paintWheel = () => { wheelChip.textContent = wheelMode() === "zoom" ? "🖱 WHEEL: ZOOMS" : "🖱 WHEEL: SCROLLS PAGE"; wheelChip.classList.toggle("on", wheelMode() === "zoom"); };
-  wheelChip.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effwheel", wheelMode() === "zoom" ? "page" : "zoom"); } catch (er) {} paintWheel(); }); paintWheel();
+  wheelChip.addEventListener("click", () => { prefSet("kb_effwheel", wheelMode() === "zoom" ? "page" : "zoom"); paintWheel(); }); paintWheel();
   wrap.addEventListener("wheel", e => {
     const mod = e.ctrlKey || e.metaKey; if (!mod && wheelMode() !== "zoom") return; // Ctrl/⌘+wheel (and trackpad pinch) always zooms
     let dy = e.deltaY; if (e.deltaMode === 1) dy *= 33; else if (e.deltaMode === 2) dy *= 800; // Firefox reports wheel notches in LINES (±3), Chrome in pixels (±100)
@@ -8457,7 +8587,7 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
   const show = id => { if (!rows.some(x => x.id === +id)) return; GX.effTeam = +id; GX.effScroll = true; o.rerender(); }; // the answer appears at the TOP of the page, not under the chart you were looking at
   strip.querySelectorAll("[data-effchip]").forEach(n2 => n2.addEventListener("click", () => show(n2.dataset.effchip)));
   // ---- sortable table
-  let sortK = null; try { sortK = hasLS ? localStorage.getItem("kb_effsort") : null; } catch (e) {} if (!EFF_SORTS.some(x => x[0] === sortK)) sortK = "net";
+  let sortK = prefGet("kb_effsort"); if (!EFF_SORTS.some(x => x[0] === sortK)) sortK = "net";
   const keyOf = { net: r => -r.net, off: r => -r.off, def: r => r.def, trend: r => -(dnOf(r) == null ? -1e9 : dnOf(r)), wl: r => -(r.w / Math.max(1, r.w + r.l)) }[sortK];
   const sorted = rows.slice().sort((a, b) => keyOf(a) - keyOf(b) || a.rNet - b.rNet);
   const sbar = el("div"); sbar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;max-width:680px;margin:0 auto 8px;";
@@ -8472,7 +8602,7 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
   tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;"><thead><tr style="font-size:10px;letter-spacing:1px;"><th style="text-align:left;padding:6px;color:var(--dim3);">#</th><th style="text-align:left;padding:6px;color:var(--dim3);">TEAM</th>${th("off", "OFF", "right")}${th("def", "DEF", "right")}${th("net", "NET", "right")}${th("wl", "W-L", "right")}${th("trend", "TREND", "right")}</tr></thead><tbody>${trs}</tbody></table>`;
   tbl.querySelectorAll("[data-effrow]").forEach(tr => tr.addEventListener("click", () => show(tr.dataset.effrow)));
   root.appendChild(tbl);
-  root.querySelectorAll("[data-effs]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_effsort", c.dataset.effs); } catch (e) {} o.rerender(); }));
+  root.querySelectorAll("[data-effs]").forEach(c => c.addEventListener("click", () => { prefSet("kb_effsort", c.dataset.effs); o.rerender(); }));
   if (o.note) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">${o.note}</span>`));
   if (GX.effScroll) { GX.effScroll = false; const topCard = root.querySelector("[data-effsel]"); if (topCard) setTimeout(() => { try { topCard.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }, 30); }
   root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">${o.unit} scored (OFF) and allowed (DEF) per game over each team's last ${o.win === "all" ? "season" : o.win} games · NET = OFF − DEF · centre of the chart = league average · TREND = net now vs the previous window · <b>BEST DEFENSE = fewest allowed</b>. Per-game totals, not pace-adjusted — the results feeds carry scores, not possessions.</span>`));
@@ -8665,7 +8795,8 @@ function dvpLines(sp, tid, tbl, maxRank) { // the headline lines for one defence
   return out.sort((a, b) => a.rank - b.rank).slice(0, 8);
 }
 /* ---------- DEF VS POS → the props that fit each soft matchup ---------- */
-const DVP_PROP = { nhl: { sog: "SOG", g: "G", pts: "PTS" }, nba: { pts: "PTS", reb: "REB", ast: "AST", tpm: "TPM", pra: "PRA" }, nfl: { pyds: "PASSYDS", ryds: "RUSHYDS", cyds: "RECYDS", rec: "REC" } };
+const DVP_PROP = { nhl: { sog: "SOG", g: "G", pts: "PTS" }, nba: { pts: "PTS", reb: "REB", ast: "AST", tpm: "TPM", pra: "PRA" }, nfl: { pyds: "PASSYDS", ryds: "RUSHYDS", cyds: "RECYDS", rec: "REC", pcmp: "PASSCMP", ptd: "PASSTD", ratt: "RUSHATT", rtd: "RUSHTD", tgt: "TGT", ctd: "RECTD" } };
+function dvpRainbow(over, ext, weak, chance, h10, n, steady) { return !!(ext && !weak && chance >= 0.6 && n >= 5 && h10 / n >= (over ? 0.6 : 0.7) && steady); } // v5.66 — OVER needs 6 of 10 cleared, UNDER 7 of 10 (an over has to clear a line set at his AVERAGE, so 7 of 10 is far rarer there)
 function dvpPropRows(sp, g, T) { // GOOD matchups (the defence gives up the MOST) and BAD matchups (the FEWEST): the opposing team's players at that position, priced with the matchup applied
   const s = gSlot(sp), D = s.dvp, map = DVP_PROP[sp]; if (!map || !D || !D.pos || !s.pReady || !s.pdata) return null;
   const abbrOf = id => String(s.teams[id]?.abbr || "").toUpperCase(), out = { good: [], bad: [] };
@@ -8684,13 +8815,17 @@ function dvpPropRows(sp, g, T) { // GOOD matchups (the defence gives up the MOST
         const over = !l.tough, chance = over ? pO : 1 - pO, lift = over ? pO - pO0 : pO0 - pO;   // a GOOD matchup can only lean OVER, a BAD one only UNDER — and the lean must come FROM the matchup (not from the line's rounding)
         const weak = chance < 0.55 || lift < 0.03;
         const v10 = (p.vals || []).slice(0, 10), h10 = v10.filter(v => (over ? v > line : v < line)).length;
-        const steady = p.grade === "A" || p.grade === "B", ext = dvpExt(l.hot), rainbow = ext && !weak && chance >= 0.6 && v10.length >= 5 && h10 / v10.length >= 0.7 && (!p.grade || steady);
+        const steady = p.grade === "A" || p.grade === "B", ext = dvpExt(l.hot), rainbow = dvpRainbow(over, ext, weak, chance, h10, v10.length, !p.grade || steady);
         const ctx = []; const dOut = muDefOut(sp, defId, l.pos); if (dOut.length) ctx.push(`${abbrOf(defId)} missing at ${l.pos}: ${dOut.join(", ")}`); if (b2b[defId]) ctx.push(`${abbrOf(defId)} played yesterday`); for (const t3 of muTeammateOut(sp, p, ps)) ctx.push(muTmText(t3));   // consistent prop (real lean, 60%+ hit, cleared in 7 of 10) against a top-3 / bottom-3 defence
         (l.tough ? out.bad : out.good).push({ p, k: ps.k, stat: ps.n, offAb, line, over, chance, lift, weak, mu: r.mu, flag: av.flag, l10h: h10, l10n: v10.length, ext, rainbow, grade: p.grade || null, ctx, desc: `${l.pre}${l.hot}${l.post}`, dpre: l.pre, dhot: l.hot, dpost: l.post, tough: !!l.tough });
       }
     }
   }
-  for (const k of ["good", "bad"]) { const seen = {}; out[k] = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort((x, y) => (y.rainbow - x.rainbow) || (x.weak - y.weak) || (y.chance - x.chance)).slice(0, 5); } // real leans first, then the rest (greyed)
+  const rankC = (x, y) => (y.rainbow - x.rainbow) || (x.weak - y.weak) || (y.chance - x.chance);
+  for (const k of ["good", "bad"]) { const seen = {}; const all = out[k].filter(c3 => { const key = c3.p.id + ":" + c3.k; if (seen[key]) return false; seen[key] = 1; return true; }).sort(rankC), pick = [], used = new Set(), stats = {};
+    for (const c3 of all) if (!stats[c3.k]) { stats[c3.k] = 1; pick.push(c3); used.add(c3); }   // v5.64 — the best row of EVERY stat that has a matchup here first, so low-count stats (3-pointers) are never the ones cut
+    for (const c3 of all) if (pick.length < 10 && !used.has(c3)) { pick.push(c3); used.add(c3); }
+    out[k] = pick.slice(0, 10).sort(rankC); } // real leans first, then the rest (greyed)
   // every OTHER priced player in this game, with his position and WHY no matchup row exists for him
   const shown = new Set([...out.good, ...out.bad].map(c3 => c3.p.id)), abs2 = [abbrOf(g.a), abbrOf(g.h)], seenAlso = {}; out.also = [];
   for (const k of Object.keys(s.pdata)) for (const p of s.pdata[k] || []) {
@@ -8712,17 +8847,18 @@ function renderDvp(root, sp) {
   const C = DVP_CFG[sp], s = gSlot(sp); if (!C) return;
   root.appendChild(el("div", "h1", `DEFENSE VS POSITION <small>· what each ${C.name} defense gives up to each position</small>`));
   dvpEnsure(sp); const D = s.dvp;
-  let win = null; try { win = hasLS ? localStorage.getItem("kb_dvpwin") : null; } catch (e) {} if (!DVP_WINS.some(w => w[0] === win)) win = "all";
+  let win = prefGet("kb_dvpwin"); if (!DVP_WINS.some(w => w[0] === win)) win = "all";
   const view = GX.dvpView || "game";
   const bar = el("div"); bar.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px;";
   bar.innerHTML = [["game", "BY GAME"], ["teams", "ALL TEAMS"]].map(([k, l]) => `<span class="fchip${view === k ? " on" : ""}" data-dvpv="${k}">${l}</span>`).join("") + `<span style="width:10px"></span>` + DVP_WINS.map(([k, l]) => `<span class="fchip${win === k ? " on" : ""}" data-dvpw="${k}">${l}</span>`).join("");
   bar.querySelectorAll("[data-dvpv]").forEach(c => c.addEventListener("click", () => { GX.dvpView = c.dataset.dvpv; dvpRepaint(sp); }));
-  bar.querySelectorAll("[data-dvpw]").forEach(c => c.addEventListener("click", () => { try { if (hasLS) localStorage.setItem("kb_dvpwin", c.dataset.dvpw); } catch (e) {} dvpRepaint(sp); }));
+  bar.querySelectorAll("[data-dvpw]").forEach(c => c.addEventListener("click", () => { prefSet("kb_dvpwin", c.dataset.dvpw); dvpRepaint(sp); }));
   root.appendChild(bar);
   const nAgg = D ? Object.keys(D.agg).length : 0;
   const status = el("div", "subhead"); status.innerHTML = `<span style="color:var(--dim3)">${D ? `Built from ${nAgg} of ${D.total} finished ${C.name} games${D.busy ? " — loading more, this fills in as you watch…" : ""}${D.unk ? ` · ${D.unk} player lines skipped (not on a roster)` : ""}${genCoverageNote(sp) ? " · " + genCoverageNote(sp) : ""}${!Object.keys(D.pos).length ? " · ⚠ rosters didn't answer, so positions are unknown — only passing can be read until they load" : ""}${D.err && !nAgg ? ` · last error: ${D.err}` : ""}` : "Loading…"}</span>`;
   root.appendChild(status);
   if (!D || nAgg < 8) { root.appendChild(el("div", D && !D.busy ? "nobets" : "loadingBox", D && !D.busy ? `No usable box-score player lines yet (${D.total} finished games found, ${Object.keys(D.bad).length} unreadable). Nothing is invented — this needs ESPN's game summaries to answer.` : `<div class="spinner"></div><div>Pulling box scores and rosters to see how every defense plays each position…</div>`)); return; }
+  if (DVP_PROP[sp] && s.pReady && s.pMeta) root.appendChild(el("div", "subhead", `<span data-pmeta="${s.pMeta.logs}" style="color:var(--dim3)">Player props: <b style="color:var(--txt)">${s.pMeta.logs}</b> players priced (${s.pMeta.lookups} looked up for ${s.pMeta.slate} teams playing) · season-leader lists came back ${s.pMeta.deep.join(" / ")} deep${Math.max.apply(null, s.pMeta.deep.concat([0])) < 60 ? ` — <span style="color:var(--gold)">short lists: ESPN returned few leaders, so few players can be priced</span>` : ""}</span>`));
   const T = dvpTable(sp, win); if (!T || Object.keys(T).length < 4) { root.appendChild(el("div", "nobets", `Not enough games per team yet (needs 3+ per defense) — ${Object.keys(T || {}).length} teams qualify so far. ${genCoverageNote(sp)}`)); return; }
   const esc = t => String(t).replace(/[&<>"]/g, c2 => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c2]));
   if (MU_STAT[sp]) { // the matchup model's own report card: which timeline / schedule adjustment predicted best, per prop
@@ -8777,7 +8913,7 @@ function renderDvp(root, sp) {
       const alsoHtml = c3 => `<div data-dvpprop="${c3.key}" data-dvppid="${c3.p.id}" data-dvpalso="1" style="padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;"><span style="font-size:13px;font-weight:700;">${esc(c3.p.name)}</span> <span style="font-weight:600;color:var(--dim3);font-size:10.5px;">${esc(c3.offAb)}${c3.pos ? " · " + esc(c3.pos) : ""}</span><div style="font-size:10.5px;color:var(--dim3);line-height:1.4;">${c3.hot ? esc(c3.hot.pre) + hotPill(c3.hot.hot, c3.hot.tough) + esc(c3.hot.post) + " — but he isn't priced for that stat" : esc(c3.note)}</div></div>`;
       const sec = (title, col, items, fn) => items.length ? `<div data-dvpsec="${title[0]}" style="margin:10px 0 2px;font-size:10px;letter-spacing:1.2px;font-weight:800;color:${col};">${title}</div>` + items.map(fn || rowHtml).join("") : "";
       const body = !pr ? (s.pErr ? "Player props didn't load — press RELOAD on the BOARD to retry." : "Loading player props…")
-        : !nRows ? "No player props are priced for these two teams today (or the players are out / not playing)."
+        : !nRows ? (g.date && new Date(g.date).getTime() <= Date.now() ? "This game has started — props are only offered before kickoff." : "No player props are priced for these two teams today (or the players are out / not playing).")
         : sec("GOOD MATCHUPS", "var(--green)", pr.good) + sec("BAD MATCHUPS", "var(--red)", pr.bad) + sec("ALSO PRICED IN THIS GAME", "var(--dim3)", pr.also, alsoHtml) + `<div style="font-size:10px;color:var(--dim3);margin-top:8px;line-height:1.5;">Line = his normal level before the matchup. <b>Hit %</b> = the model's chance of that side with the matchup applied; <b>L10</b> = times he cleared that line in his last 10. Greyed rows have no real edge (under 55%, or the matchup barely moves it). Model numbers, not book prices — tap a row for the full prop card.</div>`;
       card.insertAdjacentHTML("beforeend", `<button class="whybtn" data-why style="margin-top:8px;">▸ PROPS THAT FIT THESE MATCHUPS${pr ? " (" + nRows + ")" : ""}${pr && pr.good.concat(pr.bad).some(c3 => c3.rainbow) ? ' <span class="kb-rbtxt" data-rbbtn="1">● CONSISTENT</span>' : ""}</button><div class="whybox">${body}</div>`);
       card.querySelectorAll("[data-dvpprop]").forEach(r3 => r3.addEventListener("click", () => { selectTab("gen:pstat:" + r3.dataset.dvpprop); jumpToCard(`#tab-gen [data-gpid="${r3.dataset.dvppid}"]`); }));
@@ -8954,6 +9090,7 @@ async function genFetchProps(sp) {
   renderGen();
 }
 function renderGen() {
+  if (tapHold(1)) return;
   const sp = GX.cur; if (!sp) return;
   const root = $("#tab-gen"); if (!root) return;
   const cfg = GS_CFG[sp];
@@ -9228,7 +9365,8 @@ function renderGen() {
             ["→ P(at least one)", (p1 * 100).toFixed(1) + "%", "1 − e^(−λ), straight Poisson"],
             ["Fair odds", fmtML(probToAmerican(p1)), "what that chance should pay"],
           ], `Rate-based, not form-based: ESPN publishes no per-game soccer logs, so there's no last-5 trend and no honest backtest here. Compare the fair prices with your book and only take the better side of them.`)}
-          ${altBox(altRungs(L3 => 1 - poisCdf(Math.floor(L3), p2.lam), Math.max(0.5, Math.round(p2.lam - 0.5) + 0.5), 1, 3), null, `ALT ${ps.k} LINES — every rung priced`, `Poisson ladder on his ${p2.lam.toFixed(2)}-per-match rate. ${ps.k === "G" ? "2+ goals is the BRACE market — fair is usually big plus money." : "Compare with your book's " + ps.n.toLowerCase() + " menu."}`)}`;
+          ${altBox(altRungs(L3 => 1 - poisCdf(Math.floor(L3), p2.lam), Math.max(0.5, Math.round(p2.lam - 0.5) + 0.5), 1, 3), null, `ALT ${ps.k} LINES — every rung priced`, `Poisson ladder on his ${p2.lam.toFixed(2)}-per-match rate. ${ps.k === "G" ? "2+ goals is the BRACE market — fair is usually big plus money." : "Compare with your book's " + ps.n.toLowerCase() + " menu."}`)}
+          ${distBox(L3 => 1 - poisCdf(Math.floor(L3), p2.lam), Math.max(0.5, Math.round(p2.lam - 0.5) + 0.5), p2.lam, `${ps.k} DISTRIBUTION — every outcome`)}`;
         sgrid.appendChild(card);
       }
       root.appendChild(sgrid);
@@ -9294,10 +9432,12 @@ function renderGen() {
       let fits = pmDefs.map(m2 => { try { const f2 = m2.fit(chron); return { name: m2.name, proj: f2.proj, pOver: f2.pOver }; } catch (e2) { return null; } }).filter(Boolean);
       const muR = !combo && fits.length ? muApply(GX.cur, p2, ps, fits) : { fits, mu: null }; fits = muR.fits; // matchup vs his position
       const consProj = fits.length ? mean(fits.map(f2 => f2.proj)) : p2.proj;
-      const modelLine = Math.max(0.5, Math.round(consProj - 0.5) + 0.5);
+      const sAvg = isFinite(p2.season) && p2.season > 0 ? p2.season : (p2.vals && p2.vals.length ? mean(p2.vals) : consProj), r2 = 0;
+      const modelLine = Math.max(0.5, Math.round(sAvg - 0.5) + 0.5);   // v5.68 — HIS season average, snapped to the nearest x.5 line; NOT the models' own mean, which made them split by construction
+      const nOver = fits.filter(f2 => f2.pOver(modelLine) >= 0.5).length;
       const agree = fits.length > 0 && fits.every(f2 => (f2.pOver(modelLine) >= 0.5) === (fits[0].pOver(modelLine) >= 0.5));
       const conf = fits.length ? mean(fits.map(f2 => { const po = clamp(f2.pOver(modelLine), 0.01, 0.99); return Math.max(po, 1 - po); })) : 0;
-      return { p2, fits, consProj, modelLine, agree, conf, mu: muR.mu };
+      return { p2, fits, consProj, modelLine, agree, conf, nOver, mu: muR.mu };
     });
     const gpSort = (hasLS && localStorage.getItem("kb_gpsort")) || "call";
     const gpBar = el("div");
@@ -9316,12 +9456,13 @@ function renderGen() {
     root.appendChild(el("div", "subhead", gpSort === "consist" ? `Ordered <b style="color:var(--txt)">steadiest → swingiest</b> by each player's own game-to-game variation.` : `Ordered <b style="color:var(--txt)">best → worst</b>: the calls the engines are most confident in — and most unanimous on — come first.`));
     for (const en of enrich) en.gs = genPlayerGame(GX.cur, en.p2);
     enrich.sort((a2, b2) => GEN_GS_ORDER[a2.gs.state] - GEN_GS_ORDER[b2.gs.state]); // unplayed first, finals dimmed below, no-game last (stable)
-    const nPlayed = enrich.slice(0, 15).filter(e2 => e2.gs.state === "final" || e2.gs.state === "none").length;
-    if (nPlayed) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Players whose team already played${enrich.slice(0, 15).some(e2 => e2.gs.state === "none") ? " or has no game " + (cfg.weekly ? "this week" : "today") : ""} are dimmed and sit below everyone still to play.</span>`));
+    const nPlayed = enrich.slice(0, GX.gpShow || 15).filter(e2 => e2.gs.state === "final" || e2.gs.state === "none").length;
+    if (nPlayed) root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Players whose team already played${enrich.slice(0, GX.gpShow || 15).some(e2 => e2.gs.state === "none") ? " or has no game " + (cfg.weekly ? "this week" : "today") : ""} are dimmed and sit below everyone still to play.</span>`));
     const pgrid = el("div", "grid wide");
     let pRank = 0;
-    for (const en of enrich.slice(0, 15)) {
-      const { p2, fits, consProj, modelLine, agree, conf, mu } = en;
+    GX.gpShow = GX.gpShow && GX.gpKey === GX.cur + ":" + ps.k ? GX.gpShow : 15; GX.gpKey = GX.cur + ":" + ps.k;   // v5.68 — 15 at a time, SHOW MORE adds 15
+    for (const en of enrich.slice(0, GX.gpShow)) {
+      const { p2, fits, consProj, modelLine, agree, conf, nOver, mu } = en;
       pRank++;
       const chartVals = p2.vals.slice(0, 10).reverse();
       const card = el("div", "card kcard" + (en.gs.state === "final" || en.gs.state === "none" ? " played" : ""));
@@ -9330,11 +9471,11 @@ function renderGen() {
         <div class="ktop"><div class="hs big">${p2.hs ? `<img src="${p2.hs}" onerror="this.style.visibility='hidden'" style="width:100%;height:100%;object-fit:cover;object-position:top;">` : ""}</div>
           <div style="min-width:0;flex:1;"><div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p2.name}</div>
           <div style="font-size:11px;color:var(--dim);">${p2.team || ""} · ${p2.vals.length} games logged${en.gs.label ? " · " + en.gs.label : ""}</div></div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;"><div style="display:flex;gap:5px;align-items:center;"><span style="font-size:10px;font-weight:800;color:${pRank === 1 ? "var(--gold)" : "var(--dim3)"};letter-spacing:.5px;">#${pRank}</span>${gBadge(p2.grade)}</div><div class="leanchip" style="background:rgba(91,157,255,0.12);color:var(--blue);">MODEL ${modelLine}</div><div style="font-size:9.5px;color:${agree ? "var(--green)" : "var(--dim3)"};font-weight:700;">${(conf * 100).toFixed(0)}% conviction</div></div></div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;"><div style="display:flex;gap:5px;align-items:center;"><span style="font-size:10px;font-weight:800;color:${pRank === 1 ? "var(--gold)" : "var(--dim3)"};letter-spacing:.5px;">#${pRank}</span>${gBadge(p2.grade)}</div><div class="leanchip" title="his season average, snapped to a half-point — every model is asked: does he beat it?" style="background:rgba(91,157,255,0.12);color:var(--blue);">LINE ${modelLine}</div><div style="font-size:9.5px;color:${agree ? "var(--green)" : "var(--dim3)"};font-weight:700;">${(conf * 100).toFixed(0)}% conviction</div></div></div>
         <div class="kmid">
           <div class="kstat"><div class="v">${consProj.toFixed(1)}</div><div class="l">CONSENSUS PROJ</div></div>
           <div class="vsep"></div>
-          <div class="kstat"><div class="v" style="color:${agree ? "var(--green)" : "var(--gold)"};">${agree ? "YES" : "SPLIT"}</div><div class="l">MODELS AGREE?</div></div>
+          <div class="kstat"><div class="v" style="color:${agree ? "var(--green)" : "var(--gold)"};">${agree ? (nOver === fits.length ? "ALL OVER" : "ALL UNDER") : nOver + "–" + (fits.length - nOver)}</div><div class="l">${agree ? "MODELS AGREE" : "OVER–UNDER"}</div></div>
           <div class="spacer"></div>
           <div>${sparkSVG(chartVals, modelLine)}<div style="font-size:9px;color:var(--dim3);text-align:center;">${ps.k} — LAST ${chartVals.length} GAMES</div></div>
         </div>
@@ -9348,7 +9489,7 @@ function renderGen() {
           ["Night-to-night swing", "±" + p2.sigma.toFixed(1), p2.grade === "A" || p2.grade === "B" ? "consistent — calls earn confidence" : "volatile — every call gets discounted"],
           ...(mu ? [["Matchup vs " + mu.pos, muTextHtml(mu), `${mu.vr ? muVarText(mu.vr) : "league-relative"}: ×${mu.raw.toFixed(2)} over ${mu.n} games → projection ${muPct(mu)} (shrunk for small samples, capped ±12%)`]] : []),
           ...muTeammateOut(sp, p2, ps).map(t3 => ["Teammate out", muEsc(muTmText(t3)), "context only — NOT in the projection (too few games to trust)"]),
-          ["Model line", String(modelLine), "consensus projection rounded to the nearest half"],
+          ["Line", String(modelLine), "his season average (" + (isFinite(p2.season) ? p2.season.toFixed(1) : "n/a") + ") rounded to a half-point — every model answers the same question: does he beat it tonight?"],
           ["Engines' verdicts", fits.map(f2 => (f2.pOver(modelLine) >= 0.5 ? "OVER" : "UNDER")).join(" · "), agree ? "unanimous — that's what buys the rank" : "split — one engine sees it differently, so this drops"],
           ["Conviction", (conf * 100).toFixed(0) + "%", "average certainty of the engines at the model line"],
         ], `${cls === "count" ? "Counting stats follow a Poisson curve (goals-research math) — rare-event streaks mean less than they look." : cls === "yds" ? "Yardage is skewed — one breakaway inflates averages, so the log-normal engines trust the median more than the mean." : "Big scoring numbers act like a bell curve, so the engines argue about the center, not the shape."} Each engine projects from a different read of his games; the rank on this card = how confident AND unanimous they are. No book line exists here yet — always check the real price first.`)}
@@ -9359,11 +9500,13 @@ function renderGen() {
           else if (cls === "yds") { const f3 = lognFit(chron2); pOverFn = L3 => 1 - phi((Math.log(L3 + 1) - f3.m) / f3.s); dist = "log-normal fit to his own games (skew-aware)"; }
           else { pOverFn = L3 => 1 - phi((L3 - consProj) / Math.max(0.5, p2.sigma)); dist = "bell curve on the consensus projection"; }
           const step2 = cls === "count" ? 1 : cls === "yds" ? Math.max(5, Math.round(consProj * 0.12 / 5) * 5) : 2;
-          return altBox(altRungs(pOverFn, modelLine, step2, 3), modelLine, `ALT ${ps.k} LINES — every rung priced`, `${dist.charAt(0).toUpperCase() + dist.slice(1)}, rungs every ${step2}. No book lines exist in this feed — these are pure model fair odds, so compare against your book's alternate menu before betting anything.`);
+          return altBox(altRungs(pOverFn, modelLine, step2, 3), modelLine, `ALT ${ps.k} LINES — every rung priced`, `${dist.charAt(0).toUpperCase() + dist.slice(1)}, rungs every ${step2}. No book lines exist in this feed — these are pure model fair odds, so compare against your book's alternate menu before betting anything.`)
+            + distBox(pOverFn, modelLine, consProj, `${ps.k} DISTRIBUTION — every outcome`, `${dist.charAt(0).toUpperCase() + dist.slice(1)} — the same curve as the ALT LINES above, shown as the chance of every result. Green = over the ${modelLine} model line, red = under, gold = the band that holds it. Model numbers, not book prices.`);
         })()}`;
       pgrid.appendChild(card);
     }
     root.appendChild(pgrid);
+    if (enrich.length > (GX.gpShow || 15)) { const more = el("button", null, `SHOW ${Math.min(15, enrich.length - GX.gpShow)} MORE · ${enrich.length - GX.gpShow} not shown`); more.className = "btn ghost"; more.dataset.gpmore = "1"; more.style.cssText = "margin:12px auto 0;display:block;"; more.addEventListener("click", () => { GX.gpShow += 15; renderGen(); }); root.appendChild(more); }
     // ---- PROP MODEL BACKTEST + TRUTH CHECK for this stat ----
     const pmKey = sp + ":" + ps.k + "~mu" + (muOn() ? (gSlot(sp).dvp && gSlot(sp).dvp.agg ? Object.keys(gSlot(sp).dvp.agg).length : 0) : "off");
     GX._pmbt = GX._pmbt || {}; pmDropStale(pmKey, sp + ":" + ps.k + "~mu");
@@ -9796,7 +9939,11 @@ function renderTabs(active) {
   bar.innerHTML = tabs.map(([k, l]) => `<div class="tab${act === k ? " active" : ""}" data-tab="${k}">${l}</div>`).join("");
   bar.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => selectTab(t.dataset.tab)));
 }
+function motionEnter() { // v5.69 — the entrance animation runs ONLY on a tab open / sport switch (body.m-enter for ~1.2 s), never on the background repaints while data loads
+  try { const b = document.body; if (!b) return; b.classList.remove("m-enter"); void b.offsetWidth; b.classList.add("m-enter"); clearTimeout(motionEnter._t); motionEnter._t = setTimeout(() => b.classList.remove("m-enter"), 1200); } catch (e) {}
+}
 function selectTab(key) {
+  motionEnter();
   renderTabs(key);
   if (key.startsWith("gen")) {
     const parts = key.split(":");
