@@ -683,6 +683,56 @@ html.lite .hub-sk{animation:none;}
 .pl-pill b{color:#22d3ee;} .pl-pill span{margin-left:6px;font-weight:900;color:var(--green);font-size:11px;}
 .card.played.rv.rvin{opacity:.5} .card.started.rv.rvin{opacity:.45}
 @media (prefers-reduced-motion:reduce){ .rv{opacity:1 !important;transform:none !important;} #mProg{display:none;} .gbadge::after,.leanchip::after,.edgechip::after,.valchip::after{display:none;} }
+/* v5.91 — dashboard top (layout C) */
+html header.dash,html.lite header.dash{position:relative;top:auto;z-index:1;background:none !important;backdrop-filter:none;-webkit-backdrop-filter:none;border:0;padding:12px 22px 4px !important;box-shadow:none;max-width:1280px;margin:0 auto;}
+header.dash::after{display:none;}
+header.dash .hrow{display:flex;align-items:center;gap:10px;}
+header.dash .brand{display:flex;align-items:center;gap:10px;}
+header.dash .logoBox{width:34px;height:34px;font-size:19px;border-radius:10px;}
+header.dash .title{font-size:17px;letter-spacing:.8px;white-space:nowrap;}
+.hctl{display:flex;align-items:center;gap:6px;margin-left:auto;}
+.hbtn{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:10px;border:1px solid #1f2333;background:rgba(255,255,255,.03);color:var(--dim);font-family:inherit;font-size:12.5px;font-weight:800;letter-spacing:.3px;cursor:pointer;white-space:nowrap;transition:background .2s,border-color .2s,color .2s,transform .12s;}
+.hbtn:hover{border-color:rgba(91,157,255,.6);color:var(--txt);background:rgba(91,157,255,.10);} .hbtn:active{transform:scale(.96);} .hbtn:disabled{opacity:.6;} .hbtn.on{border-color:transparent;}
+.greet{margin-top:16px;}
+.datechip{position:relative;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;letter-spacing:1.4px;color:var(--dim);text-transform:uppercase;cursor:pointer;max-width:100%;white-space:nowrap;overflow:hidden;}
+.datechip:hover{color:var(--txt);} .datechip .cal{display:none;} .datechip .caret{font-size:9px;opacity:.7;}
+.datechip .sub{overflow:hidden;text-overflow:ellipsis;font-weight:800;color:var(--dim);} .datechip .sub::before{content:"· ";} .datechip .sub:empty{display:none;}
+.datechip input[type=date]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0;margin:0;font-size:16px;}
+.gbig{font-family:var(--head);font-size:28px;line-height:1.1;margin-top:5px;letter-spacing:.2px;}
+.dstats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:14px;max-width:560px;}
+.dstat{border:1px solid #1c2031;border-radius:13px;padding:10px 12px;background:rgba(255,255,255,.025);min-width:0;}
+.dstat b{display:block;font-family:var(--cond);font-size:26px;font-weight:800;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dstat span{display:block;font-size:10px;font-weight:800;letter-spacing:.9px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.navstick{position:sticky;top:0;z-index:40;background:#06070d;padding:10px 22px 0;border-bottom:1px solid #161a28;box-shadow:0 8px 18px rgba(0,0,0,.35);}
+.navstick > *{max-width:1236px;margin-left:auto !important;margin-right:auto !important;}
+#sportSwitch{display:flex !important;flex-wrap:nowrap !important;overflow-x:auto;scrollbar-width:none;gap:3px;padding:4px;border-radius:13px;background:#0e1120 !important;border:1px solid #1b1f30 !important;max-width:1236px !important;}
+#sportSwitch::-webkit-scrollbar{display:none;}
+#sportSwitch button{flex:0 0 auto;padding:7px 13px !important;font-size:13.5px !important;border-radius:9px !important;font-family:inherit;}
+#sportSwitch button.on{background:var(--txt) !important;color:#06070d !important;box-shadow:none !important;}
+.navstick .tabs{margin-top:6px !important;gap:0 !important;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent);mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent);}
+.navstick .tabs::-webkit-scrollbar{display:none;}
+.navstick .tab{font-size:14px !important;padding:9px 12px 11px !important;margin:0 !important;border-radius:0 !important;background:none !important;box-shadow:none !important;color:var(--dim);text-transform:none;}
+.navstick .tab.active{color:var(--txt) !important;}
+.navstick .tab.active::after{left:10px !important;right:10px !important;bottom:0 !important;height:2.5px !important;background:var(--blue) !important;}
+/* v5.93 — full width on computers */
+html header.dash,html.lite header.dash{max-width:none;margin:0;padding-left:32px !important;padding-right:32px !important;}
+.navstick{padding-left:32px;padding-right:32px;} .navstick > *{max-width:none !important;margin-left:0 !important;margin-right:0 !important;}
+#sportSwitch{max-width:100% !important;width:max-content;}
+main{max-width:none !important;padding-left:32px !important;padding-right:32px !important;}
+#status{max-width:none !important;}
+#status{font-size:11.5px;}
+@media (min-width:900px){ header.dash{display:grid;grid-template-columns:1fr auto;grid-template-areas:"top top" "greet stats";column-gap:24px;align-items:end;} header.dash .hrow{grid-area:top;} .greet{grid-area:greet;} .dstats{grid-area:stats;width:520px;margin-top:0;} }
+@media (max-width:760px){
+  main{padding-left:12px !important;padding-right:12px !important;}
+  html header.dash,html.lite header.dash{padding:8px 16px 4px !important;}
+  .navstick{padding:8px 12px 0;}
+  .hbtn{width:36px;padding:0;justify-content:center;font-size:15px;} .hbtn .hl{display:none;}
+  .gbig{font-size:25px;} .datechip{font-size:11px;letter-spacing:1.2px;} .datechip .sub{display:none;}
+  .dstat b{font-size:22px;} .dstat{padding:8px 10px;}
+  #sportSwitch{-webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 24px),transparent);}
+  .navstick .tab{font-size:13.5px !important;padding:9px 10px 10px !important;}
+  #status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;} #status.open{white-space:normal;}
+}
 </style>
 </head>
 <body>
@@ -734,22 +784,27 @@ html.lite .hub-sk{animation:none;}
   });
 })();
 </script>
-<header>
+<header class="dash">
   <div class="hrow">
-    <div style="display:flex;align-items:center;gap:11px;">
-      <div class="logoBox">E</div>
-      <div>
-        <div class="title"><span id="sportTitle">MLB</span> DAILY <span class="accent">EDGE</span></div>
-        <div class="sub" id="subline">loading…</div>
-      </div>
+    <div class="brand"><div class="logoBox">E</div><div class="title">DAILY <span class="accent">EDGE</span></div></div>
+    <div class="hctl">
+      <button type="button" class="hbtn" id="nextDayBtn" title="Jump to the next day the current sport plays">⏭<span class="hl">Next game day</span></button>
+      <button type="button" class="hbtn" id="autoRefBtn" title="Auto-refresh every 10 minutes near first pitch and while games are live — lines move all day">⏱<span class="hl">Auto</span></button>
+      <button type="button" class="hbtn" id="refreshBtn" title="Reload today's games, odds and props">↻<span class="hl">Refresh</span></button>
     </div>
-    <span id="sportSwitch" style="margin-left:8px;"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="soc">⚽ SOCCER</button><button data-sport="ten">🎾 TENNIS</button></span>
-    <div class="spacer"></div>
-    <input type="date" id="datePick">
-    <button class="btn" id="nextDayBtn" title="Jump to the next day the current sport plays">⏭ NEXT GAME DAY</button>
-    <button class="btn ghost" id="autoRefBtn" title="Auto-refresh every 10 minutes near first pitch and while games are live — lines move all day">⏱ AUTO</button>
-    <button class="btn" id="refreshBtn">Refresh</button>
   </div>
+  <div class="greet">
+    <div class="datechip" id="dateChip" role="button" tabindex="0" title="Pick a date"><span class="cal">📅</span><span id="dateTxt">Today</span><span class="caret">▾</span><span class="sub" id="subline"></span><input type="date" id="datePick" aria-label="Date"></div>
+    <div class="gbig" id="greetBig"><span id="greetWhen">Tonight's</span> <span id="sportTitle">MLB</span> edge</div>
+  </div>
+  <div class="dstats" id="dashStats">
+    <div class="dstat"><b id="dsGames">—</b><span id="dsGamesL">GAMES</span></div>
+    <div class="dstat"><b id="dsEdges" style="color:var(--green)">—</b><span>2%+ EDGES</span></div>
+    <div class="dstat"><b id="dsLines" style="color:var(--blue)">—</b><span id="dsLinesL">LIVE PROP LINES</span></div>
+  </div>
+</header>
+<nav class="navstick">
+  <span id="sportSwitch"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="soc">⚽ SOCCER</button><button data-sport="ten">🎾 TENNIS</button></span>
   <div class="tabs">
     <div class="tab active" data-tab="board">BOARD</div>
     <div class="tab" data-tab="ks">STRIKEOUTS</div>
@@ -759,7 +814,7 @@ html.lite .hub-sk{animation:none;}
     <div class="tab" data-tab="model">MY MODEL</div>
     <div class="tab" data-tab="how">HOW IT WORKS</div>
   </div>
-</header>
+</nav>
 <main>
   <div class="status" id="status"></div>
   <section id="tab-board"><div class="loadingBox"><div class="spinner"></div><div>Warming up in the bullpen — pulling games, stats &amp; DraftKings lines…</div></div></section>
@@ -793,6 +848,19 @@ html.lite .hub-sk{animation:none;}
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
+   v5.93  FULL WIDTH on computers: header, pinned sports/tabs and every page use the whole window (was a centered 1240px column).
+   v5.92  The "🏀 NBA · board · models · spread & total · props — new branch…" banner under the tabs is gone (every ESPN sport, WNBA,
+          tennis) — the dashboard headline already says it; pages start right at their content.
+   v5.91  DASHBOARD TOP (layout C, Kevin's pick). Brand row (E · DAILY EDGE · ⏭ ⏱ ↻), then the day — "SUNDAY · NOV 22 · LINES VIA
+          DRAFTKINGS" (tap = date picker) and a big "Tonight's NBA edge" — and 3 live tiles: GAMES, 2%+ EDGES (moneylines vs the de-vigged book),
+          LIVE PROP LINES (books' posted player lines; NEXT START for MLB/WNBA/tennis). Those scroll away; the sport switcher + section tabs stay
+          pinned. Every id the code uses is unchanged.
+   v5.90  CLEAN TOP BAR. Solid (no page bleeding through), one line of brand + controls, sports on a single scrolling row, slimmer tabs with
+          an underline. The date is a chip ("📅 Sat, Nov 21 ▾") that opens the picker; NEXT GAME DAY / AUTO / REFRESH are compact buttons (icons
+          only on a phone). Phone header ~40% → ~24% of the screen. Leftover non-error status from another sport is cleared on switching.
+   v5.89  EFFICIENCY never says "NO GAME TODAY" without checking. A clicked team that is missing from the day's matchups is looked up in the
+          slate (opponent too new / too few results to rate → "PLAYS TODAY @ TUL · 10:00 AM") and, if not there, in ESPN's own team schedule
+          ("ESPN lists UNT @ TUL today — missing from the slate this app loaded, tap Refresh"). Only a schedule that really has no game says NO GAME.
    v5.88  MONEYLINES — a full category on BOARD (NBA/NFL/NHL/college/soccer leagues): every game still to play, bigger cards with both teams and
           both book prices, the model's pick, win chance, fair price vs book, the de-vigged market %, each model (Elo · Pythag · Form-10) and how
           many agree, the injury shift, edge vs the book, a far-from-market warning, + PARLAY. Sorted by edge, then chance. MLB / WNBA unchanged.
@@ -1009,7 +1077,7 @@ html.lite .hub-sk{animation:none;}
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.88 · 10a";
+const BUILD = "v5.93 · 10a";
 window.__kbCtx = () => BUILD + " · sport " + (typeof APP_SPORT !== "undefined" ? APP_SPORT : "?") + " · view " + ((typeof GX !== "undefined" && GX.view) || "?") + " · " + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/) || ["?"])[0];
 
 /* ---------------- CONFIG ---------------- */
@@ -2837,7 +2905,7 @@ function timeLabel(t) { const k = String(t); let v = TL_MEMO.get(k); if (v !== u
 function edgeCls(e) { return e >= 0 ? "var(--green)" : "var(--red)"; }
 function renderAll() {
   const anyBook = Object.values(S.odds)[0]?.book || "DraftKings";
-  $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`;
+  $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`.replace(/^[^·]*· /, "lines via ");
   renderBoard(); renderKs(); renderHR(); renderHits(); renderBasesTab("tb"); renderBasesTab("hrr"); try { renderNrfi(); } catch (e) {} try { if ($("#tab-eff") && $("#tab-eff").style.display !== "none") renderEffMlb(); } catch (e) {} renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
 }
 
@@ -6756,6 +6824,24 @@ function hubMLHtml(rows, esc, okU) {
       ${r.dv != null && Math.abs(r.prob - r.dv) >= 0.12 ? `<div class="mlnote" style="color:#ff8a96;">⚠ ${Math.round(Math.abs(r.prob - r.dv) * 100)} pts ${r.prob > r.dv ? "above" : "below"} the market — books already price injuries and news; treat as a warning, not an automatic edge</div>` : ""}
     </div>`; }).join("");
 }
+function dashUpdate() { // v5.91 — the three tiles + headline under DAILY EDGE (all from data already loaded; "—" when unknown, never guessed)
+  const set = (id, v) => { const e2 = document.getElementById(id); if (e2 && e2.textContent !== String(v)) e2.textContent = v; };
+  try { const day = S.date || localISO(new Date()), isToday = day === localISO(new Date());
+    set("greetWhen", isToday ? (new Date().getHours() >= 15 ? "Tonight's" : "Today's") : new Date(day + "T12:00:00").toLocaleDateString([], { weekday: "long" }) + "'s");
+    let games = null, live = 0, edges = null, lines = null, linesL = "LIVE PROP LINES", next = null;
+    const sp = APP_SPORT, cfg = GS_CFG[sp];
+    if (cfg) { const subs = cfg.combo || [sp]; let gs = []; subs.forEach(k => { const s2 = gSlot(k); if (s2.loaded || (s2.games || []).length) gs = gs.concat(s2.games || []); });
+      const anyLoaded = subs.some(k => gSlot(k).loaded || (gSlot(k).games || []).length);
+      if (anyLoaded) { games = gs.length; live = gs.filter(g => g.live).length; next = gs.filter(g => !g.completed && !g.live).map(g => g.date).sort()[0] || null;
+        let ne = 0, known = false; subs.forEach(k => { const r = hubMLGames(k); if (r) { known = true; ne += r.filter(x => x.edge != null && x.edge >= 0.02 && !x.far).length; } }); edges = known ? ne : null;
+        const pb = gSlot(sp).pbook; if (GPB_TYPES[sp]) lines = pb && pb.at ? pb.n || 0 : null; else { linesL = "NEXT START"; lines = next ? timeLabel(next) : "—"; } } }
+    else if (sp === "mlb" && S.games) { games = S.games.length; live = S.games.filter(g => g.state === "Live").length; next = S.games.filter(g => g.state === "Preview").map(g => g.time).sort()[0] || null; linesL = "NEXT START"; lines = next ? timeLabel(next) : "—"; }
+    else if (sp === "wnba" && WS.loaded) { games = (WS.games || []).length; live = (WS.games || []).filter(g => g.live).length; next = (WS.games || []).filter(g => !g.completed && !g.live).map(g => g.date).sort()[0] || null; linesL = "NEXT START"; lines = next ? timeLabel(next) : "—"; }
+    else { linesL = "NEXT START"; }
+    set("dsGames", games == null ? "—" : games); set("dsGamesL", live ? `GAMES · ${live} LIVE` : "GAMES");
+    set("dsEdges", edges == null ? "—" : edges); set("dsLines", lines == null ? "—" : lines); set("dsLinesL", linesL);
+  } catch (e) {}
+}
 function hubKind(type) { const t = String(type || ""); return /MONEYLINE/i.test(t) ? "ml" : /TOTAL|SPREAD|RUN LINE|PUCK LINE|1ST INNING|DRAW|O\/U/i.test(t) ? "game" : "prop"; }
 function hubFromLock(L, key) { const strip = x => String(x == null ? "" : x).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(), stat = String(L.type || "").replace(/\s*(ALT )?PROP$/i, "").trim();
   return { src: "lock", kind: hubKind(L.type), key: "L|" + strip(L.label) + "|" + strip(L.big), who: L.pl ? L.pl.name : strip(L.label), team: L.pl ? L.pl.team : null, hs: L.pl ? L.pl.hs : null, sk: (L.pl && L.pl.sp) || key, pick: strip(L.big), stat: L.pl ? stat : strip(L.type), prob: L.prob,
@@ -7240,7 +7326,7 @@ function renderWnba() {
   renderWnba._er = null; // edge ranks rebuild per render
   const root = $("#tab-wnba"); if (!root) return;
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `WNBA <small>· 6 moneyline models (incl. yours + a research-paper model) + player props</small>`));
+  if (0) root.appendChild(el("div", "h1", `WNBA <small>· 6 moneyline models (incl. yours + a research-paper model) + player props</small>`));
   if (WS.view === "how") { renderWnbaHow(root); return; }
   if (WS.loading) { root.appendChild(el("div", "loadingBox", `<div class="spinner"></div><div>Loading WNBA — ${WS.stage || "starting…"}</div><div style="font-size:11px;color:var(--dim3);">first load takes ~20-30 seconds (a full season of results + player logs)</div>`)); return; }
   if (!WS.loaded) {
@@ -9095,6 +9181,16 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
     return { key: g.away + "-" + g.home, g, a, h, fav, dog, diff: fav.net - dog.net }; }).filter(Boolean).sort((x, y) => y.diff - x.diff);
   const selId = GX.effTeam && byId[GX.effTeam] ? +GX.effTeam : null, sel = selId ? byId[selId] : null;           // a team the user clicked
   const selPair = sel ? pairs.find(p3 => p3.a.id === selId || p3.h.id === selId) : null;                          // …and the game it plays in this slate
+  const selRaw = sel && !selPair ? (o.games || []).find(g3 => +g3.home === selId || +g3.away === selId) || null : null; // v5.89 — it IS on the slate, its opponent just can't be rated
+  const tmAb = id => (byId[id] ? byId[id].abbr : o.teams && o.teams[id] ? o.teams[id].abbr : "opponent");
+  let selSch = null; if (sel && !selPair && !selRaw && o.scope && GS_CFG[o.scope] && GS_CFG[o.scope].path) { // not on the slate either → ask ESPN's team schedule before claiming "no game"
+    GX.effSch = GX.effSch || {}; const ck = o.scope + ":" + selId + ":" + (S.date || localISO(new Date())); selSch = GX.effSch[ck];
+    if (!selSch) { GX.effSch[ck] = selSch = { busy: true }; const day = S.date || localISO(new Date());
+      j(`https://site.api.espn.com/apis/site/v2/sports/${GS_CFG[o.scope].path}/teams/${selId}/schedule`).then(js => { let hit = null;
+        for (const ev of js && js.events || []) { if (!ev.date) continue; const dd = localISO(new Date(ev.date)); if (o.weekly ? Math.abs(new Date(ev.date) - new Date(day + "T12:00:00")) > 4 * 864e5 : dd !== day) continue;
+          const cs = (ev.competitions && ev.competitions[0] && ev.competitions[0].competitors) || [], me = cs.find(c => +(c.team && c.team.id) === selId), op = cs.find(c => c !== me);
+          if (me) { hit = { date: ev.date, home: me.homeAway === "home", opp: op && op.team ? op.team.abbreviation || op.team.shortDisplayName || "" : "" }; break; } }
+        GX.effSch[ck] = { done: true, hit }; o.rerender(); }).catch(() => { GX.effSch[ck] = { done: true, err: true }; o.rerender(); }); } }
   const hlKey = selPair ? selPair.key : (pairs.some(p3 => p3.key === GX.effHl) ? GX.effHl : (pairs[0] && pairs[0].key)), hl = pairs.find(p3 => p3.key === hlKey) || null;
   const hlIds = sel && !selPair ? new Set([selId]) : (hl ? new Set([hl.a.id, hl.h.id]) : new Set());
   const whenOf = g3 => (g3.status === "final" ? "FINAL" : g3.status === "live" ? "LIVE" : timeLabel(g3.date));
@@ -9102,9 +9198,11 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
   const clearSel = () => { GX.effTeam = null; o.rerender(); };
   if (sel && !selPair) { // the clicked team isn't playing in this slate: show ITS numbers on top (the day's biggest differential stays below)
     const dn0 = dnOf(sel), sg0 = v => (v >= 0 ? "+" : "") + f1(v), sc = el("div", "card"); sc.dataset.effsel = String(selId); sc.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
-    sc.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">📍 SELECTED · NO GAME ${o.dayLabel === "TODAY" ? "TODAY" : o.dayLabel === "THIS WEEK" ? "THIS WEEK" : "ON " + esc(o.dayLabel || "THIS DATE")}</span><button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button></div>
+    sc.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">📍 SELECTED · ${selRaw || (selSch && selSch.hit) ? "PLAYS " : selSch && (selSch.busy || selSch.err) ? "" : "NO GAME "}${selSch && selSch.busy && !selRaw ? "CHECKING SCHEDULE…" : selSch && selSch.err && !selRaw ? "SCHEDULE NOT CHECKED" : o.dayLabel === "TODAY" ? "TODAY" : o.dayLabel === "THIS WEEK" ? "THIS WEEK" : "ON " + esc(o.dayLabel || "THIS DATE")}</span><button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button></div>
       <div style="display:flex;align-items:center;gap:10px;margin:8px 0 4px;">${logoTagPre(sel, 34)}<span><b style="font-size:17px;">${esc(sel.abbr)}</b> <b style="color:${sel.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg0(sel.net)}</b> <span style="color:var(--dim);font-size:12px;">${esc(sel.name)}</span><br><span style="font-size:10.5px;color:var(--dim3);">#${sel.rNet} net · ${sel.w}-${sel.l} last ${sel.n}</span></span></div>
-      <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">Scores <b style="color:var(--txt)">${f1(sel.off)}</b> (#${sel.rOff}) · allows <b style="color:var(--txt)">${f1(sel.def)}</b> (#${sel.rDef})${dn0 != null ? ` · vs its previous ${sel.n} games: net ${dn0 >= 0 ? "+" : ""}${f1(dn0)} (${dn0 >= 0 ? "improving" : "slipping"})` : ""}. No differential to show — it isn't in this slate. The team is ringed on the chart.</div>`;
+      <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">Scores <b style="color:var(--txt)">${f1(sel.off)}</b> (#${sel.rOff}) · allows <b style="color:var(--txt)">${f1(sel.def)}</b> (#${sel.rDef})${dn0 != null ? ` · vs its previous ${sel.n} games: net ${dn0 >= 0 ? "+" : ""}${f1(dn0)} (${dn0 >= 0 ? "improving" : "slipping"})` : ""}.${selRaw ? ` It plays <b style="color:var(--txt)">${+selRaw.home === selId ? "vs" : "@"} ${esc(tmAb(+selRaw.home === selId ? +selRaw.away : +selRaw.home))} · ${esc(whenOf(selRaw))}</b> — no differential because ${esc(tmAb(+selRaw.home === selId ? +selRaw.away : +selRaw.home))} doesn't have enough completed games in this window to be rated.`
+      : selSch && selSch.hit ? ` ESPN's schedule lists <b style="color:var(--txt)">${esc(sel.abbr)} ${selSch.hit.home ? "vs" : "@"} ${esc(selSch.hit.opp)} · ${esc(timeLabel(selSch.hit.date))}</b>, but that game is missing from the slate this app loaded — tap Refresh; if it stays missing, ESPN's scoreboard feed is dropping it.`
+      : selSch && selSch.busy ? " Checking ESPN's schedule for this team…" : selSch && selSch.err ? " Couldn't reach ESPN's schedule to confirm whether it plays." : " No differential to show — ESPN's schedule has no game for it on this date."} The team is ringed on the chart.</div>`;
     sc.querySelector("[data-effclear]").addEventListener("click", clearSel);
     root.appendChild(sc);
   }
@@ -9942,7 +10040,7 @@ function renderGen() {
   const subsOf = () => (combo || [sp]);
   const s = combo ? null : gSlot(sp);
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `${cfg.emoji} ${cfg.name} <small>· ${cfg.teamCap === -1 ? "fight card + odds" : combo ? "EPL + MLS + UCL in one place — models fit per league" : "board · models · spread &amp; total · props"} — new branch, records build as seasons run</small>`));
+  if (0) root.appendChild(el("div", "h1", `${cfg.emoji} ${cfg.name} <small>· ${cfg.teamCap === -1 ? "fight card + odds" : combo ? "EPL + MLS + UCL in one place — models fit per league" : "board · models · spread &amp; total · props"} — new branch, records build as seasons run</small>`));
   if (combo) {
     const slots = combo.map(gSlot);
     const loadingSubs = combo.filter(k2 => gSlot(k2).loading);
@@ -10142,7 +10240,7 @@ function renderGen() {
     const winE = effWin(), bE = effBuild(sE.results || [], sE.teams || {}, winE);
     const dayISO = S.date || localISO(new Date()); let dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && localISO(new Date(g3.date)) === dayISO), dayLabel = dayISO === localISO(new Date()) ? "TODAY" : dayISO;
     if (!dayGames.length && cE.weekly) { dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && !g3.completed); dayLabel = "THIS WEEK"; } // a weekly sport on an off day: the week's biggest mismatch
-    effRender(root, { results: sE.results || [], weekly: !!cE.weekly, unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, scope: lgE, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up", spread: g3.spread, total: g3.total })) : null });
+    effRender(root, { teams: sE.teams || {}, results: sE.results || [], weekly: !!cE.weekly, unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, scope: lgE, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up", spread: g3.spread, total: g3.total })) : null });
     return;
   }
   if (GX.view === "pstat") {
@@ -10657,7 +10755,7 @@ async function tnLoad() {
 function renderTennis() {
   const root = $("#tab-ten"); if (!root) return;
   root.innerHTML = "";
-  root.appendChild(el("div", "h1", `🎾 TENNIS <small>· ATP + WTA · rank model + TOTAL GAMES — new branch, records build as tournaments run</small>`));
+  if (0) root.appendChild(el("div", "h1", `🎾 TENNIS <small>· ATP + WTA · rank model + TOTAL GAMES — new branch, records build as tournaments run</small>`));
   if (TN.view === "how") {
     const sec = (t2, b2) => { const c2 = el("div", "card"); c2.style.marginBottom = "14px"; c2.innerHTML = `<div style="font-family:var(--cond);font-weight:800;font-size:19px;color:var(--gold);margin-bottom:8px;">${t2}</div><div style="font-size:13.5px;color:#c6ccdb;line-height:1.65;">${b2}</div>`; root.appendChild(c2); };
     sec("THE WIN MODEL", `P(win) comes from the <b style="color:var(--txt)">world-ranking gap</b> through a logistic curve whose steepness is <b style="color:var(--txt)">fit on the real matches of the last week</b> (walk-forward, log-loss). Rankings are a strong but imperfect signal — upsets are tennis — so probabilities are capped at 95% and the record below every board shows how the model has actually done.`);
@@ -10863,6 +10961,8 @@ function setSport(s) {
   if (hasLS) { try { kbSet("kb_lastsport", s); } catch (e) {} }
   const isGen = !!GS_CFG[s];
   if (isGen) GX.cur = s;
+  try { const stEl = $("#status"); if (stEl && !stEl.querySelector(".err")) stEl.innerHTML = ""; } catch (e) {}
+  setTimeout(() => { try { dashUpdate(); } catch (e) {} }, 0); // v5.90 — another sport's "Loaded 6 games · MLB Stats API" doesn't follow you
   document.querySelectorAll("#sportSwitch button").forEach(b => b.classList.toggle("on", b.dataset.sport === s));
   const st = document.getElementById("sportTitle"); if (st) st.textContent = isGen ? GS_CFG[s].name : s === "wnba" ? "WNBA" : s === "ten" ? "TENNIS" : "MLB";
   selectTab(isGen ? "gen:board" : s === "wnba" ? "wnba:board" : s === "ten" ? "ten:board" : "board");
@@ -10948,9 +11048,9 @@ if (typeof document !== "undefined") {
   document.querySelectorAll("#sportSwitch button").forEach(b => b.addEventListener("click", () => setSport(b.dataset.sport)));
   document.getElementById("nextDayBtn")?.addEventListener("click", async () => {
     const b2 = document.getElementById("nextDayBtn");
-    b2.disabled = true; const old = b2.textContent; b2.textContent = "⏭ finding…";
+    b2.disabled = true; const old = b2.innerHTML; b2.innerHTML = "⏭<span class=\"hl\">finding…</span>";
     const nx = await nextGameDay().catch(() => null);
-    b2.disabled = false; b2.textContent = old;
+    b2.disabled = false; b2.innerHTML = old;
     if (!nx) { setStatus("Couldn't confirm the next game day — ESPN's schedule didn't answer for every day it needed to check (or there are none for months). Nothing was changed; try again in a moment.", true); return; }
     const dp = $("#datePick");
     dp.value = nx; dp.dispatchEvent(new Event("change"));
@@ -10984,6 +11084,10 @@ function init() {
   S.date = today;
   S.journal = loadJournal();
   $("#datePick").value = today;
+  const hdrDate = () => { try { const v = $("#datePick").value, t = $("#dateTxt"); if (!t || !v) return; const d = new Date(v + "T12:00:00"); t.textContent = (v === localISO(new Date()) ? "Today · " : "") + d.toLocaleDateString([], { weekday: "long" }) + " · " + d.toLocaleDateString([], { month: "short", day: "numeric" }); try { dashUpdate(); } catch (e) {} } catch (e) {} };
+  hdrDate(); setInterval(() => { try { if (!document.hidden) dashUpdate(); } catch (e) {} }, 2500); $("#datePick").addEventListener("change", hdrDate); $("#datePick").addEventListener("input", hdrDate);
+  $("#dateChip")?.addEventListener("click", ev => { const dp = $("#datePick"); if (ev.target === dp) return; try { dp.showPicker ? dp.showPicker() : dp.focus(); } catch (e) { try { dp.focus(); } catch (e2) {} } });
+  $("#status")?.addEventListener("click", ev => { ev.currentTarget.classList.toggle("open"); });
   $("#datePick").addEventListener("change", ev => {
     S.date = ev.target.value;
     WS.loaded = false; // WNBA refetches for the new date next time it's viewed
