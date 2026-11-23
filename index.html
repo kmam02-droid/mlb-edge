@@ -339,6 +339,13 @@
   details.exp summary{cursor:pointer;font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.5px;color:var(--blue);}
   details.exp p{margin:8px 0 2px;font-size:13px;color:#c6ccdb;line-height:1.55;}
   .foot{text-align:center;font-size:11px;color:var(--dim3);margin-top:34px;line-height:1.6;}
+  /* v6.10 — one-time 21+ gate */
+  .agegate{position:fixed;inset:0;z-index:9999;background:rgba(6,7,13,.94);display:flex;align-items:center;justify-content:center;padding:16px;}
+  .agegate .ag-card{max-width:420px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px 20px;text-align:center;color:var(--txt);}
+  .agegate h2{margin:0 0 8px;font-size:20px;letter-spacing:.5px;} .agegate p{margin:0 0 12px;font-size:13px;line-height:1.55;color:var(--dim);}
+  .agegate .ag-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:14px;}
+  .agegate button{min-height:44px;padding:0 18px;border-radius:12px;font-weight:800;font-size:14px;cursor:pointer;border:1px solid var(--line);background:var(--panel3);color:var(--txt);}
+  .agegate button.ag-yes{background:var(--gold);color:#07101f;border-color:var(--gold);}
   /* BET DETAIL MODAL */
   .modal-back{position:fixed;inset:0;background:rgba(5,8,12,0.72);backdrop-filter:blur(3px);z-index:100;display:flex;align-items:center;justify-content:center;padding:18px;}
   .modal{background:var(--panel);border:1px solid var(--line2);border-radius:16px;max-width:580px;width:100%;max-height:86vh;overflow:auto;padding:16px;box-shadow:0 18px 50px rgba(0,0,0,0.6);}
@@ -356,11 +363,13 @@
     .h1{font-size:22px;}
     .bb{min-width:236px;}
   }
-.kb-rbtxt,.kb-rbpill{background:linear-gradient(90deg,#ff4757,#ffa502,#f7e24a,#34d399,#1e90ff,#a55eea,#ff4757);background-size:200% 100%;animation:kbRb 4s linear infinite;}
-.kb-rbtxt{-webkit-background-clip:text;background-clip:text;color:transparent !important;-webkit-text-fill-color:transparent;font-weight:800;}
-.kb-rbpill{color:#10131a !important;box-shadow:0 0 8px rgba(165,94,234,.55);}
-.kb-rbrow{position:relative;padding-left:12px !important;background:linear-gradient(90deg,rgba(165,94,234,.10),rgba(30,144,255,.04) 60%,transparent);}
-.kb-rbrow::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:3px;border-radius:2px;background:linear-gradient(180deg,#ff4757,#ffa502,#f7e24a,#34d399,#1e90ff,#a55eea);}
+/* v6.02 premium gold (was rainbow) */
+.kb-rbtxt,.kb-rbpill{animation:none !important;}
+.kb-rbtxt{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid rgba(232,197,106,.55);background:rgba(232,197,106,.09);color:#f0cf7a !important;-webkit-text-fill-color:#f0cf7a;font-weight:800;font-size:.92em;letter-spacing:.8px;line-height:1.5;}
+.kb-rbpill{background:linear-gradient(135deg,#f6dc8a,#d4a53c 45%,#f3d27a 70%,#b8862b) !important;color:#1a1300 !important;box-shadow:none;}
+.kb-rbrow{position:relative;padding-left:12px !important;margin:6px 0;border:1px solid transparent !important;border-radius:12px;background:linear-gradient(90deg,#16130b,#0f111a 55%) padding-box,linear-gradient(135deg,#f6dc8a,#d4a53c 45%,#f3d27a 70%,#b8862b) border-box;box-shadow:0 6px 18px rgba(212,165,60,.08);}
+.kb-rbrow + div,.kb-rbrow + [data-dvptop]{border-top-color:transparent !important;}
+.kb-rbrow::before{display:none;}
 @keyframes kbRb{to{background-position:200% 0}}
 @media (prefers-reduced-motion:reduce){.kb-rbtxt,.kb-rbpill{animation:none}}
 /* ===== v5.69 — LOOK & MOTION layer (additive; every :root token untouched) ===== */
@@ -714,17 +723,80 @@ header.dash .title{font-size:17px;letter-spacing:.8px;white-space:nowrap;}
 .navstick .tab{font-size:14px !important;padding:9px 12px 11px !important;margin:0 !important;border-radius:0 !important;background:none !important;box-shadow:none !important;color:var(--dim);text-transform:none;}
 .navstick .tab.active{color:var(--txt) !important;}
 .navstick .tab.active::after{left:10px !important;right:10px !important;bottom:0 !important;height:2.5px !important;background:var(--blue) !important;}
-/* v5.93 — full width on computers */
+/* v5.95 — full-width top only; main stays centered */
 html header.dash,html.lite header.dash{max-width:none;margin:0;padding-left:32px !important;padding-right:32px !important;}
 .navstick{padding-left:32px;padding-right:32px;} .navstick > *{max-width:none !important;margin-left:0 !important;margin-right:0 !important;}
 #sportSwitch{max-width:100% !important;width:max-content;}
-main{max-width:none !important;padding-left:32px !important;padding-right:32px !important;}
-#status{max-width:none !important;}
+/* v5.99 — layout B + A extras */
+html header.dash.bview,html.lite header.dash.bview{display:block;padding:12px 22px 6px !important;}
+header.dash.bview .hrow{display:flex;align-items:center;gap:8px;}
+header.dash.bview .hctl{display:flex;align-items:center;gap:6px;margin-left:auto;}
+header.dash.bview .datechip{margin:0 4px 0 0;padding:7px 10px;border-radius:10px;border:1px solid #1f2333;background:rgba(255,255,255,.03);font-size:12.5px;letter-spacing:.3px;text-transform:none;color:var(--txt);font-weight:700;}
+header.dash.bview .datechip .sub{display:none;}
+header.dash.bview .hbtn{width:38px;height:38px;padding:0;justify-content:center;border-radius:50%;font-size:15px;}
+header.dash.bview .hbtn .hl{display:none;}
+header.dash.bview #sportSwitch{display:flex !important;gap:14px;margin-top:14px;padding:4px 2px 2px !important;background:none !important;border:0 !important;border-radius:0 !important;width:auto !important;max-width:100% !important;overflow-x:auto;
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent);mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent);}
+header.dash.bview #sportSwitch button{position:relative;display:flex !important;flex-direction:column;align-items:center;gap:6px;padding:0 !important;background:none !important;box-shadow:none !important;border-radius:0 !important;animation:none !important;
+  font-family:var(--cond);font-weight:800;font-size:11.5px !important;letter-spacing:.8px;color:#6c7388 !important;min-width:54px;}
+header.dash.bview #sportSwitch button i{font-style:normal;width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:24px;background:#121522;border:1px solid #20243a;transition:transform .15s,box-shadow .2s,background .2s;}
+header.dash.bview #sportSwitch button:hover i{border-color:#34406a;}
+header.dash.bview #sportSwitch button.on{color:var(--txt) !important;}
+header.dash.bview #sportSwitch button.on i{background:linear-gradient(135deg,#2a4dff,#35baf6);border-color:transparent;box-shadow:0 6px 18px rgba(53,186,246,.35);}
+header.dash.bview #sportSwitch button.warm::after{position:absolute;top:2px;right:4px;margin:0;width:8px;height:8px;border:2px solid #06070d;}
+.navstick .tabs{display:flex;gap:6px !important;padding:8px 0 10px;}
+.navstick .tab{flex:0 0 auto;padding:8px 13px !important;border-radius:10px !important;font-size:13px !important;letter-spacing:.4px;color:var(--dim) !important;background:none !important;}
+.navstick .tab.active{background:#1b2032 !important;color:var(--txt) !important;box-shadow:inset 0 -2px 0 var(--blue) !important;}
+.navstick .tab.active::after{display:none !important;}
+.navstick{padding-top:2px !important;}
+.subtabs{display:flex;gap:7px !important;padding:0 0 10px !important;margin-top:-2px !important;overflow-x:auto;scrollbar-width:none;} .subtabs.off{display:none !important;} .subtabs::-webkit-scrollbar{display:none;}
+.navstick .subtabs .tab{padding:7px 14px !important;border-radius:999px !important;border:1px solid #1d2131 !important;background:#0f1220 !important;font-family:inherit;font-size:13px !important;font-weight:800;letter-spacing:.2px;text-transform:none;box-shadow:none !important;}
+.navstick .subtabs .tab.active{background:var(--txt) !important;color:#06070d !important;border-color:transparent !important;box-shadow:none !important;}
+.hubf{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;margin:0 0 14px;padding:2px 0;} .hubf::-webkit-scrollbar{display:none;}
+.hubf button{flex:0 0 auto;padding:8px 14px;border-radius:999px;border:1px solid #1d2131;background:#0f1220;color:var(--dim);font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;}
+.hubf button.on{background:var(--txt);color:#06070d;border-color:transparent;}
+.hub[data-hubf="all"] [data-hubsec="tot"],.hub[data-hubf="all"] [data-hubsec="spr"]{display:none;}
+.hub[data-hubf="props"] [data-hubsec="ml"],.hub[data-hubf="props"] [data-hubsec="tot"],.hub[data-hubf="props"] [data-hubsec="spr"],.hub[data-hubf="props"] [data-hubsec="plays"] .hub-row:not([data-hubkind="prop"]){display:none;}
+.hub[data-hubf="ml"] .hub-sec:not([data-hubsec="ml"]),.hub[data-hubf="tot"] .hub-sec:not([data-hubsec="tot"]),.hub[data-hubf="spr"] .hub-sec:not([data-hubsec="spr"]){display:none;}
+.bnav{display:none;}
+.bsheet{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;}
+.bsheet .in{width:100%;max-height:75vh;overflow-y:auto;background:#0c0f18;border-top:1px solid #1d2131;border-radius:18px 18px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));}
+.bsheet .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px;}
+.bsheet .grid button{padding:12px;border-radius:12px;border:1px solid #1d2131;background:#121522;color:var(--txt);font-family:inherit;font-size:13.5px;font-weight:800;text-align:left;cursor:pointer;}
+.bsheet .grid button.on{border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue);}
+@media (max-width:760px){
+  html header.dash.bview,html.lite header.dash.bview{padding:8px 14px 4px !important;}
+  header.dash.bview .title{font-size:15px;}
+  header.dash.bview .hctl #autoRefBtn{display:none;}
+  header.dash.bview .hbtn{width:36px;height:36px;}
+  header.dash.bview .datechip{font-size:12px;padding:7px 9px;}
+  header.dash.bview #sportSwitch{gap:12px;margin-top:12px;}
+  header.dash.bview #sportSwitch button i{width:48px;height:48px;font-size:22px;}
+  .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:60;height:calc(62px + env(safe-area-inset-bottom));padding:8px 4px env(safe-area-inset-bottom);background:rgba(10,12,18,.97);border-top:1px solid #171a28;justify-content:space-around;}
+  .bnav button{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;color:#646b80;font-family:var(--cond);font-size:10.5px;font-weight:800;letter-spacing:.5px;cursor:pointer;}
+  .bnav button i{font-style:normal;font-size:20px;filter:grayscale(1) brightness(.85);line-height:1.1;}
+  .bnav button.on{color:var(--blue);} .bnav button.on i{filter:none;}
+  body{padding-bottom:calc(84px + env(safe-area-inset-bottom)) !important;}
+  .pl-pill{bottom:calc(76px + env(safe-area-inset-bottom)) !important;}
+}
+/* v5.96 — efficiency matchups */
+.effnav{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;}
+.effnav button{width:32px;height:30px;border-radius:9px;border:1px solid rgba(255,160,46,.45);background:rgba(255,160,46,.08);color:var(--gold);font-size:17px;font-weight:900;line-height:1;cursor:pointer;font-family:inherit;}
+.effnav button:disabled{opacity:.3;cursor:default;} .effnav span{font-size:11px;font-weight:800;color:var(--dim);min-width:56px;text-align:center;letter-spacing:.4px;}
+.effnextbtn{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:8px 14px;border-radius:10px;border:1px solid rgba(255,160,46,.5);background:rgba(255,160,46,.08);color:var(--gold);font-family:inherit;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer;max-width:100%;white-space:normal;text-align:left;}
+.effvs{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;margin:10px 0 8px;}
+.effvs .side{display:flex;align-items:center;gap:8px;min-width:0;} .effvs .side.r{flex-direction:row-reverse;text-align:right;}
+.effvs .side b.ab{font-size:17px;} .effvs .mid{text-align:center;}
+.effglist{max-height:min(420px,62vh);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin:0 -12px;padding:0 12px;}
+.efffind{width:100%;margin:2px 0 6px;padding:8px 10px;border-radius:9px;border:1px solid var(--line2,#1f2736);background:rgba(255,255,255,.03);color:var(--txt);font-family:inherit;font-size:16px;}
+.efftbl{max-height:min(560px,70vh);overflow:auto !important;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
+.efftbl thead th{position:sticky;top:0;background:#0c0e17;z-index:1;}
+@media (max-width:520px){ .effvs .side b.ab{font-size:15px;} .effvs .side img,.effvs .side > span:first-child{width:28px !important;height:28px !important;} .effvs .mid .big{font-size:22px !important;} .effvs .sub{font-size:9.5px !important;} }
 #status{font-size:11.5px;}
 @media (min-width:900px){ header.dash{display:grid;grid-template-columns:1fr auto;grid-template-areas:"top top" "greet stats";column-gap:24px;align-items:end;} header.dash .hrow{grid-area:top;} .greet{grid-area:greet;} .dstats{grid-area:stats;width:520px;margin-top:0;} }
 @media (max-width:760px){
-  main{padding-left:12px !important;padding-right:12px !important;}
   html header.dash,html.lite header.dash{padding:8px 16px 4px !important;}
+  .navstick{padding-left:12px;padding-right:12px;}
   .navstick{padding:8px 12px 0;}
   .hbtn{width:36px;padding:0;justify-content:center;font-size:15px;} .hbtn .hl{display:none;}
   .gbig{font-size:25px;} .datechip{font-size:11px;letter-spacing:1.2px;} .datechip .sub{display:none;}
@@ -784,37 +856,30 @@ main{max-width:none !important;padding-left:32px !important;padding-right:32px !
   });
 })();
 </script>
-<header class="dash">
+<header class="dash bview">
   <div class="hrow">
-    <div class="brand"><div class="logoBox">E</div><div class="title">DAILY <span class="accent">EDGE</span></div></div>
+    <div class="brand"><div class="logoBox">E</div><div class="title">DAILY <span class="accent">EDGE</span><span id="sportTitle" hidden>MLB</span></div></div>
     <div class="hctl">
+      <div class="datechip" id="dateChip" role="button" tabindex="0" title="Pick a date"><span id="dateTxt">Today</span><span class="caret">▾</span><span class="sub" id="subline"></span><input type="date" id="datePick" aria-label="Date"></div>
       <button type="button" class="hbtn" id="nextDayBtn" title="Jump to the next day the current sport plays">⏭<span class="hl">Next game day</span></button>
       <button type="button" class="hbtn" id="autoRefBtn" title="Auto-refresh every 10 minutes near first pitch and while games are live — lines move all day">⏱<span class="hl">Auto</span></button>
       <button type="button" class="hbtn" id="refreshBtn" title="Reload today's games, odds and props">↻<span class="hl">Refresh</span></button>
     </div>
   </div>
-  <div class="greet">
-    <div class="datechip" id="dateChip" role="button" tabindex="0" title="Pick a date"><span class="cal">📅</span><span id="dateTxt">Today</span><span class="caret">▾</span><span class="sub" id="subline"></span><input type="date" id="datePick" aria-label="Date"></div>
-    <div class="gbig" id="greetBig"><span id="greetWhen">Tonight's</span> <span id="sportTitle">MLB</span> edge</div>
-  </div>
-  <div class="dstats" id="dashStats">
-    <div class="dstat"><b id="dsGames">—</b><span id="dsGamesL">GAMES</span></div>
-    <div class="dstat"><b id="dsEdges" style="color:var(--green)">—</b><span>2%+ EDGES</span></div>
-    <div class="dstat"><b id="dsLines" style="color:var(--blue)">—</b><span id="dsLinesL">LIVE PROP LINES</span></div>
-  </div>
+  <span id="sportSwitch"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="soc">⚽ SOCCER</button></span>
 </header>
 <nav class="navstick">
-  <span id="sportSwitch"><button data-sport="mlb" class="on">⚾ MLB</button><button data-sport="wnba">🏀 WNBA</button><button data-sport="nfl">🏈 NFL</button><button data-sport="nba">🏀 NBA</button><button data-sport="nhl">🏒 NHL</button><button data-sport="cbb">🎓 CBB</button><button data-sport="cfb">🏟️ CFB</button><button data-sport="soc">⚽ SOCCER</button><button data-sport="ten">🎾 TENNIS</button></span>
-  <div class="tabs">
+<div class="tabs">
     <div class="tab active" data-tab="board">BOARD</div>
     <div class="tab" data-tab="ks">STRIKEOUTS</div>
     <div class="tab" data-tab="hr">HOME RUNS</div>
     <div class="tab" data-tab="hits">HITS</div>
-    <div class="tab" data-tab="rec">RECORDS</div>
+    <div class="tab" data-tab="rec">MODEL RECORDS</div>
     <div class="tab" data-tab="model">MY MODEL</div>
     <div class="tab" data-tab="how">HOW IT WORKS</div>
   </div>
 </nav>
+<nav class="bnav" id="bnav" aria-label="Sections"></nav>
 <main>
   <div class="status" id="status"></div>
   <section id="tab-board"><div class="loadingBox"><div class="spinner"></div><div>Warming up in the bullpen — pulling games, stats &amp; DraftKings lines…</div></div></section>
@@ -834,7 +899,7 @@ main{max-width:none !important;padding-left:32px !important;padding-right:32px !
   <section id="tab-how" style="display:none"></section>
   <section id="tab-gen" style="display:none"></section>
   <section id="tab-ten" style="display:none"></section>
-  <div class="foot">Models are informational only — no guarantee of results. Lines move; always confirm at your book. Bet responsibly.<br>Data: MLB Stats API · odds &amp; props via DraftKings (ESPN feed) · optional The Odds API.</div>
+  <div class="foot">Models are informational only — no guarantee of results. Lines move; always confirm at your book. Bet responsibly.<br>Data: MLB Stats API · odds &amp; props via DraftKings (ESPN feed) · optional The Odds API.<br><span data-rgfoot="1"><b>21+ only.</b> For information and entertainment — not betting advice, and no bets are taken here. Not affiliated with ESPN, DraftKings, MLB, the NBA, WNBA, NFL, NHL, NCAA or any league or team. Gambling problem? Call or text <b>1-800-MY-RESET</b> (1-800-697-3738) or chat at 1800myreset.org.</span></div>
 </main>
 
 <script>
@@ -848,7 +913,47 @@ main{max-width:none !important;padding-left:32px !important;padding-right:32px !
    CHANGELOG — every change to this single file, newest first. (Built on the original v5.12; nothing was ever started
    over from an older copy.) The BUILD number below is shown in the page footer — it is how you confirm which copy runs.
 
-   v5.93  FULL WIDTH on computers: header, pinned sports/tabs and every page use the whole window (was a centered 1240px column).
+   v6.11  Tennis taken out: no TENNIS button, never loads in the background, and a saved "open on Tennis" falls back to the default sport.
+          (Its code is kept, switched off, so it can come back by restoring the button.)
+   v6.10  21+ gate: asked once ("I'm 21 or older" is remembered on this device; "under 21" never opens the app). Footer now says 21+ only,
+          information/entertainment, takes no bets, not affiliated with ESPN/DraftKings/any league, and gives the 1-800-MY-RESET helpline.
+   v6.09  NHL is labelled 🧪 EXPERIMENTAL: replayed on past games its game model picks winners about as well as a coin flip, so NHL plays stay on
+          the NHL BOARD (with the label) and no longer go into 🔒 LOCKS. LOCKS says which sport it left out and why.
+   v6.08  NBA positions: ESPN's roster lists some real centers as "F" (Wembanyama). The team's own ESPN depth chart now breaks the tie — a
+          forward becomes C only when the depth chart ranks him higher at C than at any other spot, so stretch bigs (Markkanen) stay forwards.
+          Feeds DEF VS POS and the matchup notes. Games already tallied keep the old position; new games use the new one.
+   v6.07  BOARD → 💰 MONEYLINES now covers CFB (big cards like NBA/NFL/NHL, from its Elo/Pythag/Form models). CBB has no game model yet, so its
+          MONEYLINES category says that plainly instead of sitting empty.
+          Same tab names on every sport: MLB's RECORDS is now MODEL RECORDS, WNBA's MY W-MODEL is now MY MODEL (same order as MLB). Labels only —
+          nothing saved changes.
+   v6.06  MLB and WNBA read EVERY page of the prop-line feed (it stopped after the first 300 lines, so on big nights later players had no DK line).
+   v6.05  ⏱ AUTO now works on every ESPN sport (NBA, NFL, NHL, college, soccer…), not only MLB/WNBA: every 10 min, when a game is within 40 min
+          or live, it reloads that sport's games, odds and injuries. Also fixed: the top ↻ on those sports reloaded MLB instead of the sport on screen.
+   v6.04  NFL / CFB real prop lines now show: ESPN names them "Total Receiving Yards (incl. overtime)" and "Total Carries", so none matched.
+          Strips the "(incl. overtime)" part and reads Total Carries as rush attempts. (Checked live: 211 NFL lines, 138 matched to players.)
+   v6.03  VALUE gets the LOCKS look: same cards (team-color band, player photo or both logos, the pick, last-10 pips when it's a prop, chance ring,
+          BOOK · FAIR · EDGE row), ranked by edge vs the de-vigged market as before, with the tier tag (💎 MAX VALUE / STRONG / VALUE / THIN), a
+          ¼-KELLY stake chip, ⚡ BEST EDGE on #1, + PARLAY, tap for the details. Filters fold behind one ▸ FILTERS button like LOCKS.
+   v6.02  PREMIUM GOLD replaces the rainbow on CONSISTENT good-matchup rows (DEF VS POS best board, game cards, dropdowns): thin brushed-gold
+          border, a small gold "CONSISTENT" tag, a solid gold chance tile and a gold rank pill — no rainbow, no animation. Same rows qualify as before.
+   v6.01  ONE "PROPS" TAB. The row of stat tabs (POINTS · REBOUNDS · ASSISTS · 3-POINTERS · PRA · P+R · R+A · P+A — MLB: STRIKEOUTS · HOME
+          RUNS · HITS · TOT BASES · H+R+RBI — WNBA's) folds into a single 🎯 PROPS tab; open it and the stats are chips underneath (mockup A
+          style), pinned with the tabs. PROPS remembers the last stat per sport. (v6.00's bunched player cards were rolled back — not wanted.)
+   v5.99  NEW TOP (mockup B + mockup A's extras, Kevin's pick). Header: E DAILY EDGE · date chip · ⏭ ⏱ ↻ ; the sports are round icon tiles
+          with the name underneath; section tabs are pills (pinned while you scroll). BOARD gets A's filter chips — All · Props · Moneyline ·
+          Totals · Spreads (remembered). Phones get A's bottom bar: BOARD · MATCHUPS · INSIGHTS · PARLAY · MORE (MORE = every tab + Auto).
+          The "Today's NBA edge" headline and the 3 tiles are gone. Same ids/handlers underneath.
+   v5.98  EFFICIENCY: a selected team ALWAYS shows its next game. If it doesn't play on the date you're on, ESPN's team schedule gives the next
+          one — "📍 ARK · NEXT GAME SAT NOV 28 · vs MIZ" — with both teams' nets, the points apart, the model projection when it can run, and
+          "⏭ GO TO SAT NOV 28". Dates read "TUE NOV 24", not "2026-11-24".
+   v5.97  Fixes from Kevin's CFB screenshot (Sunday, no games): the date line said "LINES VIA LINES VIA DRAFTKINGS"; MLB's "Loaded 0 games ·
+          MLB Stats API" line showed on other sports (MLB now writes its status only while MLB is on screen); EFFICIENCY on a day with no games
+          offers "⏭ SHOW THE NEXT GAME DAY'S MATCHUPS" instead of a dead end.
+   v5.96  EFFICIENCY on phones + big slates (CFB ~55 games). The matchup card steps through EVERY game (‹ #3 of 55 ›, or swipe left/right
+          on it); the team-vs-team row stays on one line on a phone. "ALL N GAMES" really lists all N (was the first 10) in its own scrolling box
+          with a team filter, and it keeps its place. The all-teams table scrolls in a box (sticky header) instead of running ~6,000px.
+   v5.95  Computers: the TOP (dashboard header + pinned sports/tabs) spans the full window again; the pages below stay in the centered column.
+   v5.94  Back to the centered layout on computers (v5.93 full width undone at Kevin's request — everything else as v5.92).
    v5.92  The "🏀 NBA · board · models · spread & total · props — new branch…" banner under the tabs is gone (every ESPN sport, WNBA,
           tennis) — the dashboard headline already says it; pages start right at their content.
    v5.91  DASHBOARD TOP (layout C, Kevin's pick). Brand row (E · DAILY EDGE · ⏭ ⏱ ↻), then the day — "SUNDAY · NOV 22 · LINES VIA
@@ -1077,7 +1182,7 @@ main{max-width:none !important;padding-left:32px !important;padding-right:32px !
           opened; first fixes found by the automated QA.
    v5.12  The original file.
    =================================================================================================================== */
-const BUILD = "v5.93 · 10a";
+const BUILD = "v6.11 · 10a";
 window.__kbCtx = () => BUILD + " · sport " + (typeof APP_SPORT !== "undefined" ? APP_SPORT : "?") + " · view " + ((typeof GX !== "undefined" && GX.view) || "?") + " · " + (navigator.userAgent.match(/(Firefox|Chrome|Safari)\/[\d.]+/) || ["?"])[0];
 
 /* ---------------- CONFIG ---------------- */
@@ -1419,7 +1524,7 @@ async function loadAll() {
   renderAll();
   const errTxt = S.errors.length ? ` <span class="err">(${S.errors.length} source(s) failed: ${S.errors.map(e => e.split(":")[0]).join(", ")})</span>` : "";
   const relayTxt = IS_LOCAL_SERVER ? " · via local helper" : (relayIdx > 0 ? " · MLB data via relay (direct connection blocked on this computer)" : "");
-  setStatus(`Loaded ${S.games.length} games. Sources: MLB Stats API${res.espn ? " + ESPN/DraftKings" : ""}${getKey() ? " + The Odds API" : ""}${relayTxt}.` + errTxt);
+  if (APP_SPORT === "mlb") setStatus(`Loaded ${S.games.length} games. Sources: MLB Stats API${res.espn ? " + ESPN/DraftKings" : ""}${getKey() ? " + The Odds API" : ""}${relayTxt}.` + errTxt);
   setTimeout(() => { try { nrfiLoad(); } catch (e) {} }, 1200); // first-inning model rides in behind the main load
   setTimeout(() => { try { spWarLoad(); } catch (e) {} }, 2200); // starter WAR too
 }
@@ -1718,7 +1823,7 @@ async function loadEspnOdds(scoreboard) {
           }));
           if (hasLS) try { kbSet("kb_athNames", JSON.stringify(athNames)); } catch (e) {}
         } catch (e) {}
-        const pb = await j(`https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/events/${ev.id}/competitions/${ev.id}/odds/100/propBets?limit=300`);
+        const pb = await pbAll(`https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/events/${ev.id}/competitions/${ev.id}/odds/100/propBets?limit=300`); // v6.06 — every page
         for (const it of (pb?.items || [])) {
           const tn = it.type?.name || "";
           const isK = it.type?.id === "46" || /total strikeouts/i.test(tn);
@@ -2905,7 +3010,7 @@ function timeLabel(t) { const k = String(t); let v = TL_MEMO.get(k); if (v !== u
 function edgeCls(e) { return e >= 0 ? "var(--green)" : "var(--red)"; }
 function renderAll() {
   const anyBook = Object.values(S.odds)[0]?.book || "DraftKings";
-  $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`.replace(/^[^·]*· /, "lines via ");
+  $("#subline").textContent = `${new Date(S.date + "T12:00:00").toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · lines via ${anyBook}`.replace(/^[^·]*· /, "");
   renderBoard(); renderKs(); renderHR(); renderHits(); renderBasesTab("tb"); renderBasesTab("hrr"); try { renderNrfi(); } catch (e) {} try { if ($("#tab-eff") && $("#tab-eff").style.display !== "none") renderEffMlb(); } catch (e) {} renderRecords(); renderModelTab(); renderHow(); renderLocks(); renderValue();
 }
 
@@ -3909,7 +4014,7 @@ function stModalMLB(g, o) {
   let rec = "";
   try {
     const b = backtestModels().st;
-    rec = `<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line3);font-size:11.5px;color:var(--dim);line-height:1.6;">Season backtest (walk-forward, 57%+-confidence calls): <b style="color:var(--txt)">RUN LINE (consensus) ${b.sp.w}-${b.sp.l}</b> · <b style="color:var(--txt)">RUN LINE (Kevin's) ${b.spk.w}-${b.spk.l}</b> · <b style="color:var(--txt)">TOTALS ${b.tot.w}-${b.tot.l}</b>. Full records &amp; TRUTH CHECK live on the RECORDS tab.</div>`;
+    rec = `<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line3);font-size:11.5px;color:var(--dim);line-height:1.6;">Season backtest (walk-forward, 57%+-confidence calls): <b style="color:var(--txt)">RUN LINE (consensus) ${b.sp.w}-${b.sp.l}</b> · <b style="color:var(--txt)">RUN LINE (Kevin's) ${b.spk.w}-${b.spk.l}</b> · <b style="color:var(--txt)">TOTALS ${b.tot.w}-${b.tot.l}</b>. Full records &amp; TRUTH CHECK live on the MODEL RECORDS tab.</div>`;
   } catch (e) {}
   const altBtn = g.state === "Preview" ? `<div style="margin-top:10px;"><button class="btn ghost" id="altPxBtn" style="font-size:12px;">💲 ${altPx ? "REFRESH" : "PRICE THIS LADDER"} — the book's real alt lines vs fair (2 Odds API credits)</button></div>` : "";
   stModal(`SPREAD &amp; TOTAL — ${g.away.abbr} @ ${g.home.abbr}`, hSp + hTot + rec + calNote(["mlbsp", "mlbspk", "mlbtot", "mlbc"]) + altBtn);
@@ -4344,7 +4449,7 @@ function renderBasesTab(kind) {
     const box = el("div", "card");
     box.innerHTML = calRowsHTML(calibrate((pmb[selK] || pmb[pmKeys[0]]).cal, "p", CAL_BUCKETS, true).filter(b2 => b2.n > 0), 4, 25) || '<div style="color:var(--dim);font-size:13px;">Not enough history yet.</div>';
     root.appendChild(box);
-    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Reference lines = each hitter's rolling median ± a step. Tracked picks also journal daily and grade from real box scores — records on the RECORDS tab.</span>`));
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3)">Reference lines = each hitter's rolling median ± a step. Tracked picks also journal daily and grade from real box scores — records on the MODEL RECORDS tab.</span>`));
   }
   $("#fetch" + kind + "Btn")?.addEventListener("click", () => fetchTbpPrices(kind));
 }
@@ -5303,7 +5408,7 @@ function pageGuide() {
     <p>7. <b>Best Bets is tuned to you:</b> odds between ${fmtML(CFG.plusOddsMax)} and ${CFG.oddsFloor} only (bigger plus odds must be STRONG or better), the strip always shows every play that qualifies (scroll sideways for all of them), and tapping any bet opens the model's full reasoning.</p>
     <p>8. <b>On your phone:</b> start the app with Start_MLB_Daily_Edge.bat on the PC (run it as administrator once and allow the firewall prompt) — the black window prints a <b>phone link</b> like http://192.168.x.x:8177. Open that on your phone on the same Wi-Fi. Note: records/settings live per device.</p>
     <h2>Why four algorithms for the same bet?</h2>
-    <p>Kevin's Model sees <i>tonight's matchup</i>, Pythag+Log5 sees <i>season-long run quality</i>, Elo sees <i>who actually beat whom, recency-weighted</i>, and <b>Sharp</b> is an auto-fitted blend of Elo + Pythag + form, trained on the first 65% of the season and validated on the rest (its honest holdout record is on the RECORDS tab). When they land on the same side of the market number, that's a much stronger signal than one model alone.</p>
+    <p>Kevin's Model sees <i>tonight's matchup</i>, Pythag+Log5 sees <i>season-long run quality</i>, Elo sees <i>who actually beat whom, recency-weighted</i>, and <b>Sharp</b> is an auto-fitted blend of Elo + Pythag + form, trained on the first 65% of the season and validated on the rest (its honest holdout record is on the MODEL RECORDS tab). When they land on the same side of the market number, that's a much stronger signal than one model alone.</p>
     <h2>Data sources</h2>
     <p>MLB Stats API for stats, results & rosters · ESPN/DraftKings for moneylines and K-prop lines · The Odds API (optional key) for K-prop and anytime-HR prices. Nothing leaves your computer except these read-only requests.</p>
     <p style="color:var(--dim)">Even a good model only finds small edges. Flat, small stakes and a long horizon beat hero bets. Research, not financial advice.</p>`;
@@ -5344,7 +5449,7 @@ function pagePyth() {
     <h3>Step 3 — Log5 head-to-head (plus home field)</h3>
     <span class="formula">P(A beats B) = p<sub>A</sub>(1−p<sub>B</sub>) / [ p<sub>A</sub>(1−p<sub>B</sub>) + p<sub>B</sub>(1−p<sub>A</sub>) ]   then +4 points to the home side</span>
     <div class="callout"><b>Worked example.</b> Home: 289 scored / 240 allowed → <b>.584</b>. Road: 210 / 260 → <b>.404</b>. Log5 = .584×.596 / (.584×.596 + .404×.416) = <b>.675</b> → +.04 home → <b>≈71%</b>.</div>
-    <p><span class="pro">Strengths:</span> very hard to fool — only believes sustained scoring and run prevention; catches teams whose records lie. Check its season backtest on the RECORDS tab.</p>
+    <p><span class="pro">Strengths:</span> very hard to fool — only believes sustained scoring and run prevention; catches teams whose records lie. Check its season backtest on the MODEL RECORDS tab.</p>
     <p><span class="con">Blind spots:</span> April counts as much as July (no recency); slow on trades/injuries; sees tonight's starter only through one small ERA nudge; ignores bullpens.</p>`;
 }
 function pageElo() {
@@ -5356,7 +5461,7 @@ function pageElo() {
     <h3>Updating after each game</h3>
     <span class="formula">new R = R + K × ln(margin + 1) × (result − expected)     K = 4</span>
     <div class="callout"><b>Worked example.</b> 1538 hosts 1462: gap 76 + 24 = 100 → P(home) = <b>64%</b>. Favorite wins by 3 → +4×ln(4)×0.36 ≈ <b>+2.0</b> pts; loses by 3 instead → <b>−3.5</b>. Upsets move ratings harder — that keeps Elo honest.</div>
-    <p><span class="pro">Strengths:</span> pure results, opponent-adjusted (beating good teams worth more), recency built in, immune to narratives. Its full-season backtest record is on the RECORDS tab.</p>
+    <p><span class="pro">Strengths:</span> pure results, opponent-adjusted (beating good teams worth more), recency built in, immune to narratives. Its full-season backtest record is on the MODEL RECORDS tab.</p>
     <p><span class="con">Blind spots:</span> knows nothing about tonight's pitchers — an ace start and a bullpen game look identical; early-season ratings are compressed. Best used as the sanity check on the other two.</p>`;
 }
 function pageProps() {
@@ -5442,7 +5547,7 @@ positive line:  +130 → 100/(130+100) = 43.5%</span>
     <h3>Reading signals honestly</h3>
     <p>A 3–5% edge is real but small — about 1 extra win per 25 bets, and that's the realistic ceiling for a public-data model. A +15% moneyline edge usually means a data hiccup (scratched starter, stale line), not free money — check the matchup first. Trust edges more when all three models agree, starters are confirmed, and the line is fresh; less in April, doubleheaders, and bullpen games.</p>
     <h3>Bankroll hygiene</h3>
-    <p>Flat 1–2% stakes beat clever staking on small edges. Don't parlay picks born from the same reasoning — their errors are correlated. Track every bet against the <b>closing line</b>: beating the close consistently is the earliest honest evidence your process works — and now the RECORDS tab does the pick-tracking part for you.</p>`;
+    <p>Flat 1–2% stakes beat clever staking on small edges. Don't parlay picks born from the same reasoning — their errors are correlated. Track every bet against the <b>closing line</b>: beating the close consistently is the earliest honest evidence your process works — and now the MODEL RECORDS tab does the pick-tracking part for you.</p>`;
 }
 
 /* ================================================================
@@ -5611,7 +5716,7 @@ async function wnbaLoad() {
     WS.stage = "prop lines (DraftKings via ESPN)…"; renderWnba();
     await Promise.all((WS.games || []).filter(g => !g.completed && !g.live).map(async g => {
       try {
-        const pb = await j(`${W_CORE}/events/${g.id}/competitions/${g.id}/odds/100/propBets?limit=300`);
+        const pb = await pbAll(`${W_CORE}/events/${g.id}/competitions/${g.id}/odds/100/propBets?limit=300`); // v6.06 — every page
         for (const it of pb?.items || []) {
           const tn = it.type?.name || "";
           const st = /points.*rebounds.*assists/i.test(tn) ? "PRA" : /^total points$/i.test(tn) ? "PTS" : /^total rebounds$/i.test(tn) ? "REB" : /^total assists$/i.test(tn) ? "AST" : null;
@@ -6491,6 +6596,10 @@ function collectGenLV(mode) { // NFL/NBA/NHL/soccer moneylines for LOCKS & VALUE
   }
   return out;
 }
+/* v6.09 — EXPERIMENTAL sports: models that haven't proven themselves yet. Their plays stay on their own BOARD (with a label) but never in LOCKS. */
+const EXP_SPORTS = { nhl: "Replayed on past games, the NHL game model has picked winners about as well as a coin flip so far, so its plays stay here on the NHL BOARD and out of 🔒 LOCKS until it proves itself." };
+const lkIsExp = L => { try { return Object.keys(EXP_SPORTS).some(k => hubMatch(L, k)); } catch (e) { return false; } };
+function expBanner(key) { const t = EXP_SPORTS[key]; return t ? `<div class="subhead" data-expsport="${key}" style="border:1px solid var(--gold);border-radius:10px;padding:8px 10px;margin:0 0 10px;"><b style="color:var(--gold);letter-spacing:1px;">🧪 EXPERIMENTAL</b> · ${t}</div>` : ""; }
 function collectLocks() {
   const out = [];
   const th = 0.55; // gather from 55%; ≥60% are the real locks, 55-60% fill thin days as LEANs
@@ -6644,6 +6753,7 @@ function collectLocks() {
   try { out.push(...collectTotLocks()); } catch (e) {}
   for (let i = out.length - 1; i >= 0; i--) if (!itemBettable(out[i])) out.splice(i, 1);   // v5.86
   S._lvPool = out.slice(); // pre-filter pool → "today's pool" note
+  for (let i = out.length - 1; i >= 0; i--) if (lkIsExp(out[i])) out.splice(i, 1); // v6.09 — experimental sports never make LOCKS (they keep their own BOARD)
   out.sort((a, b) => b.prob - a.prob);
   const flt = out.filter(x => lvPass(LV.locks, x));
   const capped = capTypes(flt, { hit: 3, hr: 1, tb: 3, hrr: 4, nrfi: 3, wprop: LV.locks.sport === "ALL" ? 8 : 12, tot: LV.locks.cat === "tot" ? 24 : 6 });
@@ -6789,7 +6899,7 @@ const HUB = { t: 0, pool: null, d: null };
 function hubPool(force) { if (!force && HUB.pool && Date.now() - HUB.t < 15000 && HUB.d === S.date) return HUB.pool; try { collectLocks(); HUB.pool = (S._lvPool || []).slice(); } catch (e) { HUB.pool = []; } HUB.t = Date.now(); HUB.d = S.date; return HUB.pool; }
 function hubMatch(L, key) { const sk = String(L.sportKey || ""), spt = String(L.sport || ""); if (key === "mlb") return sk === "MLB" || /MLB/.test(spt); if (key === "wnba") return sk === "WNBA" || /WNBA/.test(spt); if (GS_CFG[key] && GS_CFG[key].combo) return sk === "soc" || GS_CFG[key].combo.indexOf(sk) > -1; return sk === key; }
 function hubMLGames(key) { // v5.88 — every game's moneyline for the BOARD's own category (generic ESPN sports); null = not this kind of sport
-  const cfg = GS_CFG[key]; if (!cfg || cfg.combo || !(cfg.teamCap > 0)) return null; const s = gSlot(key); if (!s.loaded) return [];
+  const cfg = GS_CFG[key]; if (!cfg || cfg.combo || !(cfg.teamCap > 0 || cfg.wkRe)) return null; /* v6.07 — CFB too (its week-by-week replay gives it real Elo/Pythag/Form models) */ const s = gSlot(key); if (!s.loaded) return [];
   const out = [];
   for (const g of s.games || []) { if (g.completed || g.live || g.cons == null || !g.home || !g.away) continue;
     const homeSide = g.cons >= 0.5, prob = homeSide ? g.cons : 1 - g.cons, pk = homeSide ? g.home : g.away, op = homeSide ? g.away : g.home;
@@ -6881,6 +6991,7 @@ function hubKick(key) { // BOARD pulls what it needs itself instead of waiting f
 }
 function renderHub(root, key) {
   if (GS_CFG[key] && !GS_CFG[key].combo) { hubKick(key); const w = hubWait(key); if (w && w.some(x => !x.ok)) { hubSkeleton(root, key, w); return; } }
+  if (EXP_SPORTS[key]) root.insertAdjacentHTML("beforeend", expBanner(key)); // v6.09
   const esc = x => String(x == null ? "" : x).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])), okU = u => typeof u === "string" && /^https?:\/\//.test(u);
   let poolRaw = hubPool().filter(L => hubMatch(L, key) && L.prob >= 0.5); if (!poolRaw.length) poolRaw = hubPool(true).filter(L => hubMatch(L, key) && L.prob >= 0.5); // cache built before this sport loaded → rebuild
   const pool = poolRaw.map(L => hubFromLock(L, key));
@@ -6923,13 +7034,23 @@ function renderHub(root, key) {
   const mlg = hubMLGames(key);
   if (mlg) { if (mlg.length) { const nE = mlg.filter(r => r.edge != null && r.edge >= 0.02 && !r.far).length; html += `<div class="hub-sec" data-hubsec="ml"><div class="hub-h">💰 MONEYLINES <small>· every game · ${nE ? nE + " with a 2%+ edge · " : ""}best edge first</small></div><div class="hub-mlgrid">${hubMLHtml(mlg.slice(0, 12), esc, okU)}</div></div>`; } }
   const mls = mlg ? [] : pool.filter(it => it.kind === "ml").sort((a, b) => b.prob - a.prob).slice(0, 6);
+  { const cM = GS_CFG[key]; if (!mlg && !mls.length && cM && !cM.combo && cM.teamCap === 0 && !cM.wkRe && (gSlot(key).games || []).some(g => !g.completed)) html += `<div class="hub-sec" data-hubsec="ml"><div class="hub-h">💰 MONEYLINES</div><div class="nobets" data-hubmlnone="1" style="margin:0;">${cM.name} has no game-winner model yet (too many teams to replay the season), so there are no moneyline picks — only player props. The book's moneylines are on each game in MATCHUPS.</div></div>`; } // v6.07 — say so instead of an empty category
   if (mls.length) html += `<div class="hub-sec" data-hubsec="ml"><div class="hub-h">💰 MONEYLINES</div><div class="hub-grid">${mls.map(it => { const imp = it.odds != null ? (it.odds < 0 ? -it.odds / (-it.odds + 100) : 100 / (it.odds + 100)) : null, e = imp != null ? it.prob - imp : null; return `<div class="hub-row" data-hubgo="${reg(it)}" data-hubkind="ml">${face(it, 40)}<div style="min-width:0;flex:1;"><div class="hub-who">${esc(it.who)}</div><div class="hub-why">${esc(it.why || "")}${it.time ? " · " + timeLabel(it.time) : ""}</div>${e != null ? `<div class="hub-why">edge <b style="color:${e >= 0 ? "var(--green)" : "#ff8a96"};">${e >= 0 ? "+" : ""}${(e * 100).toFixed(1)}%</b> vs the book</div>` : ""}</div>${badge(it)}</div>`; }).join("")}</div></div>`;
   // 5 · CONSISTENCY
   const cons = [...ins, ...pool.filter(it => it.kind === "prop")].map(it => ({ it, hb: hitsOf(it) })).filter(x => x.hb && x.hb.h / x.hb.n >= 0.7).sort((a, b) => b.hb.h / b.hb.n - a.hb.h / a.hb.n || ((a.it.grade === "A" ? 0 : a.it.grade === "B" ? 1 : 2) - (b.it.grade === "A" ? 0 : b.it.grade === "B" ? 1 : 2)) || b.it.prob - a.it.prob);
   const consU = []; { const sw = new Set(); for (const x of cons) { const k2 = x.it.who + "|" + x.it.stat; if (sw.has(k2)) continue; sw.add(k2); consU.push(x); if (consU.length >= 6) break; } }
   if (consU.length) html += `<div class="hub-sec" data-hubsec="cons"><div class="hub-h">📈 CONSISTENCY <small>· cleared his number most often, last 10</small></div><div class="hub-grid">${consU.map(x => { const it = x.it; return `<div class="hub-row" data-hubgo="${reg(it)}" data-hubkind="cons">${face(it, 40)}<div style="min-width:0;flex:1;"><div class="hub-who">${esc(it.who)}${it.team ? ` <span>${esc(it.team)}</span>` : ""}</div><div class="hub-pick"><span style="color:${/^UNDER/.test(it.pick) ? "#ff8a96" : "var(--green)"};">${esc(it.pick)}</span> <em>${esc(it.stat || "")}</em></div><div class="lk-pips" data-hubpips="${x.hb.h}/${x.hb.n}" style="margin-top:4px;">${x.hb.v.slice().reverse().map(v => `<span class="${(it.over ? v > it.line : v < it.line) ? "h" : "m"}">${Number.isInteger(v) ? v : v.toFixed(1)}</span>`).join("")}<b>${x.hb.h} of ${x.hb.n}</b></div></div>${badge(it)}</div>`; }).join("")}</div></div>`;
   if (!html) return;
-  box.innerHTML = html + `<div class="hub-h" style="margin-top:6px;">ALL GAMES</div>`; root.appendChild(box);
+  { // v5.99 — mockup A's filter chips: All · Props · Moneyline · Totals · Spreads
+    const gm = pool.filter(it => it.kind === "game"), isT = it => /TOTAL|OVER\/UNDER|O\/U/i.test(it.stat + " " + it.pick), isS = it => /SPREAD|RUN LINE|PUCK LINE|LINE/i.test(it.stat) && !isT(it);
+    const tot = gm.filter(isT).sort((a, b) => b.prob - a.prob), spr = gm.filter(isS).sort((a, b) => b.prob - a.prob);
+    html += `<div class="hub-sec" data-hubsec="tot"><div class="hub-h">📊 TOTALS <small>· over/unders most likely to hit</small></div>${tot.length ? `<div class="hub-grid">${tot.map(it => row(it, reg(it))).join("")}</div>` : `<div class="hub-why" style="color:var(--dim3);">No totals on the board for ${esc((GS_CFG[key] || {}).name || key.toUpperCase())} right now.</div>`}</div>`;
+    html += `<div class="hub-sec" data-hubsec="spr"><div class="hub-h">📐 SPREADS <small>· spreads most likely to cover</small></div>${spr.length ? `<div class="hub-grid">${spr.map(it => row(it, reg(it))).join("")}</div>` : `<div class="hub-why" style="color:var(--dim3);">No spreads on the board for ${esc((GS_CFG[key] || {}).name || key.toUpperCase())} right now.</div>`}</div>`;
+    if (!/data-hubsec="ml"/.test(html)) html += `<div class="hub-sec" data-hubsec="ml"><div class="hub-h">💰 MONEYLINES</div><div class="hub-why" style="color:var(--dim3);">No moneylines on the board right now.</div></div>`;
+  }
+  const hf = ["all", "props", "ml", "tot", "spr"].indexOf(prefGet("kb_hubf")) >= 0 ? prefGet("kb_hubf") : "all"; box.dataset.hubf = hf;
+  box.innerHTML = `<div class="hubf" data-hubfbar>${[["all", "All"], ["props", "Props"], ["ml", "Moneyline"], ["tot", "Totals"], ["spr", "Spreads"]].map(([k, l]) => `<button type="button" data-hubfk="${k}"${k === hf ? ' class="on"' : ""}>${l}</button>`).join("")}</div>` + html + `<div class="hub-h" style="margin-top:6px;">ALL GAMES</div>`; root.appendChild(box);
+  box.querySelectorAll("[data-hubfk]").forEach(c9 => c9.addEventListener("click", () => { const k9 = c9.dataset.hubfk; prefSet("kb_hubf", k9); box.dataset.hubf = k9; box.querySelectorAll("[data-hubfk]").forEach(x => x.classList.toggle("on", x === c9)); }));
   box.querySelectorAll("[data-hubgo]").forEach(x => x.addEventListener("click", () => { const it = goList[+x.dataset.hubgo]; try { if (it && it.go) it.go(); } catch (e) {} }));
 }
 function renderLocks() {
@@ -6945,6 +7066,7 @@ function renderLocks() {
   { const fb = el("div"); fb.innerHTML = `<button class="whybtn" data-why style="margin:4px 0 10px;">▸ FILTERS — sport · bet type · side · price${lvActive("locks") ? " (on)" : ""}</button><div class="whybox"></div>`; fb.querySelector(".whybox").appendChild(lvFilterBar("locks", renderLocks)); root.appendChild(fb); } // v5.81 — folded away
   const locks = collectLocks();
   root.appendChild(el("div", "subhead", lvPoolNote(S._lvPool)));
+  { const xs = Object.keys(EXP_SPORTS).filter(k => (S._lvPool || []).some(L => hubMatch(L, k))); if (xs.length) root.appendChild(el("div", "subhead", `<span data-lkexp="1" style="color:var(--dim3)">🧪 Not in LOCKS: ${xs.map(k => GS_CFG[k] ? GS_CFG[k].name : k).join(", ")} — still EXPERIMENTAL; see that sport's BOARD.</span>`)); }
   if (!locks.length) {
     root.appendChild(el("div", "nobets", lvActive("locks")
       ? "Nothing fits your filter — widen the odds window, switch sports, or hit ✕ RESET."
@@ -6980,7 +7102,7 @@ function lkScore(L) { // consistency (last-10 hit rate over the pick line; game 
 }
 function lkTeam(sp, ab) { try { const A = String(ab || "").toUpperCase(); if (!A) return null; if (sp === "wnba" || sp === "WNBA") return Object.values(WS.teams || {}).find(t => t && String(t.abbr).toUpperCase() === A) || null;
     const key = sp && GS_CFG[sp] ? sp : null; if (key) return Object.values(gSlot(key).teams || {}).find(t => t && String(t.abbr).toUpperCase() === A) || null; return null; } catch (e) { return null; } }
-function lkCardHtml(o, li) {
+function lkCardHtml(o, li, opt) { opt = opt || {};
   const esc = x => String(x == null ? "" : x).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const L = o.L, okU = u => typeof u === "string" && /^https?:\/\//.test(u), pc = Math.round(L.prob * 100), pl = L.pl;
   const spK = (pl && pl.sp) || (L.sportKey && GS_CFG[L.sportKey] ? L.sportKey : L.sportKey === "WNBA" ? "wnba" : null);
@@ -7000,12 +7122,13 @@ function lkCardHtml(o, li) {
   const ring = `<div class="lk-ring" data-lkchance="${pc}" style="background:conic-gradient(${pc >= 72 ? "#34d399" : pc >= 65 ? "#22d3ee" : "#a78bfa"} ${pc * 3.6}deg, rgba(255,255,255,.07) 0);"><div><b>${pc}%</b><span>CHANCE</span></div></div>`;
   const fair = probToAmerican(Math.min(0.995, Math.max(0.005, L.prob)));
   const price = `<div class="lk-price"><span>${o.vsBook ? "BOOK <b>" + fmtML(o.book) + "</b>" : "NO BOOK LINE · vs <b>−300</b>"}</span><span>FAIR <b>${fmtML(fair)}</b></span><span class="lk-edge${o.edge >= 0.05 ? " good" : o.edge < 0 ? " bad" : ""}" data-lkedge="${(o.edge * 100).toFixed(1)}">EDGE <b>${o.edge >= 0 ? "+" : ""}${(o.edge * 100).toFixed(1)}%</b></span></div>`;
-  const badges = `${li === 0 ? '<span class="lk-b top">⚡ TOP PICK</span>' : ""}${cons ? '<span class="lk-b cons" data-lkcons="1">🔥 CONSISTENT</span>' : ""}${value ? '<span class="lk-b val" data-lkval="1">💰 VALUE</span>' : ""}`;
+  const badges = opt.tag ? `${li === 0 ? `<span class="lk-b top">${opt.top || "⚡ TOP PICK"}</span>` : ""}<span class="lk-b" data-lktier="${esc(opt.tag[0])}" style="background:${opt.tag[1]}22;color:${opt.tag[1]};box-shadow:inset 0 0 0 1px ${opt.tag[1]}77;">${esc(opt.tag[0])}</span>${cons ? '<span class="lk-b cons" data-lkcons="1">🔥 CONSISTENT</span>' : ""}`
+    : `${li === 0 ? '<span class="lk-b top">⚡ TOP PICK</span>' : ""}${cons ? '<span class="lk-b cons" data-lkcons="1">🔥 CONSISTENT</span>' : ""}${value ? '<span class="lk-b val" data-lkval="1">💰 VALUE</span>' : ""}`;
   const mu = L.mu && Math.abs(L.mu.f - 1) >= 0.01 ? ` · matchup <b style="color:${L.mu.f > 1 ? "var(--green)" : "var(--red)"};">${L.mu.f > 1 ? "+" : ""}${((L.mu.f - 1) * 100).toFixed(1)}%</b>` : "";
   return `<div class="lk-band" style="background:linear-gradient(110deg, ${col}cc, ${col}33 55%, transparent);"></div>
     <div class="lk-head"><span class="lk-sport">${esc(L.sport || "")}</span><span class="lk-type">${esc(L.type || "")}</span><span style="flex:1"></span>${badges}</div>
     <div class="lk-main">${face}<div style="min-width:0;flex:1;"><div class="lk-name">${esc(pl ? pl.name : String(L.label || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim())}</div><div class="lk-sub">${pl ? esc(pl.team || "") + " · " : ""}${String(L.sub || "").replace(/<[^>]*>/g, " ")}${mu}${L.time ? " · " + timeLabel(L.time) : ""}</div><div class="lk-pick">${pick}</div></div>${ring}</div>
-    ${pips}${price}`;
+    ${pips}${price}${opt.extra || ""}`;
 }
 
 /* ================================================================
@@ -7147,15 +7270,15 @@ function collectValue() {
   for (const f of capped.filter(l => l.edge < 3)) { if (res.length >= 8) break; res.push(f); }
   return res.slice(0, 16);
 }
-function renderValue() {
+function renderValue() { // v6.03 — same cards as LOCKS, ranked by edge
   const root = $("#tab-value"); if (!root) return;
   root.innerHTML = "";
   root.appendChild(el("div", "h1", `💎 VALUE <small>· every sport · where the models beat the market's price</small>`));
-  root.appendChild(el("div", "subhead", `LOCKS asks "what's most likely to win?" — VALUE asks "<b style="color:var(--txt)">where is the book paying too much?</b>" Edge = model probability minus the market's de-vigged probability. A +5% edge at plus money can be worth more long-run than a 75% favorite at a heavy price. Tiers: <b style="color:var(--green)">MAX ≥ 8%</b> · <b style="color:var(--gold)">STRONG ≥ 5%</b> · <b style="color:var(--blue)">VALUE ≥ 3%</b> · smaller edges show as THIN on quiet days. All pre-game, inside your odds zone. <b style="color:var(--txt)">Tap any card to drop down its full model breakdown</b> — OPEN FULL TAB inside jumps to the page.`));
+  root.appendChild(el("div", "subhead", `LOCKS asks "what's most likely to win?" — VALUE asks "<b style="color:var(--txt)">where is the book paying too much?</b>" Edge = model chance minus the market's de-vigged chance; <b style="color:var(--txt)">biggest edge first</b>. A +5% edge at plus money can beat a 75% favorite at a heavy price long-run. Pips = his last 10 when it's a prop.`));
   if (WS.loading) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">WNBA still loading (${WS.stage || "…"})…</span>`));
   const lvGenBusy2 = Object.keys(GS_CFG).filter(k => !GS_CFG[k].combo && gSlot(k).loading).map(k => GS_CFG[k].name);
   if (lvGenBusy2.length) root.appendChild(el("div", "subhead", `<span style="color:var(--gold)">Still loading: ${lvGenBusy2.join(" · ")} — their edges join automatically.</span>`));
-  root.appendChild(lvFilterBar("value", renderValue));
+  { const fb = el("div"); fb.innerHTML = `<button class="whybtn" data-why style="margin:4px 0 10px;">▸ FILTERS — sport · bet type · side · price${lvActive("value") ? " (on)" : ""}</button><div class="whybox"></div>`; fb.querySelector(".whybox").appendChild(lvFilterBar("value", renderValue)); root.appendChild(fb); }
   const vals = collectValue();
   root.appendChild(el("div", "subhead", lvPoolNote(S._lvPoolV)));
   if (!vals.length) {
@@ -7164,19 +7287,15 @@ function renderValue() {
       : "No edges vs the market right now — lines may not be posted yet (K-prop and WNBA prop edges also need book prices via the free ESPN feed or your Odds API key). Refresh closer to game time."));
     return;
   }
-  const grid = el("div", "grid wide");
+  const grid = el("div", "grid wide lk-grid");
   vals.forEach((L, li) => {
-    const col = L.edge >= 8 ? "#34d399" : L.edge >= 5 ? "#22d3ee" : L.edge >= 3 ? "#a78bfa" : "var(--dim)";
-    const tag = L.edge >= 8 ? "MAX VALUE" : L.edge >= 5 ? "STRONG" : L.edge >= 3 ? "VALUE" : "THIN";
-    const tcls = L.edge >= 8 ? "t0" : L.edge >= 5 ? "t1" : L.edge >= 3 ? "t2" : "t3";
-    const card = el("div", "bb " + tcls + (li === 0 ? " top1" : ""), `
-      <div class="bbtop"><div class="stars"><span class="conf" style="margin-left:0;color:${col}">${tag}</span>${li === 0 ? '<span class="crownchip">⚡ BEST EDGE</span>' : ""}</div>
-        <div style="display:flex;gap:6px;align-items:center;"><span class="chip">${L.sport}</span><span class="typechip" style="background:transparent;border:1px solid ${col};color:${col};">${L.type}</span></div></div>
-      <div class="bbmain"><div style="min-width:0;"><div class="bbabbr" style="font-size:22px;">${L.label}</div><div class="bbsub">${L.sub}${L.time ? " · " + timeLabel(L.time) : ""}</div></div></div>
-      <div class="bbfoot"><div><div class="lbl">${L.bigLbl}</div><div class="bignum" style="color:var(--txt);">${L.big}</div></div>
-        ${(() => { if (L.prob == null || L.odds == null) return ""; const b2 = decOdds(L.odds) - 1; if (!(b2 > 0)) return ""; const f2 = (L.prob * b2 - (1 - L.prob)) / b2; const u2 = f2 > 0 ? Math.round(f2 * 0.25 * 100) / 100 : 0; return u2 > 0 ? `<div style="text-align:center;"><div class="lbl">¼-KELLY STAKE</div><div class="bignum" style="font-size:16px;color:var(--gold);">${u2.toFixed(2)}u</div></div>` : ""; })()}
-        <div style="text-align:right;"><div class="lbl">EDGE VS MARKET</div><div class="bignum" style="color:${col};">+${L.edge.toFixed(1)}%</div></div></div>`);
-    card.style.cursor = "pointer";
+    const o = lkScore(L); o.edge = L.edge / 100; // VALUE's own number: vs the de-vigged market
+    const col = L.edge >= 8 ? "#34d399" : L.edge >= 5 ? "#22d3ee" : L.edge >= 3 ? "#a78bfa" : "#8b93a8";
+    const tag = L.edge >= 8 ? "💎 MAX VALUE" : L.edge >= 5 ? "STRONG" : L.edge >= 3 ? "VALUE" : "THIN";
+    let kelly = ""; try { if (L.prob != null && L.odds != null) { const b2 = decOdds(L.odds) - 1; if (b2 > 0) { const f2 = (L.prob * b2 - (1 - L.prob)) / b2, u2 = f2 > 0 ? Math.round(f2 * 0.25 * 100) / 100 : 0; if (u2 > 0) kelly = `<div class="lk-kelly" data-lkkelly="${u2}" style="margin-top:8px;font-size:11px;color:var(--dim);font-weight:700;">¼-KELLY STAKE <b style="color:var(--txt);">${u2}u</b></div>`; } } } catch (e) {}
+    const card = el("div", "card lk-card" + (li === 0 ? " lk-top" : ""), lkCardHtml(o, li, { top: "⚡ BEST EDGE", tag: [tag, col], extra: kelly }));
+    card.dataset.lk = "1"; card.dataset.lkval = L.edge.toFixed(1); card.style.cursor = "pointer";
+    { const leg = plLegFromLock(L), b = document.createElement("button"); b.className = "btn ghost pl-cardbtn"; b.dataset.pladd = leg.key; b.textContent = parlayHas(leg.key) ? "✓ IN PARLAY" : "+ PARLAY"; b.addEventListener("click", ev => { ev.stopPropagation(); const on = parlayToggle(leg); b.textContent = on ? "✓ IN PARLAY" : "+ PARLAY"; }); card.appendChild(b); }
     card.addEventListener("click", () => {
       const ex = card.querySelector(".lvdetail");
       if (ex) { ex.remove(); return; }
@@ -7191,6 +7310,7 @@ function renderValue() {
   });
   root.appendChild(grid);
 }
+function esc2(x) { return String(x == null ? "" : x).replace(/<[^>]*>/g, " ").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])).replace(/\s+/g, " ").trim(); }
 
 /* ---- best props (for the WNBA board strip) ---- */
 function wnbaBestProps() {
@@ -7218,7 +7338,7 @@ function wnbaBestProps() {
 /* ---- render ---- */
 function wLogo(t, size) { return t?.logo ? `<img src="${t.logo}" onerror="this.style.visibility='hidden'" style="width:${size}px;height:${size}px;object-fit:contain;flex:0 0 auto;" alt="">` : ""; }
 function renderWnbaModel(root) {
-  root.appendChild(el("div", "h1", `MY W-MODEL <small>· your own WNBA model — the sliders move the record live</small>`));
+  root.appendChild(el("div", "h1", `MY MODEL <small>· your own WNBA model — the sliders move the record live</small>`));
   root.appendChild(el("div", "subhead", `Same deal as your MLB model: decide what matters, watch the whole season re-score instantly. Your model joins the board as <b style="color:#4ade80">KEVIN'S W</b>, votes in the 5-model consensus, and gets its own card on MODEL RECORDS. All four factors are replayable walk-forward, so the record below is real — with the anti-flattery holdout line to keep it honest.`));
   const rows = WS._wkr;
   if (!rows || rows.length < 40) {
@@ -7296,7 +7416,7 @@ function renderWnbaHow(root) {
   };
   root.appendChild(el("div", "subhead", `Plain-language guide to every number on the WNBA pages — same honesty rules as the MLB side: walk-forward backtests, holdout checks, and no model gets to grade its own homework.`));
   sec("KEVIN'S W-MODEL — THE ONE YOU CONTROL", `
-    Built on the MY W-MODEL tab with four sliders, all fully replayable: <b style="color:var(--txt)">SEASON STRENGTH</b> (net points per game), <b style="color:var(--txt)">LAST-10 FORM</b> (recent scoring margin, each game weighted by opponent quality — beating good teams counts more), <b style="color:var(--txt)">BACK-TO-BACK FATIGUE</b> (fades tired legs on the second night), and <b style="color:var(--txt)">HOME COURT</b>. Drag a slider and the season record re-scores instantly, with a holdout line that can't be flattered. It appears on every game card as KEVIN'S W and votes in the consensus.`);
+    Built on the MY MODEL tab with four sliders, all fully replayable: <b style="color:var(--txt)">SEASON STRENGTH</b> (net points per game), <b style="color:var(--txt)">LAST-10 FORM</b> (recent scoring margin, each game weighted by opponent quality — beating good teams counts more), <b style="color:var(--txt)">BACK-TO-BACK FATIGUE</b> (fades tired legs on the second night), and <b style="color:var(--txt)">HOME COURT</b>. Drag a slider and the season record re-scores instantly, with a holdout line that can't be flattered. It appears on every game card as KEVIN'S W and votes in the consensus.`);
   sec("THE 4 BUILT-IN MONEYLINE MODELS", `
     <b style="color:var(--txt)">W-ELO</b> — every team has a rating that rises when they win and falls when they lose, moving more for blowouts than squeakers (margin-weighted, K=12). Home team gets +70 rating points. The gap between two ratings converts straight to a win probability.<br><br>
     <b style="color:var(--txt)">W-PYTHAG</b> — ignores wins and looks at points scored vs points allowed (exponent ${WCFG.pythExp}): outscore the league consistently and it rates you well even if you lost close ones. The two teams' expected win rates get combined into one matchup number (Log5) plus a home bump (+4.5pp).<br><br>
@@ -7346,7 +7466,7 @@ function renderWnba() {
   const bt = WS.bt;
   if (WS.view === "rec" && bt && bt.n > 0) {
     root.appendChild(el("div", "h1", `MODEL RECORDS <small>· season backtest, ${bt.n} games walk-forward</small>`));
-    root.appendChild(el("div", "subhead", `Every model predicted every game using only results from before that game, then got graded. KEVIN'S W (your sliders — tune it on MY W-MODEL), W-ELO (margin-weighted ratings, +70 home pts), W-PYTHAG (points scored/allowed, exponent ${WCFG.pythExp}, log5 + home bump), W-FORM (net points last 10 games + 2.5 home pts), and W-SHARP (auto-fitted blend — trained on the first 65%, judged on the untouched last 35%). "Always home" is the bar to beat (WNBA home teams win ~60%).`));
+    root.appendChild(el("div", "subhead", `Every model predicted every game using only results from before that game, then got graded. KEVIN'S W (your sliders — tune it on MY MODEL), W-ELO (margin-weighted ratings, +70 home pts), W-PYTHAG (points scored/allowed, exponent ${WCFG.pythExp}, log5 + home bump), W-FORM (net points last 10 games + 2.5 home pts), and W-SHARP (auto-fitted blend — trained on the first 65%, judged on the untouched last 35%). "Always home" is the bar to beat (WNBA home teams win ~60%).`));
     const pcts = k => bt[k].w + bt[k].l ? (bt[k].w / (bt[k].w + bt[k].l) * 100).toFixed(1) + "%" : "—";
     const cards = [
       ["W-ELO", bt.elo], ["W-PYTHAG", bt.pyth], ["W-FORM (LAST 10)", bt.form], ["ALWAYS PICK HOME", bt.home]
@@ -7355,7 +7475,7 @@ function renderWnba() {
     if (WS._wkr && WS._wkr.length) {
       const r = evalWCore(WS._wkr, WS.ww);
       const n = r.w + r.l + r.hw + r.hl, wW = r.w + r.hw;
-      cards.unshift(`<div class="reccard hero"><div class="recname">KEVIN'S W — YOUR WEIGHTS</div><div class="recwl">${wW}-${n - wW}</div><div class="recsub">win% <b style="color:var(--txt)">${(wW / n * 100).toFixed(1)}%</b> · holdout ${(r.hw + r.hl) ? (r.hw / (r.hw + r.hl) * 100).toFixed(1) + "%" : "—"} · tune it on MY W-MODEL</div></div>`);
+      cards.unshift(`<div class="reccard hero"><div class="recname">KEVIN'S W — YOUR WEIGHTS</div><div class="recwl">${wW}-${n - wW}</div><div class="recsub">win% <b style="color:var(--txt)">${(wW / n * 100).toFixed(1)}%</b> · holdout ${(r.hw + r.hl) ? (r.hw / (r.hw + r.hl) * 100).toFixed(1) + "%" : "—"} · tune it on MY MODEL</div></div>`);
     }
     if (WS.btBox && WS.btBox.n) {
       const built = (WS.results || []).filter(r2 => r2.id && WS.boxHist?.[r2.id]).length;
@@ -7429,7 +7549,7 @@ function renderWnba() {
     const wstCard = (nm, r2) => { const t2 = r2.w + r2.l; return `<div class="reccard"><div class="recname">${nm}</div><div class="recwl">${t2 ? r2.w + "-" + r2.l : "—"}</div><div class="recsub">${t2 ? `win% <b style="color:var(--txt)">${(r2.w / t2 * 100).toFixed(1)}%</b> at 57%+ calls` : "no qualifying calls"} · ${r2.n} predictions</div></div>`; };
     const wspk2 = wspkCached();
     root.appendChild(el("div", "recgrid", wstCard("SPREAD — CONSENSUS", wstc.sp) + wstCard("SPREAD — KEVIN'S W", wspk2) + wstCard("GAME TOTALS (O/U)", wstc.tot)));
-    root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">Two spread records because you can pick the engine: tap any game's SPREAD &amp; TOTAL panel and switch SPREAD SOURCE — the KEVIN'S W record re-scores with your MY W-MODEL sliders.</span>`));
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim)">Two spread records because you can pick the engine: tap any game's SPREAD &amp; TOTAL panel and switch SPREAD SOURCE — the KEVIN'S W record re-scores with your MY MODEL sliders.</span>`));
     const wstKey = (hasLS && localStorage.getItem("kb_wstcal")) || "sp";
     const wstMap = { sp: wstc.sp, spk: wspk2, tot: wstc.tot };
     const wstBar = el("div");
@@ -9187,10 +9307,14 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
     GX.effSch = GX.effSch || {}; const ck = o.scope + ":" + selId + ":" + (S.date || localISO(new Date())); selSch = GX.effSch[ck];
     if (!selSch) { GX.effSch[ck] = selSch = { busy: true }; const day = S.date || localISO(new Date());
       j(`https://site.api.espn.com/apis/site/v2/sports/${GS_CFG[o.scope].path}/teams/${selId}/schedule`).then(js => { let hit = null;
-        for (const ev of js && js.events || []) { if (!ev.date) continue; const dd = localISO(new Date(ev.date)); if (o.weekly ? Math.abs(new Date(ev.date) - new Date(day + "T12:00:00")) > 4 * 864e5 : dd !== day) continue;
-          const cs = (ev.competitions && ev.competitions[0] && ev.competitions[0].competitors) || [], me = cs.find(c => +(c.team && c.team.id) === selId), op = cs.find(c => c !== me);
-          if (me) { hit = { date: ev.date, home: me.homeAway === "home", opp: op && op.team ? op.team.abbreviation || op.team.shortDisplayName || "" : "" }; break; } }
-        GX.effSch[ck] = { done: true, hit }; o.rerender(); }).catch(() => { GX.effSch[ck] = { done: true, err: true }; o.rerender(); }); } }
+        let next = null; const nowT = Date.now() - 4 * 3600e3, evs = (js && js.events || []).filter(ev => ev && ev.date).sort((x, y) => new Date(x.date) - new Date(y.date));
+        for (const ev of evs) { const dd = localISO(new Date(ev.date));
+          const cs = (ev.competitions && ev.competitions[0] && ev.competitions[0].competitors) || [], me = cs.find(c => +(c.team && c.team.id) === selId), op = cs.find(c => c !== me); if (!me) continue;
+          const st = ev.competitions[0].status && ev.competitions[0].status.type, done = !!(st && st.completed);
+          const info = { date: ev.date, home: me.homeAway === "home", opp: op && op.team ? op.team.abbreviation || op.team.shortDisplayName || "" : "", oppId: op && op.team ? +op.team.id : null };
+          if (!hit && (o.weekly ? Math.abs(new Date(ev.date) - new Date(day + "T12:00:00")) <= 4 * 864e5 : dd === day)) hit = info;
+          if (!next && !done && new Date(ev.date).getTime() >= nowT) next = info; }
+        GX.effSch[ck] = { done: true, hit, next }; o.rerender(); }).catch(() => { GX.effSch[ck] = { done: true, err: true }; o.rerender(); }); } }
   const hlKey = selPair ? selPair.key : (pairs.some(p3 => p3.key === GX.effHl) ? GX.effHl : (pairs[0] && pairs[0].key)), hl = pairs.find(p3 => p3.key === hlKey) || null;
   const hlIds = sel && !selPair ? new Set([selId]) : (hl ? new Set([hl.a.id, hl.h.id]) : new Set());
   const whenOf = g3 => (g3.status === "final" ? "FINAL" : g3.status === "live" ? "LIVE" : timeLabel(g3.date));
@@ -9198,36 +9322,62 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
   const clearSel = () => { GX.effTeam = null; o.rerender(); };
   if (sel && !selPair) { // the clicked team isn't playing in this slate: show ITS numbers on top (the day's biggest differential stays below)
     const dn0 = dnOf(sel), sg0 = v => (v >= 0 ? "+" : "") + f1(v), sc = el("div", "card"); sc.dataset.effsel = String(selId); sc.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
-    sc.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">📍 SELECTED · ${selRaw || (selSch && selSch.hit) ? "PLAYS " : selSch && (selSch.busy || selSch.err) ? "" : "NO GAME "}${selSch && selSch.busy && !selRaw ? "CHECKING SCHEDULE…" : selSch && selSch.err && !selRaw ? "SCHEDULE NOT CHECKED" : o.dayLabel === "TODAY" ? "TODAY" : o.dayLabel === "THIS WEEK" ? "THIS WEEK" : "ON " + esc(o.dayLabel || "THIS DATE")}</span><button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button></div>
+    sc.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">📍 ${esc(sel.abbr)} · ${selRaw || (selSch && selSch.hit) ? "PLAYS " + (o.dayLabel === "TODAY" ? "TODAY" : o.dayLabel === "THIS WEEK" ? "THIS WEEK" : esc(o.dayLabel || "")) : selSch && selSch.busy ? "CHECKING SCHEDULE…" : selSch && selSch.next ? "NEXT GAME " + esc(new Date(selSch.next.date).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }).replace(/,/g, "").toUpperCase()) + " · " + (selSch.next.home ? "vs " : "@ ") + esc(selSch.next.opp) : selSch && selSch.err ? "SCHEDULE NOT CHECKED" : "NO MORE GAMES SCHEDULED"}</span><button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button></div>
       <div style="display:flex;align-items:center;gap:10px;margin:8px 0 4px;">${logoTagPre(sel, 34)}<span><b style="font-size:17px;">${esc(sel.abbr)}</b> <b style="color:${sel.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg0(sel.net)}</b> <span style="color:var(--dim);font-size:12px;">${esc(sel.name)}</span><br><span style="font-size:10.5px;color:var(--dim3);">#${sel.rNet} net · ${sel.w}-${sel.l} last ${sel.n}</span></span></div>
       <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">Scores <b style="color:var(--txt)">${f1(sel.off)}</b> (#${sel.rOff}) · allows <b style="color:var(--txt)">${f1(sel.def)}</b> (#${sel.rDef})${dn0 != null ? ` · vs its previous ${sel.n} games: net ${dn0 >= 0 ? "+" : ""}${f1(dn0)} (${dn0 >= 0 ? "improving" : "slipping"})` : ""}.${selRaw ? ` It plays <b style="color:var(--txt)">${+selRaw.home === selId ? "vs" : "@"} ${esc(tmAb(+selRaw.home === selId ? +selRaw.away : +selRaw.home))} · ${esc(whenOf(selRaw))}</b> — no differential because ${esc(tmAb(+selRaw.home === selId ? +selRaw.away : +selRaw.home))} doesn't have enough completed games in this window to be rated.`
       : selSch && selSch.hit ? ` ESPN's schedule lists <b style="color:var(--txt)">${esc(sel.abbr)} ${selSch.hit.home ? "vs" : "@"} ${esc(selSch.hit.opp)} · ${esc(timeLabel(selSch.hit.date))}</b>, but that game is missing from the slate this app loaded — tap Refresh; if it stays missing, ESPN's scoreboard feed is dropping it.`
-      : selSch && selSch.busy ? " Checking ESPN's schedule for this team…" : selSch && selSch.err ? " Couldn't reach ESPN's schedule to confirm whether it plays." : " No differential to show — ESPN's schedule has no game for it on this date."} The team is ringed on the chart.</div>`;
+      : selSch && selSch.busy ? " Checking ESPN's schedule for this team…" : selSch && selSch.err ? " Couldn't reach ESPN's schedule to confirm whether it plays." : selSch && selSch.next ? "" : " ESPN's schedule shows no more games for it."} The team is ringed on the chart.</div>${selSch && selSch.next && !selRaw && !selSch.hit ? (() => { // v5.98 — always show the next game
+        const nx = selSch.next, op = nx.oppId != null ? byId[nx.oppId] : null, when = new Date(nx.date).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }).replace(/,/g, "") + " · " + timeLabel(nx.date);
+        let proj = null; if (op) { try { const g0 = { home: nx.home ? selId : op.id, away: nx.home ? op.id : selId, date: nx.date, status: "up" }; proj = effProjMap(Object.assign({}, o, { games: [g0] }))[g0.away + "-" + g0.home] || null; } catch (e) {} }
+        const sgN = v => (v >= 0 ? "+" : "") + f1(v), abN = id => (byId[id] ? byId[id].abbr : String(id));
+        return `<div data-effnextgame="1" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.22);border:1px solid rgba(255,160,46,.35);">
+          <div style="font-size:9.5px;letter-spacing:1.3px;font-weight:800;color:var(--gold);">⏭ NEXT GAME · ${esc(when)}</div>
+          ${op ? `<div class="effvs" style="margin:8px 0 4px;"><span class="side">${logoTagPre(sel, 28)}<span style="min-width:0;"><b class="ab">${esc(sel.abbr)}</b> <b style="color:${sel.net >= 0 ? "var(--green)" : "var(--red)"};">${sgN(sel.net)}</b><br><span class="sub" style="font-size:10px;color:var(--dim3);">#${sel.rNet} net</span></span></span>
+            <span class="mid"><span class="big" style="font-family:var(--cond);font-weight:800;font-size:22px;color:var(--gold);">${f1(Math.abs(sel.net - op.net))}</span><br><span class="sub" style="font-size:9px;letter-spacing:1px;color:var(--dim3);font-weight:700;">PTS APART</span></span>
+            <span class="side r">${logoTagPre(op, 28)}<span style="min-width:0;"><b class="ab">${esc(op.abbr)}</b> <b style="color:${op.net >= 0 ? "var(--green)" : "var(--red)"};">${sgN(op.net)}</b><br><span class="sub" style="font-size:10px;color:var(--dim3);">#${op.rNet} net</span></span></span></div>`
+            : `<div style="font-size:12px;margin:6px 0;"><b>${esc(sel.abbr)} ${nx.home ? "vs" : "@"} ${esc(nx.opp || "TBD")}</b> <span style="color:var(--dim3);">— ${esc(nx.opp || "the opponent")} has too few results here to rate</span></div>`}
+          ${proj ? `<div style="font-size:11.5px;margin-top:4px;">${effProjBlock(proj, abN, esc)}</div>` : ""}
+          <button type="button" class="effnextbtn" data-effgoto="${esc(localISO(new Date(nx.date)))}" style="margin-top:8px;">⏭ GO TO ${esc(new Date(nx.date).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }).replace(/,/g, "").toUpperCase())}</button></div>`; })() : ""}`;
+    { const gb = sc.querySelector("[data-effgoto]"); if (gb) gb.addEventListener("click", () => { const dp = document.getElementById("datePick"); if (!dp) return; dp.value = gb.dataset.effgoto; dp.dispatchEvent(new Event("change")); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {} }); }
     sc.querySelector("[data-effclear]").addEventListener("click", clearSel);
     root.appendChild(sc);
   }
   if (hl) {
     const sg = v => (v >= 0 ? "+" : "") + f1(v), fav = hl.fav, dog = hl.dog, projAll = effProjMap(o), abOf = id => (byId[id] ? byId[id].abbr : String(id)), hlProj = projAll[hl.key] || null;
     const hlCard = el("div", "card"); hlCard.dataset.effhl = hl.key; hlCard.style.cssText = "max-width:680px;margin:0 auto 12px;padding:12px 14px;border:1px solid rgba(255,160,46,.5);background:linear-gradient(135deg,rgba(255,160,46,.13),rgba(255,160,46,.03));";
-    hlCard.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">${selPair ? `📍 ${esc(sel.abbr)}'S GAME ${o.dayLabel || "TODAY"} — #${pairs.indexOf(selPair) + 1} OF ${pairs.length} BY DIFFERENTIAL` : `🔥 BIGGEST DIFFERENTIAL ${o.dayLabel || "TODAY"}`} · ${whenOf(hl.g)} · ${esc(hl.a.abbr)} @ ${esc(hl.h.abbr)}</span>${selPair ? `<button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button>` : ""}</div>
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 6px;">
-        <span style="display:inline-flex;align-items:center;gap:8px;">${logoTagPre(fav, 34)}<span><b style="font-size:17px;">${esc(fav.abbr)}</b> <b style="color:var(--green);font-size:15px;">${sg(fav.net)}</b><br><span style="font-size:10.5px;color:var(--dim3);">#${fav.rNet} net · ${fav.w}-${fav.l} last ${fav.n}</span></span></span>
-        <span style="text-align:center;flex:1 1 90px;"><span style="font-family:var(--cond);font-weight:800;font-size:26px;color:var(--gold);">${f1(hl.diff)}</span><br><span style="font-size:9.5px;letter-spacing:1px;color:var(--dim3);font-weight:700;">POINTS APART</span></span>
-        <span style="display:inline-flex;align-items:center;gap:8px;flex-direction:row-reverse;text-align:right;">${logoTagPre(dog, 34)}<span><b style="font-size:17px;">${esc(dog.abbr)}</b> <b style="color:${dog.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg(dog.net)}</b><br><span style="font-size:10.5px;color:var(--dim3);">#${dog.rNet} net · ${dog.w}-${dog.l} last ${dog.n}</span></span></span>
+    hlCard.innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-size:10px;letter-spacing:1.4px;font-weight:800;color:var(--gold);flex:1 1 220px;">${selPair ? `📍 ${esc(sel.abbr)}'S GAME ${o.dayLabel || "TODAY"} — #${pairs.indexOf(selPair) + 1} OF ${pairs.length} BY DIFFERENTIAL` : `🔥 BIGGEST DIFFERENTIAL ${o.dayLabel || "TODAY"}`} · ${whenOf(hl.g)} · ${esc(hl.a.abbr)} @ ${esc(hl.h.abbr)}</span>${selPair ? `<button class="btn ghost" data-effclear style="padding:4px 10px;font-size:10px;">✕ BACK TO BIGGEST</button>` : ""}${pairs.length > 1 ? `<span class="effnav" data-effnav="1"><button type="button" data-effstep="-1" aria-label="Previous matchup"${pairs.indexOf(hl) <= 0 ? " disabled" : ""}>‹</button><span data-effpos>#${pairs.indexOf(hl) + 1} of ${pairs.length}</span><button type="button" data-effstep="1" aria-label="Next matchup"${pairs.indexOf(hl) >= pairs.length - 1 ? " disabled" : ""}>›</button></span>` : ""}</div>
+      <div class="effvs">
+        <span class="side">${logoTagPre(fav, 34)}<span style="min-width:0;"><b class="ab">${esc(fav.abbr)}</b> <b style="color:var(--green);font-size:15px;">${sg(fav.net)}</b><br><span class="sub" style="font-size:10.5px;color:var(--dim3);">#${fav.rNet} net · ${fav.w}-${fav.l} L${fav.n}</span></span></span>
+        <span class="mid"><span class="big" style="font-family:var(--cond);font-weight:800;font-size:26px;color:var(--gold);">${f1(hl.diff)}</span><br><span class="sub" style="font-size:9.5px;letter-spacing:1px;color:var(--dim3);font-weight:700;">PTS APART</span></span>
+        <span class="side r">${logoTagPre(dog, 34)}<span style="min-width:0;"><b class="ab">${esc(dog.abbr)}</b> <b style="color:${dog.net >= 0 ? "var(--green)" : "var(--red)"};font-size:15px;">${sg(dog.net)}</b><br><span class="sub" style="font-size:10.5px;color:var(--dim3);">#${dog.rNet} net · ${dog.w}-${dog.l} L${dog.n}</span></span></span>
       </div>
       <div style="font-size:11.5px;color:var(--dim);line-height:1.55;">${esc(fav.abbr)} scores <b style="color:var(--txt)">${f1(fav.off)}</b> (#${fav.rOff}) against a ${esc(dog.abbr)} defense allowing <b style="color:var(--txt)">${f1(dog.def)}</b> (#${dog.rDef}) · ${esc(dog.abbr)} scores <b style="color:var(--txt)">${f1(dog.off)}</b> (#${dog.rOff}) against a ${esc(fav.abbr)} defense allowing <b style="color:var(--txt)">${f1(fav.def)}</b> (#${fav.rDef}).</div>
       ${hlProj ? `<div data-effhlproj="1" style="margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.22);border:1px solid rgba(255,160,46,.3);"><span style="font-size:9.5px;letter-spacing:1.3px;font-weight:800;color:var(--gold);">MODEL PROJECTION · opponent, home, rest &amp; injuries</span>${effProjBlock(hlProj, abOf, esc)}</div>` : ""}
       <div style="font-size:10px;color:var(--dim3);margin-top:6px;">Differential = the gap between the two teams' nets over their last ${o.win === "all" ? "season" : o.win} games — a measure of form${hlProj ? "; the projection above adds home court, rest and injuries" : ", not a prediction (no home court, injuries or rest)"}. Both teams are ringed on the chart below.</div>`;
     if (selPair) { const dnS = dnOf(sel); const ex = el("div"); ex.style.cssText = "font-size:11px;color:var(--gold);margin-top:6px;font-weight:700;"; ex.textContent = `${sel.abbr}: #${sel.rNet} net${dnS != null ? ` · ${dnS >= 0 ? "▲ improving" : "▼ slipping"} ${f1(Math.abs(dnS))} vs its previous ${sel.n} games` : ""}`; hlCard.dataset.effsel = String(selId); hlCard.appendChild(ex); hlCard.querySelector("[data-effclear]").addEventListener("click", clearSel); }
     root.appendChild(hlCard);
+    if (pairs.length > 1) { // v5.96 — step through every matchup: arrows, or swipe the card
+      const step = d => { const i0 = pairs.indexOf(hl), j2 = Math.max(0, Math.min(pairs.length - 1, i0 + d)); if (j2 === i0) return; GX.effHl = pairs[j2].key; GX.effTeam = null; GX.effListFollow = true; o.rerender(); };
+      hlCard.querySelectorAll("[data-effstep]").forEach(b3 => b3.addEventListener("click", ev => { ev.stopPropagation(); step(+b3.dataset.effstep); }));
+      let sx = null, sy = null; hlCard.addEventListener("touchstart", ev => { const t0 = ev.touches && ev.touches[0]; if (t0) { sx = t0.clientX; sy = t0.clientY; } }, { passive: true });
+      hlCard.addEventListener("touchend", ev => { const t1 = ev.changedTouches && ev.changedTouches[0]; if (!t1 || sx == null) return; const dx = t1.clientX - sx, dy = t1.clientY - sy; sx = null; if (Math.abs(dx) > 55 && Math.abs(dy) < 45) step(dx < 0 ? 1 : -1); }, { passive: true });
+    }
     if (pairs.length > 1) {
       const lst = el("div", "card"); lst.style.cssText = "max-width:680px;margin:0 auto 12px;padding:4px 12px;";
-      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it</div>` + pairs.slice(0, 10).map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span><span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span>${projAll[p3.key] ? `<span data-effrowproj="${p3.key}" style="flex:0 0 100%;padding:0 0 0 28px;box-sizing:border-box;color:var(--gold);font-size:10.5px;font-weight:700;">${projAll[p3.key].margin === 0 || effHalf(projAll[p3.key].margin) === 0 ? "PK" : esc(abOf(effHalf(projAll[p3.key].margin) > 0 ? p3.g.home : p3.g.away)) + " " + effSgn(-Math.abs(effHalf(projAll[p3.key].margin)))} · O/U ${effHalf(projAll[p3.key].tot)}</span>` : ""}</div>`).join("");
-      lst.querySelectorAll("[data-effgame]").forEach(r3 => r3.addEventListener("click", () => { GX.effHl = r3.dataset.effgame; GX.effTeam = null; o.rerender(); }));
+      lst.innerHTML = `<div style="font-size:10px;letter-spacing:1.2px;font-weight:800;color:var(--dim3);padding:8px 0 4px;">ALL ${pairs.length} GAMES ${o.dayLabel || "TODAY"} BY DIFFERENTIAL — tap one to highlight it${pairs.length > 8 ? " · scroll for more" : ""}</div>${pairs.length > 12 ? `<input class="efffind" data-efffind type="search" placeholder="Find a team…" autocomplete="off" value="${esc(GX.effFind || "")}">` : ""}<div class="effglist" data-effglist>` + pairs.map((p3, i) => `<div data-effgame="${p3.key}" style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:6px 0;border-top:1px solid var(--line2, #1c2230);cursor:pointer;${p3.key === hlKey ? "background:rgba(255,160,46,.07);" : ""}"><span style="width:20px;color:var(--dim3);font-weight:800;">${i + 1}</span>${logoTagPre(p3.a, 20)}<b>${esc(p3.a.abbr)}</b><span style="color:var(--dim3);">@</span>${logoTagPre(p3.h, 20)}<b>${esc(p3.h.abbr)}</b><span style="flex:1"></span><span style="color:var(--dim3);font-size:10.5px;">${whenOf(p3.g)}</span><span style="width:56px;text-align:right;font-family:var(--cond);font-weight:800;font-size:15px;color:${i === 0 ? "var(--gold)" : "var(--txt)"};">${f1(p3.diff)}</span>${projAll[p3.key] ? `<span data-effrowproj="${p3.key}" style="flex:0 0 100%;padding:0 0 0 28px;box-sizing:border-box;color:var(--gold);font-size:10.5px;font-weight:700;">${projAll[p3.key].margin === 0 || effHalf(projAll[p3.key].margin) === 0 ? "PK" : esc(abOf(effHalf(projAll[p3.key].margin) > 0 ? p3.g.home : p3.g.away)) + " " + effSgn(-Math.abs(effHalf(projAll[p3.key].margin)))} · O/U ${effHalf(projAll[p3.key].tot)}</span>` : ""}</div>`).join("") + `<div data-effnone style="display:none;padding:10px 0;color:var(--dim3);font-size:12px;">No game matches.</div></div>`;
+      lst.querySelectorAll("[data-effgame]").forEach(r3 => { const pp = pairs.find(x => x.key === r3.dataset.effgame); r3.dataset.efftxt = pp ? [pp.a.abbr, pp.h.abbr, pp.a.name, pp.h.name].join(" ").toLowerCase() : "";
+        r3.addEventListener("click", () => { const gl = lst.querySelector("[data-effglist]"); GX.effListTop = gl ? gl.scrollTop : 0; GX.effHl = r3.dataset.effgame; GX.effTeam = null; o.rerender(); try { const c2 = document.querySelector("[data-effhl]"); if (c2 && c2.getBoundingClientRect().top < 0) c2.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {} }); });
+      const fi = lst.querySelector("[data-efffind]"), applyFind = () => { const q = (GX.effFind || "").trim().toLowerCase(); let n2 = 0; lst.querySelectorAll("[data-effgame]").forEach(r3 => { const okR = !q || r3.dataset.efftxt.indexOf(q) >= 0; r3.style.display = okR ? "flex" : "none"; if (okR) n2++; }); const no = lst.querySelector("[data-effnone]"); if (no) no.style.display = n2 ? "none" : "block"; };
+      if (fi) fi.addEventListener("input", () => { GX.effFind = fi.value; applyFind(); });
+      applyFind();
       root.appendChild(lst);
+      const gl = lst.querySelector("[data-effglist]"); if (gl) { if (GX.effListFollow) { GX.effListFollow = false; const rowH = lst.querySelector(`[data-effgame="${hlKey}"]`); if (rowH) gl.scrollTop = Math.max(0, rowH.offsetTop - gl.offsetTop - 60); } else if (GX.effListTop) gl.scrollTop = GX.effListTop; }
     }
   } else if (o.games && o.games.length === 0) {
-    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3);display:block;max-width:680px;margin:0 auto 8px;">No games ${o.dayLabel === "TODAY" ? "today" : "on " + (o.dayLabel || "this date")} — the biggest-differential highlight appears on a game day.</span>`));
+    root.appendChild(el("div", "subhead", `<span style="color:var(--dim3);display:block;max-width:680px;margin:0 auto 8px;">No games ${o.dayLabel === "TODAY" ? "today" : "on " + (o.dayLabel || "this date")} — the matchup card and the list of every game appear on a game day.</span>`));
+    const nx = el("div"); nx.style.cssText = "max-width:680px;margin:0 auto 14px;"; nx.innerHTML = `<button type="button" class="effnextbtn" data-effnext>⏭ SHOW THE NEXT GAME DAY'S MATCHUPS</button>`;
+    nx.querySelector("[data-effnext]").addEventListener("click", () => { const b5 = document.getElementById("nextDayBtn"); if (b5) b5.click(); });
+    root.appendChild(nx);
   }
   const logoTag = (r, px) => (r.logo ? `<img src="${esc(r.logo)}" onerror="this.style.visibility='hidden'" style="width:${px}px;height:${px}px;object-fit:contain;border-radius:50%;background:rgba(255,255,255,.94);padding:2px;box-sizing:border-box;flex:0 0 auto;" alt="">` : `<span style="width:${px}px;height:${px}px;border-radius:50%;background:${r.color};color:#fff;font-size:${Math.round(px * 0.36)}px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;">${esc(String(r.abbr).slice(0, 3))}</span>`);
   const byNet = rows.slice().sort((a, b) => a.rNet - b.rNet), top3 = byNet.slice(0, 3), worst = byNet[byNet.length - 1];
@@ -9368,7 +9518,7 @@ function effRender(root, o) { // o: { unit, rows, lg, win, rerender, scope, dayL
     return `<tr data-effrow="${r.id}" style="cursor:pointer;border-top:1px solid var(--line2, #1c2230);"><td style="padding:7px 6px;color:var(--dim3);font-weight:800;">${i + 1}</td><td style="padding:7px 6px;font-weight:700;"><span style="display:inline-flex;align-items:center;gap:8px;">${logoTag(r, 20)}<span>${esc(r.abbr)} <span style="color:var(--dim);font-weight:500;font-size:11px;">${esc(r.name)}</span></span></span></td>
       <td style="padding:7px 6px;text-align:right;${sortK === "off" ? "color:var(--gold);font-weight:800;" : ""}">${f1(r.off)}</td><td style="padding:7px 6px;text-align:right;${sortK === "def" ? "color:var(--gold);font-weight:800;" : ""}">${f1(r.def)}</td><td style="padding:7px 6px;text-align:right;font-weight:800;color:${r.net >= 0 ? "var(--green)" : "var(--red)"};">${r.net >= 0 ? "+" : ""}${f1(r.net)}</td>
       <td style="padding:7px 6px;text-align:right;color:var(--dim);">${r.w}-${r.l}</td><td style="padding:7px 6px;text-align:right;color:${dn == null ? "var(--dim3)" : dn >= 0 ? "var(--green)" : "var(--red)"};">${dn == null ? "—" : (dn >= 0 ? "▲ " : "▼ ") + f1(Math.abs(dn))}</td></tr>`; }).join("");
-  const tbl = el("div", "card"); tbl.style.cssText = "max-width:680px;margin:0 auto;padding:6px 10px;overflow-x:auto;";
+  const tbl = el("div", "card" + (rows.length > 30 ? " efftbl" : "")); tbl.style.cssText = "max-width:680px;margin:0 auto;padding:0 10px 6px;overflow-x:auto;";
   tbl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;"><thead><tr style="font-size:10px;letter-spacing:1px;"><th style="text-align:left;padding:6px;color:var(--dim3);">#</th><th style="text-align:left;padding:6px;color:var(--dim3);">TEAM</th>${th("off", "OFF", "right")}${th("def", "DEF", "right")}${th("net", "NET", "right")}${th("wl", "W-L", "right")}${th("trend", "TREND", "right")}</tr></thead><tbody>${trs}</tbody></table>`;
   tbl.querySelectorAll("[data-effrow]").forEach(tr => tr.addEventListener("click", () => show(tr.dataset.effrow)));
   root.appendChild(tbl);
@@ -9485,6 +9635,15 @@ const dvpPath = sp => (sp === "wnba" ? "basketball/wnba" : GS_CFG[sp].path);
 function dvpSync(sp) { if (sp !== "wnba") return; const s = gSlot("wnba"); s.loaded = !!WS.loaded; s.teams = WS.teams || {}; s.results = WS.results || []; s.games = WS.games || []; }
 const dvpVisible = sp => (sp === "wnba" ? APP_SPORT === "wnba" && WS.view === "dvp" : GX.cur === sp && (GX.view === "dvp" || GX.view === "ins" || GX.view === "board"));
 const dvpRepaint = sp => { try { if (sp === "wnba") renderWnba(); else renderGen(); } catch (e) {} };
+async function dvpDepthC(sp, tid, D) { // v6.08 — ESPN rosters list some true centers as "F" (Wembanyama). The team's own DEPTH CHART is the tiebreak:
+  // a player becomes C only when his best (lowest) depth-chart rank is at C — stretch bigs ranked higher at SF/PF (Markkanen, Durant) stay forwards
+  const d0 = new Date((S.date || localISO(new Date())) + "T12:00:00"), yr = d0.getMonth() >= 8 ? d0.getFullYear() + 1 : d0.getFullYear();
+  const js = await j(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/${sp}/seasons/${yr}/teams/${tid}/depthcharts`);
+  const P = js?.items?.[0]?.positions; if (!P || !P.c) return 0; const best = {}; let n = 0;
+  for (const k in P) for (const a of P[k]?.athletes || []) { const m = String(a?.athlete?.$ref || "").match(/athletes\/(\d+)/); if (!m || !isFinite(+a.rank)) continue; const b = best[m[1]] = best[m[1]] || { c: Infinity, o: Infinity }; if (k === "c") b.c = Math.min(b.c, +a.rank); else b.o = Math.min(b.o, +a.rank); }
+  for (const id in best) { const b = best[id], cur = D.pos[id]; if (b.c < b.o && cur && cur !== "C" && /^(F|PF|F-?C|C-?F)$/.test(cur)) { D.pos[id] = "C"; n++; } }
+  return n;
+}
 async function dvpRosters(sp) {
   const s = gSlot(sp), D = s.dvp, base = `https://site.api.espn.com/apis/site/v2/sports/${dvpPath(sp)}`, ids = Object.keys(s.teams || {});
   for (let i = 0; i < ids.length; i += 6) {
@@ -9494,6 +9653,7 @@ async function dvpRosters(sp) {
         const take = a => { const ab = dvpPosNorm(sp, a?.position?.abbreviation); if (a?.id != null && ab) D.pos[String(a.id)] = ab; };
         for (const g of js?.athletes || []) { if (Array.isArray(g.items)) g.items.forEach(take); else take(g); }
       } catch (e) {}
+      if (sp === "nba") try { await dvpDepthC(sp, id, D); } catch (e) {}
     }));
   }
   D.posAt = Date.now(); if (Object.keys(D.pos).length) kbSet("kb_dvppos_" + sp, JSON.stringify({ t: D.posAt, pos: D.pos }));
@@ -9769,7 +9929,7 @@ function renderDvp(root, sp) {
       return `The ${esc(def)} allow the ${hotPill(c3.dhot, c3.tough, (c3.rainbow && c3.over))} ${esc(st.length <= 4 ? st.toUpperCase() : st.toLowerCase())}${pos ? " to " + esc(pos) : ""}`; };
     const avatar = (c3, sz, badge) => { sz = sz || 44; if (badge === undefined) badge = true; const t = teamByAb[String(c3.offAb || "").toUpperCase()], col = t && /^#[0-9a-f]{3,8}$/i.test(t.color || "") ? t.color : "#2a3342", ini = esc(String(c3.p.name || "?").split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase());
       return `<div style="position:relative;flex:0 0 ${sz}px;width:${sz}px;height:${sz}px;"><div style="position:relative;width:${sz}px;height:${sz}px;border-radius:50%;overflow:hidden;background:${col};display:flex;align-items:center;justify-content:center;font-family:var(--cond);font-weight:800;font-size:${Math.round(sz / 3)}px;color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.06);"><span>${ini}</span>${urlOk(c3.p.hs) ? `<img data-hs="1" src="${esc(c3.p.hs)}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:top;background:${col};" onerror="this.remove()">` : ""}</div>${badge && t && urlOk(t.logo) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:20px;height:20px;border-radius:50%;background:#0d1018;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 1.5px #0d1018;">${logoOf(t, 16)}</div>` : ""}</div>`; };
-    const chanceBadge = c3 => { const pc = Math.round(c3.chance * 100), rb = c3.rainbow && c3.over, good = !c3.weak && c3.chance >= 0.6, bg = rb ? "linear-gradient(135deg,#ff4757,#ffa502,#34d399,#1e90ff,#a55eea)" : good ? "rgba(52,211,153,.16)" : c3.weak ? "rgba(255,255,255,.05)" : "rgba(91,157,255,.12)", fg = rb ? "#0b0e14" : good ? "var(--green)" : c3.weak ? "var(--dim3)" : "var(--txt)";
+    const chanceBadge = c3 => { const pc = Math.round(c3.chance * 100), rb = c3.rainbow && c3.over, good = !c3.weak && c3.chance >= 0.6, bg = rb ? "linear-gradient(135deg,#f6dc8a,#d4a53c 45%,#f3d27a 70%,#b8862b)" : good ? "rgba(52,211,153,.16)" : c3.weak ? "rgba(255,255,255,.05)" : "rgba(91,157,255,.12)", fg = rb ? "#0b0e14" : good ? "var(--green)" : c3.weak ? "var(--dim3)" : "var(--txt)";
       return `<div data-chance="${pc}" style="flex:0 0 auto;min-width:58px;text-align:center;border-radius:12px;padding:6px 8px;background:${bg};${good && !rb ? "box-shadow:inset 0 0 0 1px rgba(52,211,153,.35);" : ""}"><div style="font-family:var(--cond);font-weight:900;font-size:22px;line-height:1;color:${fg};">${pc}%</div><div style="font-size:8.5px;letter-spacing:1px;font-weight:800;color:${rb ? "#0b0e14" : "var(--dim3)"};margin-top:2px;">CHANCE</div></div>`; };
     const plOf = c3 => plMini(plLegProp(sp, (GS_CFG[sp] ? (GS_CFG[sp].emoji || "") + " " + GS_CFG[sp].name : "🏀 WNBA"), c3.p, c3.k, c3.stat, c3.over, c3.line, c3.chance));
     const rowHtml = c3 => `<div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}"${c3.rainbow && c3.over ? ' data-rainbow="1" class="kb-rbrow"' : ""} style="display:flex;align-items:center;gap:12px;padding:10px 6px 10px ${c3.rainbow && c3.over ? 12 : 6}px;border-top:1px solid var(--line2, #1c2230);cursor:pointer;border-radius:10px;${c3.weak ? "opacity:.62;" : ""}">${avatar(c3)}<div style="min-width:0;flex:1;">
@@ -9789,7 +9949,7 @@ function renderDvp(root, sp) {
       const pick = a => a.sort((x, y) => topRank(x.c3, y.c3)).slice(0, 5);
       // v5.77 — compact row for the board: small photo · name + game · the call · one-line reason · chance badge
       const shortWhy = c3 => { const def = titleCase(String(c3.dpre || "").replace(/\s*ALLOWS?\s*$/i, "").trim()), m = String(c3.dpost || "").match(/^\s*(.*?)\s+TO\s+(\S+)\s*$/i), st = m ? m[1] : "", pos = m ? (POSW[m[2].toUpperCase()] || m[2]) : ""; return `${esc(def)} allow ${hotPill(c3.dhot, c3.tough, (c3.rainbow && c3.over))} ${esc(st.length <= 4 ? st.toUpperCase() : st.toLowerCase())}${pos ? " to " + esc(pos) : ""}`; };
-      const miniBadge = (pc, tone) => `<div data-chance="${pc}" style="flex:0 0 auto;min-width:46px;text-align:center;border-radius:10px;padding:4px 6px;background:${tone === "rb" ? "linear-gradient(135deg,#ff4757,#ffa502,#34d399,#1e90ff,#a55eea)" : tone === "good" ? "rgba(52,211,153,.16)" : tone === "weak" ? "rgba(255,255,255,.05)" : "rgba(91,157,255,.12)"};"><div style="font-family:var(--cond);font-weight:900;font-size:17px;line-height:1;color:${tone === "rb" ? "#0b0e14" : tone === "good" ? "var(--green)" : tone === "weak" ? "var(--dim3)" : "var(--txt)"};">${pc}%</div><div style="font-size:7.5px;letter-spacing:.8px;font-weight:800;color:${tone === "rb" ? "#0b0e14" : "var(--dim3)"};">CHANCE</div></div>`;
+      const miniBadge = (pc, tone) => `<div data-chance="${pc}" style="flex:0 0 auto;min-width:46px;text-align:center;border-radius:10px;padding:4px 6px;background:${tone === "rb" ? "linear-gradient(135deg,#f6dc8a,#d4a53c 45%,#f3d27a 70%,#b8862b)" : tone === "good" ? "rgba(52,211,153,.16)" : tone === "weak" ? "rgba(255,255,255,.05)" : "rgba(91,157,255,.12)"};"><div style="font-family:var(--cond);font-weight:900;font-size:17px;line-height:1;color:${tone === "rb" ? "#0b0e14" : tone === "good" ? "var(--green)" : tone === "weak" ? "var(--dim3)" : "var(--txt)"};">${pc}%</div><div style="font-size:7.5px;letter-spacing:.8px;font-weight:800;color:${tone === "rb" ? "#0b0e14" : "var(--dim3)"};">CHANCE</div></div>`;
       const miniRow = (c3, g, call, sub, pc, tone, attrs) => `<div data-dvptop="1"${attrs || ""}><div data-dvpprop="${c3.k}" data-dvppid="${c3.p.id}"${c3.rainbow && c3.over ? ' data-rainbow="1" class="kb-rbrow"' : ""} style="display:flex;align-items:center;gap:9px;padding:7px 4px 7px ${c3.rainbow && c3.over ? 10 : 4}px;border-top:1px solid var(--line2, #1c2230);cursor:pointer;border-radius:8px;${c3.weak ? "opacity:.62;" : ""}">${avatar(c3, 32, false)}<div style="min-width:0;flex:1;"><div style="font-size:12.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c3.p.name)} <span style="font-size:9.5px;font-weight:700;color:var(--dim3);letter-spacing:.4px;">${gTag(g)}</span></div><div style="font-family:var(--cond);font-weight:800;font-size:14.5px;line-height:1.25;">${call}</div><div style="font-size:10.5px;color:var(--dim);line-height:1.45;">${sub}</div></div>${miniBadge(pc, tone)}${attrs && /data-dvpalt/.test(attrs) ? "" : plOf(c3)}</div></div>`;
       const callOf = (over, L, stat) => `<span style="color:${over ? "var(--green)" : "var(--red)"};">${over ? "OVER" : "UNDER"} ${L}</span> <span style="color:var(--dim);font-size:12px;">· ${esc(stat)}</span>`;
       const toneOf = c3 => (c3.rainbow && c3.over) ? "rb" : (!c3.weak && c3.chance >= 0.6) ? "good" : c3.weak ? "weak" : "mid";
@@ -9970,11 +10130,16 @@ function genSpreadCall(sub, g, line) {
   if (Math.abs(line) > Math.abs(mu) + 0.8 * sig || Math.abs(line) > 2.8 * sig) return { off: true, mu, sig };
   return { off: false, mu, sig, pc: calApply("g:" + sub + ":sp", 1 - phi(((-line) - mu) / sig)) };
 }
+async function pbAll(url) { // v6.06 — ESPN's propBets feed is paged (pageCount); read every page, not just the first 300 lines
+  const first = await j(url + "&page=1"); if (!first || !Array.isArray(first.items)) return first; const items = first.items.slice();
+  for (let pg = 2; pg <= Math.min(8, first.pageCount || 1); pg++) { try { const d = await j(url + "&page=" + pg); if (!d || !Array.isArray(d.items)) break; items.push(...d.items); } catch (e) { break; } }
+  return { ...first, items };
+}
 /* v5.86 — REAL BOOK PROP LINES for the ESPN sports: DraftKings via ESPN core propBets (free, no key), every page, matched by athlete id */
 const GPB_TYPES = {
   nba: { PTS: /^total points$/i, REB: /^total rebounds$/i, AST: /^total assists$/i, TPM: /^total 3-point field goals$/i, PRA: /^total points,? rebounds,? and assists$/i, PR: /^total points and rebounds$/i, RA: /^total assists and rebounds$/i, PA: /^total points and assists$/i },
   nhl: { SOG: /^total shots on goal$/i, PTS: /^total points$/i, G: /^total goals$/i },
-  nfl: { PASSYDS: /^total passing yards$/i, RUSHYDS: /^total rushing yards$/i, RECYDS: /^total receiving yards$/i, REC: /^total receptions$/i, PASSCMP: /^total (passing )?completions$/i, PASSTD: /^total passing touchdowns$/i, RUSHATT: /^total rushing attempts$/i }
+  nfl: { PASSYDS: /^total passing yards$/i, RUSHYDS: /^total rushing yards$/i, RECYDS: /^total receiving yards$/i, REC: /^total receptions$/i, PASSCMP: /^total pass(ing)? completions$/i, PASSTD: /^total passing touchdowns$/i, RUSHATT: /^total (rushing attempts|carries)$/i } // v6.04 — names checked live on SNF MIN-SF; NFL suffixes " (incl. overtime)", stripped below
 };
 GPB_TYPES.cbb = GPB_TYPES.nba; GPB_TYPES.cfb = GPB_TYPES.nfl;
 function gBook(sp, k, pid) { try { const b = gSlot(sp).pbook, e = b && b.lines && b.lines[k] && b.lines[k][String(pid)]; return e && isFinite(e.line) ? e : null; } catch (e2) { return null; } }
@@ -9990,7 +10155,7 @@ async function gpbLoad(sp, force) {
   b.busy = true; const parts = cfg.path.split("/"), lines = {}, nv = x => (x == null || x === "" ? NaN : +x); let n = 0, ok = 0;
   await Promise.all(evs.map(async g => { try { for (let pg = 1; pg <= 8; pg++) {
     const d = await j(`https://sports.core.api.espn.com/v2/sports/${parts[0]}/leagues/${parts[1]}/events/${g.id}/competitions/${g.id}/odds/100/propBets?limit=300&page=${pg}`); if (!d || !Array.isArray(d.items)) break; ok++;
-    for (const it of d.items) { const tn = (it.type && it.type.name) || ""; let k = null; for (const kk in T) if (T[kk].test(tn)) { k = kk; break; } if (!k) continue;
+    for (const it of d.items) { const tn = ((it.type && it.type.name) || "").replace(/\s*\(incl\.[^)]*\)\s*$/i, "").trim(); let k = null; for (const kk in T) if (T[kk].test(tn)) { k = kk; break; } if (!k) continue;
       const m = ((it.athlete && it.athlete.$ref) || "").match(/athletes\/(\d+)/); if (!m) continue;
       const line = nv(it.current && it.current.target && it.current.target.value); if (!isFinite(line) || line <= 0) continue;
       const op = nv(it.open && it.open.target && it.open.target.value), L = (lines[k] = lines[k] || {});
@@ -10238,7 +10403,7 @@ function renderGen() {
       root.appendChild(lb);
     }
     const winE = effWin(), bE = effBuild(sE.results || [], sE.teams || {}, winE);
-    const dayISO = S.date || localISO(new Date()); let dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && localISO(new Date(g3.date)) === dayISO), dayLabel = dayISO === localISO(new Date()) ? "TODAY" : dayISO;
+    const dayISO = S.date || localISO(new Date()); let dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && localISO(new Date(g3.date)) === dayISO), dayLabel = dayISO === localISO(new Date()) ? "TODAY" : new Date(dayISO + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }).replace(/,/g, "").toUpperCase();
     if (!dayGames.length && cE.weekly) { dayGames = (sE.games || []).filter(g3 => g3.home && g3.away && !g3.completed); dayLabel = "THIS WEEK"; } // a weekly sport on an off day: the week's biggest mismatch
     effRender(root, { teams: sE.teams || {}, results: sE.results || [], weekly: !!cE.weekly, unit: cE.soccer || lgE === "nhl" ? "Goals" : "Points", rows: bE.rows, lg: bE.lg, win: winE, rerender: renderGen, scope: lgE, note: genCoverageNote(lgE), dayLabel, games: sE.loaded ? dayGames.map(g3 => ({ home: +g3.home.id, away: +g3.away.id, date: g3.date, status: g3.completed ? "final" : g3.live ? "live" : "up", spread: g3.spread, total: g3.total })) : null });
     return;
@@ -10879,14 +11044,47 @@ function switchTab(name) {
 }
 /* ---- sport menu (MLB ⇄ WNBA) ---- */
 let APP_SPORT = "mlb";
-const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["parlay", "🎟 PARLAY"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["nrfi", "NRFI/YRFI"], ["eff", "EFFICIENCY"], ["rec", "RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
-const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["parlay", "🎟 PARLAY"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:dvp", "DEF VS POS"], ["wnba:eff", "EFFICIENCY"], ["wnba:model", "MY W-MODEL"], ["wnba:rec", "MODEL RECORDS"], ["wnba:how", "HOW IT WORKS"]];
+const MLB_TABS = [["board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["parlay", "🎟 PARLAY"], ["ks", "STRIKEOUTS"], ["hr", "HOME RUNS"], ["hits", "HITS"], ["tb", "TOT BASES"], ["hrr", "H+R+RBI"], ["nrfi", "NRFI/YRFI"], ["eff", "EFFICIENCY"], ["rec", "MODEL RECORDS"], ["model", "MY MODEL"], ["how", "HOW IT WORKS"]];
+const WNBA_TABS = [["wnba:board", "BOARD"], ["locks", "🔒 LOCKS"], ["value", "💎 VALUE"], ["parlay", "🎟 PARLAY"], ["wnba:props:PTS", "POINTS"], ["wnba:props:REB", "REBOUNDS"], ["wnba:props:AST", "ASSISTS"], ["wnba:props:3PM", "3-POINTERS"], ["wnba:props:PRA", "COMBOS"], ["wnba:dvp", "DEF VS POS"], ["wnba:eff", "EFFICIENCY"], ["wnba:rec", "MODEL RECORDS"], ["wnba:model", "MY MODEL"], ["wnba:how", "HOW IT WORKS"]];
+function bnavRender(tabs, act) { // v5.99 — phone bottom bar (mockup A): BOARD · MATCHUPS · INSIGHTS · PARLAY · MORE, built from this sport's own tabs
+  const nav = document.getElementById("bnav"); if (!nav) return;
+  const has = k => tabs.some(t => t[0] === k), first = k => (tabs.find(t => k.test(t[0])) || [])[0];
+  const items = [["⚡", "BOARD", tabs[0][0]], ["🛡", "MATCHUPS", first(/:dvp$/) || first(/:eff$|^eff$/)], ["💡", "INSIGHTS", first(/:ins$/) || (has("locks") ? "locks" : null)], ["🎟", "PARLAY", has("parlay") ? "parlay" : null]].filter(x => x[2]);
+  if (items[2] && items[2][2] === "locks") { items[2][0] = "🔒"; items[2][1] = "LOCKS"; }
+  const inBar = items.some(x => x[2] === act);
+  nav.innerHTML = items.map(([ic, l, k]) => `<button type="button" data-bnav="${k}"${k === act ? ' class="on"' : ""}><i>${ic}</i>${l}</button>`).join("") + `<button type="button" data-bnavmore="1"${inBar ? "" : ' class="on"'}><i>☰</i>MORE</button>`;
+  nav.querySelectorAll("[data-bnav]").forEach(b7 => b7.addEventListener("click", () => { selectTab(b7.dataset.bnav); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {} }));
+  nav.querySelector("[data-bnavmore]").addEventListener("click", () => bnavMore(tabs, act));
+}
+function bnavMore(tabs, act) { // every tab of this sport + Auto, as a sheet from the bottom
+  document.querySelectorAll(".bsheet").forEach(x => x.remove());
+  const on = hasLS && localStorage.getItem("kb_autoref") === "1", sh = document.createElement("div"); sh.className = "bsheet";
+  sh.innerHTML = `<div class="in"><div style="display:flex;align-items:center;"><b style="font-family:var(--cond);font-size:15px;letter-spacing:1px;">ALL SECTIONS</b><span style="flex:1"></span><button type="button" data-bclose class="hbtn" style="width:34px;height:34px;padding:0;justify-content:center;">✕</button></div>
+    <div class="grid">${tabs.map(([k, l]) => `<button type="button" data-bgo="${k}"${k === act ? ' class="on"' : ""}>${l}</button>`).join("")}</div>
+    <button type="button" data-bauto class="hbtn" style="margin-top:12px;width:100%;justify-content:center;height:42px;${on ? "background:linear-gradient(135deg,#34d399,#1f9f74);color:#07101f;border-color:transparent;" : ""}">⏱ Auto-refresh ${on ? "ON" : "OFF"}</button></div>`;
+  sh.addEventListener("click", ev => { if (ev.target === sh || ev.target.closest("[data-bclose]")) sh.remove(); });
+  sh.querySelectorAll("[data-bgo]").forEach(b8 => b8.addEventListener("click", () => { sh.remove(); selectTab(b8.dataset.bgo); try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch (e) {} }));
+  sh.querySelector("[data-bauto]").addEventListener("click", () => { sh.remove(); const ab = document.getElementById("autoRefBtn"); if (ab) ab.click(); });
+  document.body.appendChild(sh);
+}
 function renderTabs(active) {
   const bar = document.querySelector(".tabs"); if (!bar) return;
   const tabs = APP_SPORT === "mlb" ? MLB_TABS : APP_SPORT === "wnba" ? WNBA_TABS : APP_SPORT === "ten" ? [["ten:board", "BOARD"], ["ten:games", "TOTAL GAMES"], ["ten:rec", "MODEL RECORDS"], ["ten:how", "HOW IT WORKS"]] : genTabs(APP_SPORT);
   const act = active ?? tabs[0][0];
-  bar.innerHTML = tabs.map(([k, l]) => `<div class="tab${act === k ? " active" : ""}" data-tab="${k}">${l}</div>`).join("");
-  bar.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+  // v6.01 — the stat tabs fold into one PROPS tab; the stats become chips under it
+  const isP = k => /^gen:pstat:|^wnba:props:/.test(k) || (APP_SPORT === "mlb" && ["ks", "hr", "hits", "tb", "hrr"].indexOf(k) >= 0);
+  const ptabs = tabs.filter(t => isP(t[0])); let main = tabs, pk = null;
+  if (ptabs.length >= 2) { GX._pLast = GX._pLast || {}; if (isP(act)) GX._pLast[APP_SPORT] = act; pk = GX._pLast[APP_SPORT] && ptabs.some(t => t[0] === GX._pLast[APP_SPORT]) ? GX._pLast[APP_SPORT] : ptabs[0][0];
+    const i0 = tabs.findIndex(t => isP(t[0])); main = tabs.filter(t => !isP(t[0])); main.splice(i0, 0, [pk, "🎯 PROPS", true]); }
+  bar.innerHTML = main.map(([k, l, pr]) => `<div class="tab${(pr ? isP(act) : act === k) ? " active" : ""}" data-tab="${k}"${pr ? ' data-proptab="1"' : ""}>${l}</div>`).join("");
+  bar.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => selectTab(t.dataset.proptab ? ((GX._pLast || {})[APP_SPORT] || t.dataset.tab) : t.dataset.tab)));
+  let sb = document.querySelector(".subtabs"); if (!sb) { sb = document.createElement("div"); sb.className = "tabs subtabs"; bar.parentNode.insertBefore(sb, bar.nextSibling); }
+  const tc = l => String(l).split(" ").map(w => w.split("-").map(p => /^[A-Z]{3,}$/.test(p) && ["PRA", "RBI", "SOG", "TPM"].indexOf(p) < 0 ? p[0] + p.slice(1).toLowerCase() : p).join("-")).join(" ");
+  sb.innerHTML = ptabs.length >= 2 ? ptabs.map(([k, l]) => `<div class="tab${act === k ? " active" : ""}" data-tab="${k}">${tc(l)}</div>`).join("") : "";
+  sb.classList.toggle("off", !(ptabs.length >= 2 && isP(act)));
+  sb.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+  try { const a2 = sb.querySelector(".tab.active"); if (a2 && sb.scrollWidth > sb.clientWidth) sb.scrollLeft = Math.max(0, a2.offsetLeft - (sb.clientWidth - a2.offsetWidth) / 2); } catch (e) {}
+  try { bnavRender(main.map(t => [t[0], t[1]]), isP(act) && pk ? pk : act); } catch (e) {}
   try { const a = bar.querySelector(".tab.active"); if (a && bar.scrollWidth > bar.clientWidth) { const want = a.offsetLeft - (bar.clientWidth - a.offsetWidth) / 2; bar.scrollTo ? bar.scrollTo({ left: Math.max(0, want), behavior: "smooth" }) : (bar.scrollLeft = Math.max(0, want)); } } catch (e) {} // v5.72 — phone: bring the lit tab into view
 }
 function motionEnter() { // v5.69 — the entrance animation runs ONLY on a tab open / sport switch (body.m-enter for ~1.2 s), never on the background repaints while data loads
@@ -11060,13 +11258,24 @@ if (typeof document !== "undefined") {
 }
 const DEFAULT_START_SPORT = "nba"; // what the app opens on until you pick something else in the footer
 function startSportPref() { // saved choice → a real sport id; anything unknown falls back to the default (never throws)
-  const ok = id => id && (GS_CFG[id] || id === "mlb" || id === "wnba" || id === "ten");
+  const ok = id => id && (GS_CFG[id] || id === "mlb" || id === "wnba"); // v6.11 — tennis taken out: a saved "ten" falls back to the default
   let v = null; try { v = hasLS ? localStorage.getItem("kb_startsport") : null; } catch (e) {}
   if (v === "last") { let l = null; try { l = localStorage.getItem("kb_lastsport"); } catch (e) {} return ok(l) ? l : DEFAULT_START_SPORT; }
   return ok(v) ? v : DEFAULT_START_SPORT;
 }
 function runMlbDeferred() { if (!S._mlbDeferred) return; S._mlbDeferred = false; try { loadAll(); } catch (e) {} }
+function ageGate() { // v6.10 — asked once, remembered in kb_age21; "under 21" never lets the app open
+  let ok = false; try { ok = hasLS && localStorage.getItem("kb_age21") === "1"; } catch (e) {} if (ok || document.querySelector(".agegate")) return;
+  const g = el("div", "agegate", `<div class="ag-card" role="dialog" aria-modal="true" aria-labelledby="agT"><h2 id="agT">Are you 21 or older?</h2>
+    <p>Daily Edge shows sports-betting odds and model picks. It's for adults 21+ only, for information and entertainment. It takes no bets and isn't betting advice.</p>
+    <p style="font-size:11.5px;color:var(--dim3);">Gambling problem? Call or text <b style="color:var(--txt)">1-800-MY-RESET</b> (1-800-697-3738) or chat at 1800myreset.org.</p>
+    <div class="ag-row"><button type="button" class="ag-yes" data-ageyes>I'm 21 or older</button><button type="button" data-ageno>I'm under 21</button></div></div>`);
+  g.querySelector("[data-ageyes]").addEventListener("click", () => { try { if (hasLS) kbSet("kb_age21", "1"); } catch (e) {} g.remove(); });
+  g.querySelector("[data-ageno]").addEventListener("click", () => { g.querySelector(".ag-card").innerHTML = `<h2>Sorry — this app is for adults 21 and over.</h2><p>Please close this page.</p>`; });
+  document.body.appendChild(g);
+}
 function init() {
+  try { ageGate(); } catch (e) {}
   const f = document.querySelector(".foot");
   if (f) f.innerHTML = `<b style="color:var(--blue)">BUILD ${BUILD}</b> — if you don't see this build number after updating, your phone is showing an old cached copy (pull to refresh, or open the link with ?new once)<br>` + f.innerHTML;
   if (f) { // "open the app on" picker — lives in the footer, saved in kb_startsport
@@ -11084,7 +11293,8 @@ function init() {
   S.date = today;
   S.journal = loadJournal();
   $("#datePick").value = today;
-  const hdrDate = () => { try { const v = $("#datePick").value, t = $("#dateTxt"); if (!t || !v) return; const d = new Date(v + "T12:00:00"); t.textContent = (v === localISO(new Date()) ? "Today · " : "") + d.toLocaleDateString([], { weekday: "long" }) + " · " + d.toLocaleDateString([], { month: "short", day: "numeric" }); try { dashUpdate(); } catch (e) {} } catch (e) {} };
+  const hdrDate = () => { try { const v = $("#datePick").value, t = $("#dateTxt"); if (!t || !v) return; const d = new Date(v + "T12:00:00"); t.textContent = d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }); t.title = v === localISO(new Date()) ? "Today" : ""; try { dashUpdate(); } catch (e) {} } catch (e) {} };
+  try { document.querySelectorAll("#sportSwitch button[data-sport]").forEach(b6 => { if (b6.querySelector("i")) return; const m6 = b6.textContent.trim().match(/^(\S+)\s+(.+)$/); if (m6) b6.innerHTML = `<i>${m6[1]}</i> <span>${m6[2]}</span>`; }); } catch (e) {} // v5.99 round sport tiles
   hdrDate(); setInterval(() => { try { if (!document.hidden) dashUpdate(); } catch (e) {} }, 2500); $("#datePick").addEventListener("change", hdrDate); $("#datePick").addEventListener("input", hdrDate);
   $("#dateChip")?.addEventListener("click", ev => { const dp = $("#datePick"); if (ev.target === dp) return; try { dp.showPicker ? dp.showPicker() : dp.focus(); } catch (e) { try { dp.focus(); } catch (e2) {} } });
   $("#status")?.addEventListener("click", ev => { ev.currentTarget.classList.toggle("open"); });
@@ -11097,19 +11307,23 @@ function init() {
     if (APP_SPORT === "ten") tnEnsure();
     setTimeout(() => preloadOtherSports(7000), 4000); // re-warm every sport for the new date
   });
-  $("#refreshBtn").addEventListener("click", () => {
-    if (APP_SPORT === "wnba") { WS.loaded = false; wnbaEnsure(); }
+  // v6.05 — ↻ reloads the sport you are LOOKING at (it used to reload MLB from every ESPN sport)
+  const sportReload = sp => {
+    if (sp === "wnba") { WS.loaded = false; wnbaEnsure(); }
+    else if (sp === "ten") { TN.loaded = false; tnEnsure(); }
+    else if (GS_CFG[sp]) { for (const sub of GS_CFG[sp].combo || [sp]) { const ss = gSlot(sub); ss.loaded = false; ss._swr = null; } genEnsure(sp); }
     else loadAll();
-  });
+  };
+  window.sportReload = sportReload;
+  $("#refreshBtn").addEventListener("click", () => sportReload(APP_SPORT));
   // ⏱ AUTO: near first pitch and during live games the lines move — refresh every 10 min without being asked
   const arBtn = $("#autoRefBtn");
   const arSync = () => { const on = hasLS && localStorage.getItem("kb_autoref") === "1"; if (arBtn) { arBtn.classList.toggle("on", on); arBtn.style.background = on ? "linear-gradient(135deg,#34d399,#1f9f74)" : ""; arBtn.style.color = on ? "#07101f" : ""; } return on; };
   arBtn?.addEventListener("click", () => { if (hasLS) kbSet("kb_autoref", localStorage.getItem("kb_autoref") === "1" ? "" : "1"); const on = arSync(); setStatus(on ? "⏱ Auto-refresh ON — re-pulls every 10 min when games are near or live." : "Auto-refresh off."); });
   arSync();
-  setInterval(() => {
+  const autoRefTick = () => {
     try {
       if (!hasLS || localStorage.getItem("kb_autoref") !== "1") return;
-      if (APP_SPORT !== "mlb" && APP_SPORT !== "wnba") return;
       const soonOrLive = gs2 => (gs2 || []).some(g => {
         if (APP_SPORT === "mlb" ? g.state === "Live" : g.live) return true;
         const t2 = new Date(APP_SPORT === "mlb" ? g.time : g.date) - Date.now();
@@ -11118,8 +11332,11 @@ function init() {
       });
       if (APP_SPORT === "mlb" && soonOrLive(S.games)) loadAll();
       else if (APP_SPORT === "wnba" && soonOrLive(WS.games)) { WS.loaded = false; wnbaEnsure(); }
+      else if (GS_CFG[APP_SPORT]) { const gsAll = []; for (const sub of GS_CFG[APP_SPORT].combo || [APP_SPORT]) { const ss = gSlot(sub); if (ss.loading) return; gsAll.push(...(ss.games || [])); } // v6.05 — every ESPN sport, not just MLB/WNBA
+        if (soonOrLive(gsAll)) sportReload(APP_SPORT); }
     } catch (e) {}
-  }, 10 * 60 * 1000);
+  };
+  window.autoRefTick = autoRefTick; setInterval(autoRefTick, 10 * 60 * 1000);
   const startSp = startSportPref();
   if (startSp !== "mlb") { S._mlbDeferred = true; setTimeout(runMlbDeferred, 20000); } else loadAll(); // MLB's heavy load must not fight the sport you opened on
   preloadOtherSports(undefined, startSp !== "mlb" ? 10000 : undefined); // warm every other sport in the background, one at a time — switching becomes instant
@@ -11148,7 +11365,7 @@ function sportReady(sp) { // has the sport on screen finished its own load? (the
   return true;
 }
 function preloadOrder(cur) { // same family first (basketball → WNBA / college hoops), tennis ALWAYS last, WNBA skipped out of season
-  const base = ["nba", "wnba", "cbb", "nfl", "cfb", "nhl", "epl", "mls", "ucl", "ten"].filter(x => x !== cur && !(x === "wnba" && !wnbaInSeason()));
+  const base = ["nba", "wnba", "cbb", "nfl", "cfb", "nhl", "epl", "mls", "ucl"].filter(x => x !== cur && !(x === "wnba" && !wnbaInSeason()));
   return base.map((x, i) => ({ x, i })).sort((p1, p2) => ((SPORT_FAMILY[p1.x] === SPORT_FAMILY[cur] ? 0 : 1) - (SPORT_FAMILY[p2.x] === SPORT_FAMILY[cur] ? 0 : 1)) || (p1.x === "ten") - (p2.x === "ten") || p1.i - p2.i).map(o => o.x);
 }
 function preloadOtherSports(gapMs, firstMs) { // staggered on purpose: one sport at a time so hostile networks never see a burst
